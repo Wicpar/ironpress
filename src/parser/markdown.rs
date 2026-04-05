@@ -2,7 +2,11 @@
 ///
 /// Powered by [pulldown-cmark](https://crates.io/crates/pulldown-cmark).
 pub fn markdown_to_html(md: &str) -> String {
-    let parser = pulldown_cmark::Parser::new(md);
+    let mut options = pulldown_cmark::Options::empty();
+    options.insert(pulldown_cmark::Options::ENABLE_TABLES);
+    options.insert(pulldown_cmark::Options::ENABLE_STRIKETHROUGH);
+    options.insert(pulldown_cmark::Options::ENABLE_TASKLISTS);
+    let parser = pulldown_cmark::Parser::new_ext(md, options);
     let mut html = String::new();
     pulldown_cmark::html::push_html(&mut html, parser);
     html
@@ -194,5 +198,24 @@ mod tests {
     fn only_whitespace() {
         let html = markdown_to_html("   \n\n   ");
         assert!(html.trim().is_empty() || html.contains("<p>"));
+    }
+
+    #[test]
+    fn gfm_table() {
+        let html = markdown_to_html("| A | B |\n|---|---|\n| 1 | 2 |");
+        assert!(html.contains("<table>"), "Expected table: {html}");
+        assert!(html.contains("<th>"));
+    }
+
+    #[test]
+    fn gfm_strikethrough() {
+        let html = markdown_to_html("~~deleted~~");
+        assert!(html.contains("<del>"), "Expected strikethrough: {html}");
+    }
+
+    #[test]
+    fn gfm_tasklist() {
+        let html = markdown_to_html("- [x] Done\n- [ ] Todo");
+        assert!(html.contains("checked"), "Expected checkbox: {html}");
     }
 }
