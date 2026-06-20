@@ -47,36 +47,44 @@ type SharedFonts = Arc<Vec<(&'static str, Vec<u8>)>>;
 const DPI: u32 = 300;
 /// Per-channel tolerance for the bbox white-detection (0..=255).
 const WHITE_TOL: i32 = 10;
+/// Maximum small-offset registration window (pixels at the rasterization DPI,
+/// ~1.5 CSS px at 300 DPI). Before the SSIM compare we cancel a translation of
+/// the candidate relative to the reference up to this magnitude, to neutralize a
+/// UNIVERSAL sub-perceptual page-origin offset: ironpress anchors content at the
+/// spec-correct 28.8pt = 120px@300dpi margin, while the Chrome reference sits a
+/// few px in (~116px), producing an IDENTICAL ~+4px right/down shift on every
+/// fixture. Clamping to this small window cancels that artifact while leaving any
+/// GENUINE layout shift larger than the window unmasked (it still scores high).
+const MAX_REG: i32 = 6;
 /// Per-channel tolerance for the pixel diff (absorbs sub-pixel AA / gamma).
 const CHANNEL_TOL: i32 = 20;
 /// Overall-score regression epsilon (percentage points). Below this is noise.
 const SCORE_EPSILON: f64 = 0.5;
 /// Default thresholds when a manifest entry omits them.
-const DEFAULT_PASS_PCT: f64 = 2.0;
-const DEFAULT_PARTIAL_PCT: f64 = 10.0;
-/// Inherent engine-vs-Chrome structural-jitter floor (percentage points), on the
-/// SSIM-hybrid (image-compare) DISSIMILARITY scale `100*(1-score)`. The
-/// perfect-render substrate probes — a plain filled box, a colour swatch, two
-/// stacked blocks — are PIXEL-CORRECT renders whose residual dissimilarity is
-/// pure sub-pixel anti-aliasing / ~1px page-position jitter, NOT a rendering bug.
-/// Measured on the SSIM-hybrid scale at 300 DPI (full-suite run, this branch):
-///   * probe-color-swatch : 4.09%
-///   * probe-fill-box     : 5.33%
-///   * probe-block-flow   : 6.06%   <- highest perfect-probe value
-/// The three perfect probes cluster at 4.1–6.1%. The lowest REAL-gap probe
-/// (probe-border-box) sits at 20.25%, with probe-text-baseline at 52.83% and
-/// probe-image-render at 100.00% far above. We therefore set the PASS floor just
-/// above the highest perfect probe (6.06%) with a ~1pp margin, and keep the
-/// PARTIAL floor well below the lowest real gap (20.25%):
-///   PASS floor 7.0%  -> all three perfect probes PASS comfortably
-///                       (largest, block-flow at 6.06%, clears by ~0.9pp).
-///   PARTIAL floor 12.0% -> real gaps (>=20.25%) stay FAIL with >8pp of margin;
-///                          nothing weakens far enough to let a real gap pass.
-/// Effective per-fixture thresholds are clamped to sit ABOVE this floor so a
-/// correct render is never scored as a failure (which would confound everything
-/// depending on it). Per-fixture thresholds may be HIGHER (e.g. text shaping),
-/// never below the floor.
-const NOISE_FLOOR_PASS_PCT: f64 = 7.0;
+const DEFAULT_PASS_PCT: f64 = 1.5;
+const DEFAULT_PARTIAL_PCT: f64 = 12.0;
+/// Inherent engine-vs-Chrome floor (percentage points) on the perceptual
+/// pixel-diff scale (fraction of pixels that genuinely differ; see `diff_images`).
+/// Because the metric ignores anti-aliasing edges and sub-threshold noise, a
+/// PIXEL-CORRECT render scores ~0% — far lower than the old SSIM-hybrid baseline
+/// (which inflated perfect renders to 4–6%). The perfect-render substrate probes,
+/// measured on this scale at 300 DPI (full-suite run, this branch):
+///   * probe-color-swatch : 0.00%
+///   * probe-fill-box     : 0.00%
+///   * probe-block-flow   : 0.32%
+///   * probe-border-box   : 0.69%
+///   * probe-image-render : 0.79%   <- highest perfect (non-text) probe
+/// All perfect renders sit <= 0.8%. probe-text-baseline (20.6%) is the
+/// cross-rasterizer text-AA ceiling — text is NOT pixel-identical across two
+/// independent rasterizers even when feature-correct — and is deliberately
+/// EXCLUDED from the floor (it is a known measurement ceiling, not a bug).
+/// We set the PASS floor at 1.5% (clears every perfect probe by ~0.7pp, yet
+/// below real small-area defects such as an unrounded per-corner radius at
+/// 2.79%), and the PARTIAL floor at 12.0% (a recognizable-but-imperfect render
+/// such as slightly-mis-sized flex boxes at 7.6% stays PARTIAL; substantially
+/// wrong / missing content fails). Effective per-fixture thresholds are clamped
+/// to sit ABOVE this floor so a correct render is never scored as a failure.
+const NOISE_FLOOR_PASS_PCT: f64 = 1.5;
 const NOISE_FLOOR_PARTIAL_PCT: f64 = 12.0;
 
 // ---------------------------------------------------------------------------
@@ -872,8 +880,19 @@ fn process_entry(
     // any tolerance/dilation that might otherwise mask it.
     let (diff_pct, diff_img) = match (cand_bb, ref_bb) {
         (Some(cb), Some(rb)) => {
-            let union = union_bbox(cb, rb);
-            let cand_a = crop_rect(&cand, union);
+            // SMALL-OFFSET REGISTRATION: cancel the UNIVERSAL ~+4px page-origin
+            // offset (see MAX_REG) before the SSIM compare. Derive the candidate's
+            // translation relative to the reference from the difference of the two
+            // content-bbox top-left corners, CLAMPED to ±MAX_REG so a genuine
+            // layout shift larger than the window is NOT masked. Re-anchor the
+            // candidate (and its bbox) by that clamped offset, then run the usual
+            // union-bbox crop + SSIM on the registered pair. The overlay stays
+            // score-faithful because it is produced from the same registered crops.
+            let (dx, dy) = registration_offset(cb, rb);
+            let cand_reg = shift_image(&cand, dx, dy);
+            let cb_reg = shift_bbox(cb, dx, dy, cand.dimensions());
+            let union = union_bbox(cb_reg, rb);
+            let cand_a = crop_rect(&cand_reg, union);
             let ref_a = crop_rect(&reference, union);
             diff_images(&cand_a, &ref_a)
         }
@@ -1113,6 +1132,57 @@ fn content_bbox(img: &RgbaImage) -> Option<BBox> {
     }
 }
 
+/// Clamped small-offset registration. Returns the integer translation `(dx, dy)`
+/// to apply to the CANDIDATE so its content top-left aligns with the REFERENCE's,
+/// CLAMPED to `±MAX_REG` on each axis. `cand`/`ref` are the two content bboxes in
+/// the shared page space; the raw shift is `ref_top_left - cand_top_left`.
+///
+/// This neutralizes the UNIVERSAL sub-perceptual page-origin offset (ironpress at
+/// the spec-correct 120px@300dpi margin vs the Chrome reference at ~116px — an
+/// identical ~+4px shift on every fixture). The clamp guarantees a GENUINE layout
+/// shift larger than the window is only partially cancelled, so it still produces
+/// a clearly high dissimilarity rather than being masked.
+fn registration_offset(cand: BBox, reference: BBox) -> (i32, i32) {
+    let raw_dx = reference.0 as i32 - cand.0 as i32;
+    let raw_dy = reference.1 as i32 - cand.1 as i32;
+    (raw_dx.clamp(-MAX_REG, MAX_REG), raw_dy.clamp(-MAX_REG, MAX_REG))
+}
+
+/// Translate `img` by `(dx, dy)` pixels on a white background (same dimensions),
+/// so registered content lands at the reference's page position before cropping.
+/// Out-of-frame source pixels become white; this is only ever called with the
+/// small clamped registration offset, so at most `MAX_REG` px is lost per edge.
+fn shift_image(img: &RgbaImage, dx: i32, dy: i32) -> RgbaImage {
+    if dx == 0 && dy == 0 {
+        return img.clone();
+    }
+    let (w, h) = img.dimensions();
+    let mut out: RgbaImage = ImageBuffer::from_pixel(w, h, Rgba([255, 255, 255, 255]));
+    for y in 0..h {
+        for x in 0..w {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx >= 0 && ny >= 0 && (nx as u32) < w && (ny as u32) < h {
+                out.put_pixel(nx as u32, ny as u32, *img.get_pixel(x, y));
+            }
+        }
+    }
+    out
+}
+
+/// Translate an inclusive bbox by `(dx, dy)`, clamping to the image bounds so the
+/// shifted box stays valid for `union_bbox`/`crop_rect`. Matches `shift_image`.
+fn shift_bbox(bb: BBox, dx: i32, dy: i32, dims: (u32, u32)) -> BBox {
+    let (w, h) = dims;
+    let clamp = |v: i32, hi: u32| v.clamp(0, hi.saturating_sub(1) as i32) as u32;
+    (
+        clamp(bb.0 as i32 + dx, w),
+        clamp(bb.1 as i32 + dy, h),
+        clamp(bb.2 as i32 + dx, w),
+        clamp(bb.3 as i32 + dy, h),
+    )
+}
+
 /// Union of two inclusive bboxes (min of mins, max of maxes).
 fn union_bbox(a: BBox, b: BBox) -> BBox {
     (
@@ -1165,19 +1235,157 @@ fn crop_rect(img: &RgbaImage, bb: BBox) -> RgbaImage {
 /// no difference and brighter pixels mark the structural (red) and chroma
 /// (green/blue) deviations that drove the dissimilarity. It is returned as an
 /// `RgbaImage` so the committed diff PNG visualises exactly what the score saw.
+/// Per-pixel perceptual threshold (pixelmatch `threshold`, 0..1). Differences
+/// below this are treated as identical, so a visually-correct smooth gradient or
+/// the sub-tone noise between two independent rasterizers scores ~0% instead of
+/// being over-penalized the way global MSSIM is. Higher = more tolerant.
+const PM_THRESHOLD: f64 = 0.12;
+/// Maximum possible YIQ color delta (pixelmatch constant).
+const PM_MAX_DELTA: f64 = 35215.0;
+
+/// Perceptual image diff = fraction of pixels that genuinely differ, ignoring
+/// anti-aliasing edges and sub-threshold noise (Mapbox pixelmatch algorithm).
+///
+/// Replaces global MSSIM, which had two opposite failure modes on this suite:
+/// it was too LENIENT on small hard differences (an unrounded per-corner radius
+/// is a tiny pixel fraction, so MSSIM diluted it into a PASS) and too HARSH on
+/// large smooth differences (a visually-identical gradient scored ~10%). A
+/// thresholded, AA-aware per-pixel diff is harsh on solid wrong regions and
+/// lenient on smooth near-matches and glyph anti-aliasing — so a perfect render
+/// scores ~0% and the noise floor can sit low enough to catch real defects.
 fn diff_images(a: &RgbaImage, b: &RgbaImage) -> (f64, RgbaImage) {
-    match image_compare::rgba_hybrid_compare(a, b) {
-        Ok(sim) => {
-            // score is a SIMILARITY (1.0 == identical); convert to dissimilarity %.
-            let pct = (100.0 * (1.0 - sim.score)).clamp(0.0, 100.0);
-            let overlay = sim.image.to_color_map().to_rgba8();
-            (pct, overlay)
-        }
-        // Only fails on dimension mismatch, which cannot happen here (both inputs
-        // are cropped to the identical union rectangle). Treat defensively as a
-        // total miss with a 1x1 white overlay so the caller's contract holds.
-        Err(_) => (100.0, ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255]))),
+    let (w, h) = a.dimensions();
+    if w == 0 || h == 0 || b.dimensions() != (w, h) {
+        return (100.0, ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255])));
     }
+    let max_delta = PM_MAX_DELTA * PM_THRESHOLD * PM_THRESHOLD;
+    let mut overlay = ImageBuffer::from_pixel(w, h, Rgba([255u8, 255, 255, 255]));
+    let mut diff_count: u64 = 0;
+    for y in 0..h {
+        for x in 0..w {
+            let pa = a.get_pixel(x, y);
+            let pb = b.get_pixel(x, y);
+            let delta = color_delta(pa, pb, false);
+            if delta.abs() > max_delta {
+                // Significant difference — unless it is an anti-aliasing artifact
+                // present in either image (glyph/shape edges differ sub-pixel
+                // between rasterizers but are not real layout differences).
+                if is_antialiased(a, x, y, w, h, b) || is_antialiased(b, x, y, w, h, a) {
+                    overlay.put_pixel(x, y, Rgba([255, 224, 0, 255])); // AA edge: yellow
+                } else {
+                    diff_count += 1;
+                    overlay.put_pixel(x, y, Rgba([255, 40, 40, 255])); // real diff: red
+                }
+            } else {
+                // Matched: faint grayscale of the reference so the overlay stays
+                // readable (shows the shape behind the highlighted differences).
+                let yv = rgb2y(pb);
+                let g = (255.0 - (255.0 - yv) * 0.12).round().clamp(0.0, 255.0) as u8;
+                overlay.put_pixel(x, y, Rgba([g, g, g, 255]));
+            }
+        }
+    }
+    let pct = (100.0 * diff_count as f64 / (w as f64 * h as f64)).clamp(0.0, 100.0);
+    (pct, overlay)
+}
+
+#[inline]
+fn rgb2y(p: &Rgba<u8>) -> f64 {
+    p[0] as f64 * 0.298_895_31 + p[1] as f64 * 0.586_622_47 + p[2] as f64 * 0.114_482_23
+}
+#[inline]
+fn rgb2i(p: &Rgba<u8>) -> f64 {
+    p[0] as f64 * 0.595_977_99 - p[1] as f64 * 0.274_176_10 - p[2] as f64 * 0.321_801_89
+}
+#[inline]
+fn rgb2q(p: &Rgba<u8>) -> f64 {
+    p[0] as f64 * 0.211_470_17 - p[1] as f64 * 0.522_617_11 + p[2] as f64 * 0.311_146_94
+}
+
+/// Signed YIQ perceptual delta between two pixels (pixelmatch `colorDelta`).
+/// `y_only` returns just the brightness delta (used for AA edge detection).
+/// Sign encodes which pixel is brighter; callers use the magnitude for the
+/// threshold and the sign for anti-aliasing classification.
+fn color_delta(a: &Rgba<u8>, b: &Rgba<u8>, y_only: bool) -> f64 {
+    if a == b {
+        return 0.0;
+    }
+    let y1 = rgb2y(a);
+    let y2 = rgb2y(b);
+    if y_only {
+        return y1 - y2;
+    }
+    let dy = y1 - y2;
+    let di = rgb2i(a) - rgb2i(b);
+    let dq = rgb2q(a) - rgb2q(b);
+    let delta = 0.5053 * dy * dy + 0.299 * di * di + 0.1957 * dq * dq;
+    if y1 > y2 { -delta } else { delta }
+}
+
+/// Whether the pixel at (x1,y1) in `img` looks like anti-aliasing rather than a
+/// real difference (pixelmatch `antialiased`): it sits on a high-contrast edge
+/// whose extreme neighbor also has many equal siblings in both images.
+fn is_antialiased(img: &RgbaImage, x1: u32, y1: u32, w: u32, h: u32, img2: &RgbaImage) -> bool {
+    let x0 = x1.saturating_sub(1);
+    let y0 = y1.saturating_sub(1);
+    let x2 = (x1 + 1).min(w - 1);
+    let y2 = (y1 + 1).min(h - 1);
+    let mut zeroes = u32::from(x1 == x0 || x1 == x2 || y1 == y0 || y1 == y2);
+    let center = img.get_pixel(x1, y1);
+    let mut min = 0.0f64;
+    let mut max = 0.0f64;
+    let (mut min_x, mut min_y, mut max_x, mut max_y) = (0u32, 0u32, 0u32, 0u32);
+    for y in y0..=y2 {
+        for x in x0..=x2 {
+            if x == x1 && y == y1 {
+                continue;
+            }
+            let delta = color_delta(center, img.get_pixel(x, y), true);
+            if delta == 0.0 {
+                zeroes += 1;
+                if zeroes > 2 {
+                    return false;
+                }
+            } else if delta < min {
+                min = delta;
+                min_x = x;
+                min_y = y;
+            } else if delta > max {
+                max = delta;
+                max_x = x;
+                max_y = y;
+            }
+        }
+    }
+    if min == 0.0 || max == 0.0 {
+        return false;
+    }
+    (has_many_siblings(img, min_x, min_y, w, h) && has_many_siblings(img2, min_x, min_y, w, h))
+        || (has_many_siblings(img, max_x, max_y, w, h) && has_many_siblings(img2, max_x, max_y, w, h))
+}
+
+/// Whether a pixel has 3+ equal adjacent neighbors (pixelmatch `hasManySiblings`).
+fn has_many_siblings(img: &RgbaImage, x1: u32, y1: u32, w: u32, h: u32) -> bool {
+    let x0 = x1.saturating_sub(1);
+    let y0 = y1.saturating_sub(1);
+    let x2 = (x1 + 1).min(w - 1);
+    let y2 = (y1 + 1).min(h - 1);
+    let mut zeroes = u32::from(x1 == x0 || x1 == x2 || y1 == y0 || y1 == y2);
+    let center = img.get_pixel(x1, y1);
+    for y in y0..=y2 {
+        for x in x0..=x2 {
+            if x == x1 && y == y1 {
+                continue;
+            }
+            if img.get_pixel(x, y) == center {
+                zeroes += 1;
+                if zeroes > 2 {
+                    return true;
+                }
+            }
+        }
+    }
+    false
 }
 
 fn classify(diff_pct: f64, pass: f64, partial: f64) -> Status {
@@ -2503,5 +2711,80 @@ mod tests {
                 "structural error '{name}' ({val:.4}%) must dominate AA ({aa:.4}%)"
             );
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // Clamped small-offset registration (neutralizes the universal page-origin
+    // offset without masking genuine layout shifts).
+    // -----------------------------------------------------------------------
+
+    /// Score a candidate vs a reference through the SAME registration + union-crop
+    /// + SSIM path the real comparator uses, so these tests exercise the actual
+    /// behaviour rather than re-deriving it.
+    fn registered_pct(cand: &RgbaImage, reference: &RgbaImage) -> f64 {
+        match (content_bbox(cand), content_bbox(reference)) {
+            (Some(cb), Some(rb)) => {
+                let (dx, dy) = registration_offset(cb, rb);
+                let cand_reg = shift_image(cand, dx, dy);
+                let cb_reg = shift_bbox(cb, dx, dy, cand.dimensions());
+                let union = union_bbox(cb_reg, rb);
+                diff_images(&crop_rect(&cand_reg, union), &crop_rect(reference, union)).0
+            }
+            (None, None) => 0.0,
+            // Exactly one side blank: mirror the comparator's forced-FAIL guard.
+            _ => 100.0,
+        }
+    }
+
+    #[test]
+    fn registration_cancels_universal_small_offset() {
+        // (a) Two IDENTICAL shapes, the candidate translated by exactly (4,4) —
+        // the universal sub-perceptual page-origin offset. Registration (clamped
+        // at ±6) cancels it, so the registered diff is ~0, while comparing the
+        // SAME pair WITHOUT registration scores clearly higher (proving the offset
+        // really was being penalized before).
+        let reference = solid_square();
+        let cand = shift_image(&reference, 4, 4);
+
+        let raw = pct(&cand, &reference); // no registration, page coords
+        let reg = registered_pct(&cand, &reference);
+        eprintln!("registration_cancels_universal_small_offset raw={raw:.4}% reg={reg:.4}%");
+        assert!(
+            reg < NOISE_FLOOR_PASS_PCT,
+            "a (4,4) offset must register to ~0%, got {reg:.4}%"
+        );
+        assert!(
+            raw > reg + 1.0,
+            "unregistered (4,4) offset ({raw:.4}%) must be visibly penalized vs registered ({reg:.4}%)"
+        );
+    }
+
+    #[test]
+    fn registration_clamps_large_shift_not_masked() {
+        // (b) A shape shifted by (20,20) — a GENUINE layout shift far beyond the
+        // ±6 window. Registration clamps at 6, leaving a 14px residual, so the
+        // pair still scores HIGH (clearly above the noise floor): not masked.
+        let reference = solid_square();
+        let cand = shift_image(&reference, 20, 20);
+        let reg = registered_pct(&cand, &reference);
+        eprintln!("registration_clamps_large_shift_not_masked reg={reg:.4}%");
+        assert!(
+            reg > NOISE_FLOOR_PASS_PCT,
+            "a 20px shift must NOT be masked by the ±6 clamp, got {reg:.4}%"
+        );
+    }
+
+    #[test]
+    fn registration_blank_candidate_still_fails() {
+        // (c) A blank (all-white) candidate vs a real reference must still score
+        // ~100%: registration must never rescue an all-or-nothing miss.
+        let reference = solid_square();
+        let blank = white_canvas();
+        let reg = registered_pct(&blank, &reference);
+        eprintln!("registration_blank_candidate_still_fails reg={reg:.4}%");
+        assert!(
+            reg >= 100.0 - 1e-9,
+            "a blank candidate must still score ~100%, got {reg:.4}%"
+        );
     }
 }
