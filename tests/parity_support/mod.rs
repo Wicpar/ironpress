@@ -421,6 +421,11 @@ fn process_entry(
                 entry.category, entry.id, t.color_pct, t.color_de, t.missing_pct, t.extra_pct,
                 t.edge_max_css, t.shift_max_css, t.aa_pct, outcome.verdict.dominant_class
             );
+            eprintln!(
+                "DIAG {}/{}: [{}] {}  (conf {:.2})",
+                entry.category, entry.id, outcome.diagnosis.primary_class,
+                outcome.diagnosis.headline, outcome.diagnosis.confidence
+            );
         }
 
         let reports_diff = reports_dir
@@ -437,7 +442,12 @@ fn process_entry(
             }
             let _ = outcome.overlay.save(&out);
         }
-        return with_sha(report::fixture_base(entry, outcome.status, diff_pct, String::new()));
+        // ADDITIVE: attach the V2 diagnosis (spec §2). The attribution prefix
+        // (`via {dep}: …` for confounded fixtures) is applied later in `run()` by
+        // `compute_attribution`, once every fixture's status is known.
+        let mut result = report::fixture_base(entry, outcome.status, diff_pct, String::new());
+        result.diagnosis = Some(outcome.diagnosis);
+        return with_sha(result);
     }
 
     // Compute each side's content bbox in the SHARED page coordinate space, then

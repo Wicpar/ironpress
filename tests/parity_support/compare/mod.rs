@@ -279,6 +279,10 @@ pub(crate) struct V2Outcome {
     pub(crate) regions: Vec<DiffRegion>,
     pub(crate) verdict: Verdict,
     pub(crate) overlay: RgbaImage,
+    /// The "why it failed" diagnosis (spec §2): computed here because this is the
+    /// only place that holds the class map + aligned cand/ref the colour/alpha
+    /// sub-classifiers need. ADDITIVE — it never feeds back into the verdict.
+    pub(crate) diagnosis: super::diagnose::Diagnosis,
 }
 
 /// Run the §1.2 V2 pipeline over a candidate and reference in shared page space.
@@ -336,6 +340,11 @@ pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &Manife
     verdict.diff_pct = diff_pct;
     let overlay = render_classed_overlay(&class_map);
 
+    // Diagnosis (spec §2). Computed here (the only stage with the class map +
+    // aligned cand/ref) but PURELY additive: it reads the same owned products the
+    // verdict already produced and can never change `status`/`diff_pct`.
+    let diagnosis = super::diagnose::diagnose(&tally, &regions, &class_map, &cand_u, &ref_u);
+
     V2Outcome {
         status: verdict.status,
         diff_pct,
@@ -343,6 +352,7 @@ pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &Manife
         regions,
         verdict,
         overlay,
+        diagnosis,
     }
 }
 

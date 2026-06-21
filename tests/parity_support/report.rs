@@ -82,6 +82,12 @@ pub(crate) struct FixtureResult {
     /// part of the regression baseline comparison; carried for the freshness check.
     #[serde(default)]
     pub(crate) html_sha256: String,
+    /// Per-fixture V2 diagnosis (spec §2): the "why it failed" layer — primary
+    /// error class, human headline, magnitudes, per-region breakdown. ADDITIVE and
+    /// non-gating: set only on the V2 path (`PARITY_VERDICT=v2`); `None` on the
+    /// legacy path and on old baselines (the `serde(default)` keeps them parseable).
+    #[serde(default)]
+    pub(crate) diagnosis: Option<super::diagnose::Diagnosis>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -277,6 +283,7 @@ pub(crate) fn fixture_base(entry: &ManifestEntry, status: Status, diff_pct: f64,
         expected_support: entry.expected_support.clone(),
         attribution: String::new(),
         html_sha256: String::new(),
+        diagnosis: None,
     }
 }
 
