@@ -61,3 +61,64 @@ pub(crate) const NOISE_FLOOR_PARTIAL_PCT: f64 = 12.0;
 pub(crate) const PM_THRESHOLD: f64 = 0.12;
 /// Maximum possible YIQ color delta (pixelmatch constant).
 pub(crate) const PM_MAX_DELTA: f64 = 35215.0;
+
+// ===========================================================================
+// V2 COMPARATOR CONSTANTS (spec §1.1)
+//
+// These drive the multi-gate V2 verdict path (behind `PARITY_VERDICT=v2`). They
+// live ALONGSIDE the legacy constants above — nothing legacy is tightened or
+// removed here (that is C6). The V2 path uses its OWN `t_match()` (PM_THRESHOLD
+// 0.10, tighter than the legacy 0.12) and its own gates; the legacy `diff_images`
+// continues to read the legacy `PM_THRESHOLD`.
+// ===========================================================================
+
+/// Device px per CSS px @ 300 DPI (96 CSS px/in -> 300/96 = 3.125).
+pub(crate) const CSS_PX: f64 = 3.125;
+/// Fixed page-origin correction (device px): ironpress content sits +4,+4 vs the
+/// Chrome reference because Chrome's `--print-to-pdf` rounds the printable margin.
+/// We shift the candidate by `-GLOBAL_OFFSET` once, uniformly, and audit it — we
+/// do NOT search per-fixture (that masked real layout bugs). See spec §0.1/§1.3.
+pub(crate) const GLOBAL_OFFSET: (i32, i32) = (4, 4);
+/// Allowed raw-probe deviation from `GLOBAL_OFFSET` during calibration audit.
+pub(crate) const PROBE_JITTER_PX: i32 = 1;
+/// Post-calibration sub-pixel rounding band: a residual displacement within this
+/// radius is classed `GeomShift` (counted, never zeroed), not `ColorErr`.
+pub(crate) const RESIDUAL_JITTER_PX: i32 = 1;
+
+/// V2 per-pixel match threshold (pixelmatch `threshold`, 0..1), TIGHTER than the
+/// legacy 0.12. Only used by the V2 path's `t_match()`.
+pub(crate) const PM_THRESHOLD_V2: f64 = 0.10;
+/// V2 "match" YIQ delta budget (~352). At/below this, a pixel is `Match`.
+pub(crate) fn t_match() -> f64 {
+    PM_MAX_DELTA * PM_THRESHOLD_V2 * PM_THRESHOLD_V2
+}
+/// Wider AA tolerance (0..1) — legal ONLY inside the shared edge band.
+pub(crate) const AA_THRESHOLD: f64 = 0.18;
+/// V2 anti-aliasing YIQ delta budget (~1141). A differing pixel inside the shared
+/// edge band and within this budget is `AaEdge` (cross-rasterizer glyph AA).
+pub(crate) fn t_aa() -> f64 {
+    PM_MAX_DELTA * AA_THRESHOLD * AA_THRESHOLD
+}
+
+/// Per-channel 4-neighbour gradient threshold (0..255) for structural edges. A
+/// pixel is an edge iff the max per-channel |Δ| to any 4-neighbour exceeds this.
+pub(crate) const EDGE_GRAD: i32 = 24;
+
+/// Drop diff regions smaller than this (ignore <3x3 device-px specks).
+pub(crate) const REGION_MIN_AREA_PX: u32 = 9;
+
+// --- verdict gates: (PASS bound, PARTIAL bound). FAIL if > PARTIAL bound. ---
+/// % of union content pixels classed `ColorErr`.
+pub(crate) const G_COLOR_PCT: (f64, f64) = (0.5, 8.0);
+/// % of REF content area classed `Missing`.
+pub(crate) const G_MISSING_PCT: (f64, f64) = (0.5, 6.0);
+/// % of CAND content area classed `Extra`.
+pub(crate) const G_EXTRA_PCT: (f64, f64) = (0.5, 6.0);
+/// Max per-side content-extent delta, CSS px (the box-size signal).
+pub(crate) const G_EDGE_CSS: (f64, f64) = (1.0, 3.0);
+/// Residual translation beyond calibration, CSS px.
+pub(crate) const G_SHIFT_CSS: (f64, f64) = (1.0, 4.0);
+/// ΔE2000: at/below this a colour difference is not a defect even if pixels differ.
+pub(crate) const COLOR_DE_PASS: f64 = 2.5;
+/// ΔE2000: at/above this is a hard colour failure regardless of area.
+pub(crate) const COLOR_DE_FAIL: f64 = 6.0;

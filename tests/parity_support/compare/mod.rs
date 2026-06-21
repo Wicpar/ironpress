@@ -1,13 +1,43 @@
-//! The comparator: the AA-aware per-pixel perceptual diff (Mapbox pixelmatch
-//! port), its YIQ colour primitives, the sub-pixel-shift tolerance, and the
-//! PASS/PARTIAL/FAIL classifier.
+//! The comparator.
 //!
-//! Extracted verbatim from the former monolithic `mod.rs` (C1 mechanical split).
+//! LEGACY path (default): the AA-aware per-pixel perceptual diff (Mapbox
+//! pixelmatch port), its YIQ colour primitives, the sub-pixel-shift tolerance,
+//! and the PASS/PARTIAL/FAIL classifier — extracted verbatim from the former
+//! monolithic `mod.rs` (C1 mechanical split) and UNCHANGED here.
+//!
+//! V2 path (`PARITY_VERDICT=v2`): a diagnostic multi-detector pipeline split into
+//! single-responsibility submodules (spec §1.2). `color` (ΔE2000 + YIQ),
+//! `masks` (structural edge bands), `classify` (per-pixel `PixelClass`),
+//! `segment` (connected diff regions), `tally` (per-class aggregation), and
+//! `verdict` (multi-gate PASS/PARTIAL/FAIL). `compare_v2` orchestrates them.
+//! The two paths coexist; neither touches the other's constants.
 
 use image::{ImageBuffer, Rgba, RgbaImage};
 
 use super::config::{PM_MAX_DELTA, PM_THRESHOLD};
+use super::manifest::ManifestEntry;
 use super::report::Status;
+
+// V2 submodules (spec §4). Each is a plain owned-value stage of the pipeline.
+pub(crate) mod classify;
+pub(crate) mod color;
+pub(crate) mod masks;
+pub(crate) mod segment;
+pub(crate) mod tally;
+pub(crate) mod verdict;
+
+#[cfg(test)]
+mod goldens;
+
+use classify::classify_pixels;
+use segment::segment;
+use tally::aggregate;
+use verdict::verdict;
+
+pub(crate) use classify::{ClassMap, PixelClass};
+pub(crate) use segment::DiffRegion;
+pub(crate) use tally::ClassTally;
+pub(crate) use verdict::Verdict;
 
 /// Structural diff over two ALREADY-cropped, same-size images using the
 /// `image-compare` crate's SSIM **hybrid** comparison (MSSIM on luma + RMS on the
@@ -228,3 +258,114 @@ pub(crate) fn classify(diff_pct: f64, pass: f64, partial: f64) -> Status {
         Status::Fail
     }
 }
+
+// ===========================================================================
+// V2 ORCHESTRATION (spec §1.2)
+// ===========================================================================
+
+use super::geom::{content_bbox, content_mask, crop_rect, union_bbox};
+
+/// Everything the V2 path produces for one fixture. `status`/`diff_pct` come from
+/// the multi-gate `verdict`; `tally`/`regions`/`verdict` carry the diagnostic
+/// detail (consumed later by `diagnose`/`overlay`/`report`); `overlay` is the
+/// classed diff image written to disk. Owned values only — no borrows escape.
+pub(crate) struct V2Outcome {
+    pub(crate) status: Status,
+    pub(crate) diff_pct: f64,
+    pub(crate) tally: ClassTally,
+    /// Per-region diagnosis. Consumed by `diagnose` (C4) and the HTML region
+    /// table (C5); carried here now so the pipeline is complete end-to-end.
+    #[allow(dead_code)]
+    pub(crate) regions: Vec<DiffRegion>,
+    pub(crate) verdict: Verdict,
+    pub(crate) overlay: RgbaImage,
+}
+
+/// Run the §1.2 V2 pipeline over a candidate and reference in shared page space.
+///
+/// CONTRACT: `cand` is ALREADY CALIBRATED — the caller (`process_entry`, and the
+/// golden tests) applies `calibrate::calibrate` (the fixed `-GLOBAL_OFFSET`
+/// shift) before calling this, so `compare_v2` sees content at the reference's
+/// page origin and any surviving translation is a real residual. Both images are
+/// assumed alpha-flattened over white (the rasterizer emits opaque RGBA, and the
+/// golden builders use opaque fills, so this holds in practice).
+///
+/// Steps: content masks -> per-side bbox delta (the SIZE signal, read from
+/// extents not the diluted pixel fraction) -> union-crop both for the pixel
+/// compare -> structural edge bands -> per-pixel classify -> region segmentation
+/// -> aggregate to per-class severities -> multi-gate verdict -> classed overlay.
+pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &ManifestEntry) -> V2Outcome {
+    let cand_bb = content_bbox(cand);
+    let ref_bb = content_bbox(reference);
+
+    // Per-side content-extent delta (device px): ref - cand, [L, R, T, B]. This is
+    // the box-size verdict signal and is taken from the bbox corners, NOT from the
+    // union-crop pixel fraction (so a 13px-too-tall box reads ~13px regardless of
+    // body size). When a side is blank we leave its delta at 0 and let the
+    // Missing/Extra coverage gates carry the verdict.
+    let bbox_delta: [i32; 4] = match (cand_bb, ref_bb) {
+        (Some(c), Some(r)) => [
+            r.0 as i32 - c.0 as i32, // left
+            r.2 as i32 - c.2 as i32, // right
+            r.1 as i32 - c.1 as i32, // top
+            r.3 as i32 - c.3 as i32, // bottom
+        ],
+        _ => [0, 0, 0, 0],
+    };
+
+    // Union bbox for the pixel compare. If one side is blank, crop to the other's
+    // box so the missing/extra region is fully covered; if both blank, a 1x1 crop.
+    let union = match (cand_bb, ref_bb) {
+        (Some(c), Some(r)) => union_bbox(c, r),
+        (Some(b), None) | (None, Some(b)) => b,
+        (None, None) => (0, 0, 0, 0),
+    };
+
+    let cand_u = crop_rect(cand, union);
+    let ref_u = crop_rect(reference, union);
+    let mask_c = content_mask(&cand_u);
+    let mask_r = content_mask(&ref_u);
+
+    let masks = masks::structural_masks(&cand_u, &ref_u);
+    let class_map = classify_pixels(&cand_u, &ref_u, &mask_c, &mask_r, &masks);
+    let regions = segment(&class_map, &cand_u, &ref_u);
+    let tally = aggregate(&class_map, &regions, bbox_delta, &mask_c, &mask_r, &cand_u, &ref_u);
+    let mut verdict = verdict(&tally, &regions, entry);
+    // Exact derived back-compat scalar (% real-diff px, AA+Match excluded).
+    let diff_pct = tally.diff_pct(&class_map);
+    verdict.diff_pct = diff_pct;
+    let overlay = render_classed_overlay(&class_map);
+
+    V2Outcome {
+        status: verdict.status,
+        diff_pct,
+        tally,
+        regions,
+        verdict,
+        overlay,
+    }
+}
+
+/// Minimal classed-diff overlay (the rich HTML quad is C5). Recolours each pixel
+/// by its `PixelClass` so the committed `.diff.png` shows WHAT differed and HOW,
+/// not a flat red mask: Missing=magenta, Extra=green, ColorErr=blue,
+/// GeomShift=orange, AaEdge=faint-yellow, Match=faint-grey.
+pub(crate) fn render_classed_overlay(cm: &ClassMap) -> RgbaImage {
+    let mut out: RgbaImage = ImageBuffer::from_pixel(cm.w.max(1), cm.h.max(1), Rgba([255, 255, 255, 255]));
+    for y in 0..cm.h {
+        for x in 0..cm.w {
+            let c = cm.px[(y as usize) * (cm.w as usize) + x as usize];
+            let color = match c {
+                PixelClass::Match => Rgba([245, 245, 245, 255]),
+                PixelClass::AaEdge => Rgba([255, 240, 150, 255]),
+                PixelClass::ColorErr => Rgba([40, 80, 255, 255]),
+                PixelClass::GeomShift => Rgba([255, 150, 30, 255]),
+                PixelClass::Missing => Rgba([230, 0, 230, 255]),
+                PixelClass::Extra => Rgba([0, 200, 60, 255]),
+            };
+            out.put_pixel(x, y, color);
+        }
+    }
+    out
+}
+

@@ -187,7 +187,7 @@ pub(crate) fn build_report(mut results: Vec<FixtureResult>, pdftoppm_available: 
     };
 
     Report {
-        schema_version: 3,
+        schema_version: 4,
         env: EnvBlock {
             dpi: DPI,
             channel_tol: CHANNEL_TOL,
@@ -210,6 +210,7 @@ pub(crate) fn build_report(mut results: Vec<FixtureResult>, pdftoppm_available: 
         suspect_unsupported_pass: Vec::new(),
         stale_refs: Vec::new(),
         refs_lock_present: false,
+        calibration: None,
     }
 }
 

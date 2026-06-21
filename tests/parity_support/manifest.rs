@@ -52,6 +52,11 @@ pub(crate) struct ManifestEntry {
     /// regression.
     #[serde(default = "default_expected_support")]
     pub(crate) expected_support: String,
+    /// Geometry class for the V2 calibration audit (spec §1.3): "free" (default)
+    /// or "rigid". The deterministic solid probes are tagged "rigid" so the
+    /// page-origin offset can be measured and audited once per run.
+    #[serde(default = "default_geometry")]
+    pub(crate) geometry: String,
 }
 
 pub(crate) fn default_weight() -> f64 {
@@ -65,6 +70,9 @@ pub(crate) fn default_kind() -> String {
 }
 pub(crate) fn default_expected_support() -> String {
     "implemented".to_string()
+}
+pub(crate) fn default_geometry() -> String {
+    "free".to_string()
 }
 
 impl ManifestEntry {

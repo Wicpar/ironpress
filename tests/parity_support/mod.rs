@@ -26,6 +26,7 @@
 //! split). This `mod.rs` is the thin orchestrator: it wires `run()`'s top-level
 //! flow and the per-fixture pipeline; all algorithms live in the submodules.
 
+mod calibrate;
 mod compare;
 mod config;
 mod diagnose;
@@ -43,7 +44,8 @@ use std::sync::Arc;
 use image::{ImageBuffer, Rgba};
 use rayon::prelude::*;
 
-use compare::{classify, diff_images};
+use calibrate::{assert_calibration, calibrate};
+use compare::{classify, compare_v2, diff_images};
 use diagnose::compute_attribution;
 use gate::{
     build_report, check_refs_freshness, collect_suspect_unsupported_pass, compute_coverage,
@@ -89,7 +91,7 @@ pub fn run() -> Result<(), String> {
     }
 
     // Discover + parse manifests.
-    let entries = match load_manifests(&manifest_dir, &parity_dir) {
+    let mut entries = match load_manifests(&manifest_dir, &parity_dir) {
         Ok(e) => e,
         Err(e) => return Err(e),
     };
@@ -100,10 +102,58 @@ pub fn run() -> Result<(), String> {
         );
     }
 
+    // Verdict mode: default LEGACY; V2 multi-gate comparator only under
+    // `PARITY_VERDICT=v2`. Read once so the per-fixture path is consistent.
+    let v2 = std::env::var("PARITY_VERDICT")
+        .map(|v| v.eq_ignore_ascii_case("v2"))
+        .unwrap_or(false);
+    if v2 {
+        eprintln!("parity: PARITY_VERDICT=v2 — using the V2 multi-gate comparator.");
+    }
+
+    // Fast dev loop (amendment A3): `PARITY_ONLY` is a comma list of substrings;
+    // when set, process only fixtures whose `<category>/<id>` contains any
+    // substring, and SKIP the regression gate (these are partial runs and must
+    // never inform the baseline). Empty/unset => normal full run.
+    let only_filter: Vec<String> = std::env::var("PARITY_ONLY")
+        .ok()
+        .map(|s| {
+            s.split(',')
+                .map(|p| p.trim().to_string())
+                .filter(|p| !p.is_empty())
+                .collect()
+        })
+        .unwrap_or_default();
+    let filtered_run = !only_filter.is_empty();
+    if filtered_run {
+        entries.retain(|e| {
+            let key = format!("{}/{}", e.category, e.id);
+            only_filter.iter().any(|f| key.contains(f.as_str()))
+        });
+        eprintln!(
+            "parity: PARITY_ONLY={:?} -> {} fixture(s); regression gate SKIPPED (dev run).",
+            only_filter,
+            entries.len()
+        );
+    }
+
     // Load the bundled font bytes ONCE into shared immutable data so the heavy
     // per-fixture work can run in parallel without re-reading the faces from disk
     // per render and without sharing any mutable converter across threads.
     let shared_fonts: SharedFonts = Arc::new(load_bundled_fonts());
+
+    // V2 calibration audit: render the rigid probes once and verify the page-origin
+    // offset is the expected fixed translation, BEFORE scoring any fixture. Drift
+    // aborts the run loudly. Skipped when pdftoppm is unavailable (nothing renders)
+    // or on a filtered dev run (probes may not be selected).
+    let calibration = if v2 && pdftoppm_available && !filtered_run {
+        match assert_calibration(&entries, &parity_dir, &refs_dir, &tmp_dir, &shared_fonts) {
+            Ok(c) => Some(c),
+            Err(e) => return Err(e),
+        }
+    } else {
+        None
+    };
 
     // Heavy per-fixture work (ironpress render -> pdftoppm raster -> image decode
     // -> bbox/diff -> classify) is embarrassingly parallel: each fixture builds
@@ -140,6 +190,7 @@ pub fn run() -> Result<(), String> {
                         &tmp_dir,
                         pdftoppm_available,
                         &fonts,
+                        v2,
                     )
                 }))
                 .unwrap_or_else(|_| {
@@ -186,6 +237,26 @@ pub fn run() -> Result<(), String> {
     report.suspect_unsupported_pass = suspect_unsupported_pass;
     report.stale_refs = stale_refs;
     report.refs_lock_present = refs_lock_present;
+    report.calibration = calibration;
+
+    // A filtered dev run (`PARITY_ONLY`) scores only a subset, so it must NOT
+    // overwrite the committed baseline `report.json` / `REPORT.md` (that would
+    // corrupt the baseline) and must NOT enforce the gate. Print the summary and
+    // return early.
+    if filtered_run {
+        if let Err(e) = write_html_reports(&reports_dir, &report) {
+            eprintln!("parity: WARNING could not write HTML reports: {e}");
+        }
+        println!(
+            "parity (PARTIAL/dev): {}P/{}p/{}F/{}U over {} filtered fixture(s) — baseline NOT written, gate SKIPPED.",
+            report.overall.pass,
+            report.overall.partial,
+            report.overall.fail,
+            report.overall.unknown,
+            report.overall.total
+        );
+        return Ok(());
+    }
 
     // ALWAYS write report.json + REPORT.md.
     write_report_json(&baseline_path, &report)?;
@@ -255,6 +326,7 @@ fn process_entry(
     tmp_dir: &Path,
     pdftoppm_available: bool,
     fonts: &[(&'static str, Vec<u8>)],
+    v2: bool,
 ) -> FixtureResult {
     let fixture = parity_dir.join(&entry.file);
     let html = match std::fs::read_to_string(&fixture) {
@@ -331,6 +403,32 @@ fn process_entry(
         // re-running gen-refs regenerates it.
         Err(e) => return with_sha(fixture_unknown(entry, format!("reference unreadable (regenerate): {e}"))),
     };
+
+    // V2 PATH (`PARITY_VERDICT=v2`): apply the fixed page-origin calibration, then
+    // run the §1.2 multi-detector pipeline. The verdict's status/diff_pct replace
+    // the legacy scoring; the classed overlay replaces the legacy diff image. The
+    // legacy block below is left entirely untouched for the default path.
+    if v2 {
+        let cand_cal = calibrate(&cand);
+        let outcome = compare_v2(&cand_cal, &reference, entry);
+        let diff_pct = util::round4(outcome.diff_pct);
+
+        let reports_diff = reports_dir
+            .join(&entry.category)
+            .join(format!("{}.diff.png", entry.id));
+        if let Some(parent) = reports_diff.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        let _ = outcome.overlay.save(&reports_diff);
+        if outcome.status != Status::Pass {
+            let out = diffs_dir.join(&entry.category).join(format!("{}.png", entry.id));
+            if let Some(parent) = out.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            let _ = outcome.overlay.save(&out);
+        }
+        return with_sha(report::fixture_base(entry, outcome.status, diff_pct, String::new()));
+    }
 
     // Compute each side's content bbox in the SHARED page coordinate space, then
     // take the UNION (min/max across both). Crop BOTH images to that identical

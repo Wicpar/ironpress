@@ -196,6 +196,10 @@ pub(crate) struct Report {
     /// claim can be made (every fixture is implicitly "unverified").
     #[serde(default)]
     pub(crate) refs_lock_present: bool,
+    /// V2 page-origin calibration audit (spec §1.3). `None` on the legacy path
+    /// (no calibration is applied); `Some` only on a `PARITY_VERDICT=v2` run.
+    #[serde(default)]
+    pub(crate) calibration: Option<Calibration>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -217,6 +221,23 @@ pub(crate) struct RefMismatch {
     pub(crate) expected_ref: String,
     /// Unclaimed ref PNG file names present in the same category dir.
     pub(crate) orphan_refs: Vec<String>,
+}
+
+/// V2 page-origin calibration audit (spec §1.3). Emitted once per V2 run from the
+/// deterministic rigid probes; a drift from `(4,4)±1` aborts the run loudly so a
+/// genuine margin regression is announced, never silently re-absorbed.
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub(crate) struct Calibration {
+    /// The fixed correction applied to every candidate (device px), [dx, dy].
+    pub(crate) offset_px: [i32; 2],
+    /// Same correction in CSS px.
+    pub(crate) offset_css: [f64; 2],
+    /// The raw offset actually measured from the probes (device px), [dx, dy].
+    pub(crate) measured_px: [i32; 2],
+    /// Max per-axis deviation of any probe from the expected offset (device px).
+    pub(crate) residual_px: i32,
+    /// Whether calibration drifted beyond tolerance (run aborts when true).
+    pub(crate) drifted: bool,
 }
 
 impl Report {

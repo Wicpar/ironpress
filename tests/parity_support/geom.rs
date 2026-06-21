@@ -148,6 +148,60 @@ pub(crate) fn union_bbox(a: BBox, b: BBox) -> BBox {
     )
 }
 
+// ---------------------------------------------------------------------------
+// Content mask (V2; spec §1.4)
+// ---------------------------------------------------------------------------
+
+/// A 1-bit-per-pixel content mask in row-major order: bit set iff the pixel is
+/// ink (`is_content`). Packed into `u64` words so the per-pixel classifier and
+/// the structural-edge dilation can test membership in O(1) without re-running
+/// `is_content`. Used only by the V2 comparator path.
+pub(crate) struct Mask {
+    pub(crate) w: u32,
+    pub(crate) h: u32,
+    bits: Vec<u64>,
+}
+
+impl Mask {
+    #[inline]
+    fn idx(&self, x: u32, y: u32) -> usize {
+        (y as usize) * (self.w as usize) + (x as usize)
+    }
+    /// Whether the pixel at `(x, y)` is ink. Out-of-bounds reads as `false`.
+    #[inline]
+    pub(crate) fn get(&self, x: u32, y: u32) -> bool {
+        if x >= self.w || y >= self.h {
+            return false;
+        }
+        let i = self.idx(x, y);
+        (self.bits[i >> 6] >> (i & 63)) & 1 == 1
+    }
+    #[inline]
+    fn set(&mut self, x: u32, y: u32) {
+        let i = self.idx(x, y);
+        self.bits[i >> 6] |= 1u64 << (i & 63);
+    }
+}
+
+/// Build the content mask of `img`: one set bit per ink pixel (`is_content`).
+pub(crate) fn content_mask(img: &RgbaImage) -> Mask {
+    let (w, h) = img.dimensions();
+    let words = ((w as usize * h as usize) + 63) / 64;
+    let mut m = Mask {
+        w,
+        h,
+        bits: vec![0u64; words.max(1)],
+    };
+    for y in 0..h {
+        for x in 0..w {
+            if is_content(img.get_pixel(x, y)) {
+                m.set(x, y);
+            }
+        }
+    }
+    m
+}
+
 /// Crop `img` to the inclusive rectangle `bb` in `img`'s OWN coordinate space,
 /// padding with white where the rectangle extends past the image bounds. Both
 /// ref and candidate are cropped to the SAME rectangle, so output dims match and
