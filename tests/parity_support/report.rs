@@ -89,6 +89,16 @@ pub(crate) struct FixtureResult {
     /// results and on pre-V2 baselines (the `serde(default)` keeps them parseable).
     #[serde(default)]
     pub(crate) diagnosis: Option<super::diagnose::Diagnosis>,
+    /// Per-concern sub-verdicts from the pluggable multi-verifier layer (spec §1).
+    /// ADDITIVE and non-gating: in Phase 1 these are the `RasterVerifier`'s three
+    /// concern opinions (Geometry/Appearance/Presence) that combine to `status`.
+    /// `#[serde(default)]` keeps pre-verifier baselines parseable.
+    #[serde(default)]
+    pub(crate) sub_verdicts: Vec<super::verify::SubVerdict>,
+    /// Recorded cross-verifier disagreements (spec §1.3). Empty in Phase 1 (a
+    /// single verifier cannot disagree with itself). ADDITIVE, non-gating.
+    #[serde(default)]
+    pub(crate) disagreements: Vec<super::verify::Disagreement>,
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug, Default)]
@@ -289,6 +299,8 @@ pub(crate) fn fixture_base(entry: &ManifestEntry, status: Status, diff_pct: f64,
         attribution: String::new(),
         html_sha256: String::new(),
         diagnosis: None,
+        sub_verdicts: Vec::new(),
+        disagreements: Vec::new(),
     }
 }
 

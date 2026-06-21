@@ -42,6 +42,7 @@ mod rasterize;
 mod render;
 mod report;
 mod util;
+mod verify;
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -437,10 +438,38 @@ fn process_entry(
         }
         let _ = outcome.overlay.save(&out);
     }
+    // Pluggable multi-verifier seam (spec §1.4). PHASE 1 = a PROVABLE NO-OP: the
+    // only verifier present is the `RasterVerifier` adapter, which re-partitions
+    // the ALREADY-COMPUTED `outcome` (its `tally`/`verdict`) into three concern
+    // sub-verdicts using the SAME `config.rs` gates — it does NOT re-run the
+    // comparator. With only the RasterVerifier, the combiner's WORST-of-concern
+    // status reproduces `outcome.status` exactly (see `verify/raster.rs` for the
+    // equivalence and `verify/goldens.rs` for the proof), so the committed
+    // baseline does not move. The Phase-2 `PdfGeometry` verifier (which reads the
+    // PDF bytes + sidecar) plugs into this same `verifiers` list; the ctx already
+    // carries the artifacts it will need.
+    let ctx = verify::VerifyCtx {
+        entry,
+        pdf: &pdf,
+        cand: &cand_cal,
+        reference: &reference,
+    };
+    let raster_verifier = verify::raster::RasterVerifier::from_outcome(&outcome, entry);
+    let verifiers: [&dyn verify::Verifier; 1] = [&raster_verifier];
+    let mut subs: Vec<verify::SubVerdict> = Vec::new();
+    for v in verifiers {
+        if v.applies(&ctx) {
+            subs.extend(v.verify(&ctx));
+        }
+    }
+    let combined = verify::combine::combine(&subs);
+
     // ADDITIVE: attach the V2 diagnosis (spec §2). The attribution prefix
     // (`via {dep}: …` for confounded fixtures) is applied later in `run()` by
     // `compute_attribution`, once every fixture's status is known.
-    let mut result = report::fixture_base(entry, outcome.status, diff_pct, String::new());
+    let mut result = report::fixture_base(entry, combined.status, diff_pct, String::new());
     result.diagnosis = Some(outcome.diagnosis);
+    result.sub_verdicts = subs;
+    result.disagreements = combined.disagreements;
     with_sha(result)
 }
