@@ -217,6 +217,17 @@ pub(crate) struct Report {
     /// claim can be made (every fixture is implicitly "unverified").
     #[serde(default)]
     pub(crate) refs_lock_present: bool,
+    /// Fixtures whose committed COORDINATE SIDECAR (`coords/<cat>/<id>.json`) is
+    /// STALE relative to `coords.lock`: the fixture HTML's SHA-256 differs from the
+    /// locked hash. Only sidecar-bearing fixtures are tracked (Phase 2b ships
+    /// sidecars for the starter set only); a fixture with no sidecar is never
+    /// flagged. Surfaced (not gated here) so CI can enforce regeneration with
+    /// `scripts/parity-gen-coords.sh`.
+    #[serde(default)]
+    pub(crate) stale_coords: Vec<StaleRef>,
+    /// Whether a `coords.lock` file was present and parsed.
+    #[serde(default)]
+    pub(crate) coords_lock_present: bool,
     /// V2 page-origin calibration audit (spec §1.3). `Some` on every scoring run;
     /// `None` only when pdftoppm is unavailable or on a filtered dev run.
     #[serde(default)]

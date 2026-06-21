@@ -324,7 +324,8 @@ fn all_subverdicts_are_raster_in_phase1() {
 
 use super::coords::{spec_fill_rect_pt, CoordBox, CoordSidecar, CoordText};
 use super::pdf_geom::{
-    extract_from_body, extract_geometry, verify_geometry_for_test, FillRect, PdfGeometry, TextRun,
+    extract_from_body, extract_geometry, verify_geometry_for_test, BorderRect, FillRect,
+    PdfGeometry, TextRun,
 };
 use super::Concern;
 
@@ -494,6 +495,59 @@ fn cand_from(
             .map(|(o, s)| TextRun { origin_pt: [o[0] + uniform.0, o[1] + uniform.1], size_pt: *s })
             .collect(),
     }
+}
+
+#[test]
+fn verifier_border_centerline_normalization_matches_chrome() {
+    // Phase-2b border-convention fix (the brief's border-segment-grouping caveat):
+    // Chrome's --print-to-pdf strokes a border as ONE centerline `re S` (inset
+    // half the border width from the outer edge), so the sidecar records the
+    // CENTERLINE rect. ironpress draws the four sides as separate centered strokes,
+    // which the tokenizer reconstructs to the OUTER border-box bbox + width. The
+    // verifier insets the candidate's outer bbox by half the width to recover the
+    // centerline; the two then match EXACTLY.
+    //
+    // Probe-border-box ground truth (200x140px border-box, 12px border):
+    //   ironpress outer bbox = [28.8, 28.8, 150, 105] pt, width 9pt
+    //   Chrome centerline    = [32.25, 32.25, 141, 96] pt  (= outer inset 4.5pt;
+    //                          ~1.05pt frame offset cancelled by the aligner)
+    let sc = CoordSidecar {
+        schema: 1,
+        frame: "chrome-ref-pt".into(),
+        page_pt: [612.0, 792.0],
+        boxes: vec![],
+        borders: vec![CoordBox {
+            role: "border".into(),
+            rect_pt: [32.25, 32.25, 141.0, 96.0],
+            selector: None,
+        }],
+        text_runs: vec![],
+    };
+    let cand = PdfGeometry {
+        fills: vec![],
+        borders: vec![BorderRect { rect_pt: [28.8, 28.8, 150.0, 105.0], width_pt: 9.0 }],
+        clips: vec![],
+        text_runs: vec![],
+    };
+    let v = verify_geometry_for_test(&cand, &sc);
+    assert_eq!(
+        v.status,
+        Status::Pass,
+        "outer-bbox border insets to Chrome centerline -> PASS (mag {}, {})",
+        v.magnitude, v.headline
+    );
+
+    // A border genuinely the wrong size (size is frame-INDEPENDENT) must still
+    // FAIL: shrink the candidate outer box by 12pt of width with the SAME stroke
+    // width, so the centerline w/h are ~12pt off -> FAIL (not aligned away).
+    let cand_wrong = PdfGeometry {
+        fills: vec![],
+        borders: vec![BorderRect { rect_pt: [28.8, 28.8, 138.0, 93.0], width_pt: 9.0 }],
+        clips: vec![],
+        text_runs: vec![],
+    };
+    let vw = verify_geometry_for_test(&cand_wrong, &sc);
+    assert_eq!(vw.status, Status::Fail, "12pt-undersized border -> FAIL ({})", vw.headline);
 }
 
 #[test]

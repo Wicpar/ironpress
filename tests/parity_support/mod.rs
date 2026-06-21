@@ -53,8 +53,8 @@ use calibrate::{assert_calibration, calibrate};
 use compare::compare_v2;
 use diagnose::compute_attribution;
 use gate::{
-    build_report, check_refs_freshness, collect_suspect_unsupported_pass, compute_coverage,
-    compute_fix_first, enforce_gate,
+    build_report, check_coords_freshness, check_refs_freshness, collect_suspect_unsupported_pass,
+    compute_coverage, compute_fix_first, enforce_gate,
 };
 use manifest::{find_ref_mismatches, load_manifests, ManifestEntry};
 use render::{check_pdf_valid, load_bundled_fonts, render_pdf, SharedFonts};
@@ -227,6 +227,9 @@ pub fn run() -> Result<(), String> {
     // READ + verify). Non-gating here — surfaced in report.json + REPORT.md + a
     // loud WARNING line; CI enforces the hard fail.
     let (stale_refs, refs_lock_present) = check_refs_freshness(&parity_dir, &results);
+    // Sidecar (coords.lock) freshness — same machinery, only sidecar-bearing
+    // fixtures tracked (Phase 2b ships the starter set). Non-gating; surfaced.
+    let (stale_coords, coords_lock_present) = check_coords_freshness(&parity_dir, &results);
 
     let mut report = build_report(results, pdftoppm_available);
     report.coverage = compute_coverage(&report);
@@ -235,6 +238,8 @@ pub fn run() -> Result<(), String> {
     report.suspect_unsupported_pass = suspect_unsupported_pass;
     report.stale_refs = stale_refs;
     report.refs_lock_present = refs_lock_present;
+    report.stale_coords = stale_coords;
+    report.coords_lock_present = coords_lock_present;
     report.calibration = calibration;
 
     // A filtered dev run (`PARITY_ONLY`) scores only a subset, so it must NOT
@@ -300,6 +305,15 @@ pub fn run() -> Result<(), String> {
             "parity: WARNING {} STALE reference(s) (fixture changed since ref was generated) — \
              regenerate with scripts/parity-gen-refs.sh: {}",
             report.stale_refs.len(),
+            ids.join(", ")
+        );
+    }
+    if report.coords_lock_present && !report.stale_coords.is_empty() {
+        let ids: Vec<&str> = report.stale_coords.iter().map(|s| s.id.as_str()).collect();
+        eprintln!(
+            "parity: WARNING {} STALE coordinate sidecar(s) (fixture changed since sidecar was \
+             generated) — regenerate with scripts/parity-gen-coords.sh: {}",
+            report.stale_coords.len(),
             ids.join(", ")
         );
     }
@@ -470,6 +484,24 @@ fn process_entry(
         }
     }
     let combined = verify::combine::combine(&subs);
+
+    // Surface the per-verifier sub-verdicts (incl. the new PdfGeometry axis) under
+    // the same PARITY_DEBUG_TALLY flag the raster tally uses — non-gating, dev only.
+    if std::env::var("PARITY_DEBUG_TALLY").is_ok() {
+        for s in &subs {
+            eprintln!(
+                "subverdict {}/{}: {:?} {:?}={} mag={:.3} :: {}",
+                entry.category, entry.id, s.verifier, s.concern, s.status.as_str(), s.magnitude, s.headline
+            );
+        }
+        for d in &combined.disagreements {
+            eprintln!(
+                "disagree   {}/{}: {:?} auth={}({:?}) chal={}({:?}) :: {}",
+                entry.category, entry.id, d.concern, d.authoritative.as_str(), d.authoritative_by,
+                d.challenger.as_str(), d.challenger_by, d.note
+            );
+        }
+    }
 
     // ADDITIVE: attach the V2 diagnosis (spec §2). The attribution prefix
     // (`via {dep}: …` for confounded fixtures) is applied later in `run()` by

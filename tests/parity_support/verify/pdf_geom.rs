@@ -627,6 +627,25 @@ fn box_prim(b: &CoordBox) -> Prim {
 fn fill_prim(r: &[f64; 4]) -> Prim {
     Prim { pos: [r[0], r[1]], size: [r[2], r[3]] }
 }
+/// Reduce a candidate `BorderRect` to its CENTERLINE rect — the convention
+/// Chrome's `--print-to-pdf` uses for borders (it emits one `x y w h re S`
+/// stroked at the border centerline, inset half the border width from the outer
+/// edge). ironpress instead draws the four sides as separate centered strokes,
+/// which `flush_border` reconstructs to the OUTER border-box bbox (the segment
+/// endpoints span the full outer rect) + the stroke `width_pt`. To compare the
+/// two renderers' borders on the SAME reference rectangle (the brief's
+/// border-segment-grouping caveat), we inset ironpress's outer bbox inward by
+/// half the stroke width on each side, recovering the centerline rect Chrome
+/// records in the sidecar. Sizes then match EXACTLY (outer − width = centerline)
+/// and only the ~1pt whole-page frame offset remains (cancelled by the aligner).
+fn border_prim(b: &BorderRect) -> Prim {
+    let half = b.width_pt / 2.0;
+    let [x, y, w, h] = b.rect_pt;
+    Prim {
+        pos: [x + half, y + half],
+        size: [(w - b.width_pt).max(0.0), (h - b.width_pt).max(0.0)],
+    }
+}
 fn text_prim(t: &CoordText) -> Prim {
     Prim { pos: t.origin_pt, size: [t.size_pt, f64::NAN] }
 }
@@ -658,7 +677,7 @@ fn verify_geometry(cand: &PdfGeometry, sidecar: &CoordSidecar) -> SubVerdict {
     let exp_text: Vec<Prim> = sidecar.text_runs.iter().map(text_prim).collect();
 
     let cand_fills: Vec<Prim> = cand.fills.iter().map(|f| fill_prim(&f.rect_pt)).collect();
-    let cand_borders: Vec<Prim> = cand.borders.iter().map(|b| fill_prim(&b.rect_pt)).collect();
+    let cand_borders: Vec<Prim> = cand.borders.iter().map(border_prim).collect();
     let cand_text: Vec<Prim> = cand.text_runs.iter().map(run_prim).collect();
 
     let groups: [(&str, &[Prim], &[Prim]); 3] = [
@@ -743,8 +762,17 @@ fn verify_geometry(cand: &PdfGeometry, sidecar: &CoordSidecar) -> SubVerdict {
     };
 
     let headline = if gross_offset {
+        // A gross median offset means the content is uniformly displaced (e.g. a
+        // dropped container margin/padding). The worst per-element delta is also
+        // reported so the report distinguishes a pure shift from a mixed failure
+        // (shift + mis-sized boxes), rather than implying ONLY the page moved.
+        let extra = if worst_label.is_empty() {
+            String::new()
+        } else {
+            format!("; worst {worst_label}")
+        };
         format!(
-            "pdf-geom: gross page offset {off_mag:.3}pt (> {MAX_ALIGN_PT}pt) — page misplaced"
+            "pdf-geom: gross page offset {off_mag:.3}pt (> {MAX_ALIGN_PT}pt) — content displaced{extra}"
         )
     } else if status == Status::Fail && missing {
         format!("pdf-geom FAIL: {worst_label}")
