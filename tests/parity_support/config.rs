@@ -91,7 +91,14 @@ pub(crate) const RESIDUAL_JITTER_PX: i32 = 1;
 /// recoloured displaced edge is NOT forgiven) and CANNOT mask a consistent shift or
 /// size change: those are caught independently by the bbox-extent gate
 /// (`G_EDGE_CSS`, from `edge_delta_css`), which does not depend on this forgiveness.
-/// ~2 device px = ~0.64 CSS px, below the 1.0 CSS-px edge PASS bound.
+/// ~2 device px = ~0.64 CSS px, below the 1.0 CSS-px edge PASS bound. Kept
+/// conservative: widening to 3 only flipped one fixture (monospace FAIL->PARTIAL,
+/// likely a real font-mapping difference) and did NOT reduce the residual ColorErr
+/// on correctly-rendered text (that residual is genuine minor glyph-weight/border
+/// difference, not forgivable AA — so it is honestly reported as PARTIAL, not masked).
+/// (Distinct from the rejected global best-shift: this is a LOCAL, colour-gated,
+/// bidirectional same-ink test that cannot mask a whole-element shift — that is the
+/// bbox-extent gate's job.)
 pub(crate) const EDGE_JITTER_PX: i32 = 2;
 
 /// V2 per-pixel match threshold (pixelmatch `threshold`, 0..1), TIGHTER than the
