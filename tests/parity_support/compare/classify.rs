@@ -9,7 +9,7 @@
 
 use image::RgbaImage;
 
-use super::super::config::{t_aa, t_match, COLOR_DE_PASS, EDGE_JITTER_PX, RESIDUAL_JITTER_PX};
+use super::super::config::{t_aa, t_match, COLOR_DE_PASS, EDGE_JITTER_PX};
 use super::super::geom::Mask;
 use super::color::{ciede2000, srgb_to_lab};
 use super::color_delta;
@@ -173,10 +173,17 @@ pub(crate) fn classify_pixels(
                 }
             } else if ink_c
                 && ink_r
-                && color_present_near(cand, r, x, y, RESIDUAL_JITTER_PX, tm)
-                && color_present_near(reference, c, x, y, RESIDUAL_JITTER_PX, tm)
+                && color_present_near(cand, r, x, y, EDGE_JITTER_PX, tm)
+                && color_present_near(reference, c, x, y, EDGE_JITTER_PX, tm)
             {
-                // 5. GeomShift — boundary displaced ≤1px (both ink, mutual match).
+                // 5. GeomShift — an offset edge/AA-ramp: both ink, differing, but
+                // each side's tone reappears within EDGE_JITTER_PX in the other image
+                // (mutual match). This forgives cross-rasterizer glyph-edge AA whose
+                // intermediate tones land a px or two apart (the #1 text false-FAIL),
+                // WITHOUT laundering a solid recolour: a uniform recolour has NO
+                // matching tone nearby (the bidirectional match fails in solid
+                // regions), so it falls through to ColorErr below. A solid recolour
+                // whose YIQ delta is small is already caught as ColorErr above.
                 PixelClass::GeomShift
             } else {
                 // 6. ColorErr — aligned recolour / wrong-value / colour-space.

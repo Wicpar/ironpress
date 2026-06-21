@@ -47,10 +47,16 @@ pub(crate) fn verdict(t: &ClassTally, regions: &[DiffRegion], entry: &ManifestEn
         .any(|r| r.dominant == PixelClass::Missing)
         && t.missing_pct >= 50.0;
 
-    // (2) Hard colour: a ColorErr region above the area floor with ΔE >= FAIL.
+    // (2) Hard colour: a SOLID block dominated by a real colour error — a ColorErr-
+    // DOMINANT region above the area floor with ΔE >= FAIL. We deliberately do NOT
+    // fire on the aggregate (`color_de >= FAIL && color_pct >= floor`): scattered
+    // glyph-edge ColorErr from cross-rasterizer text AA has a huge ΔE (black-on-white)
+    // but is NOT a recolour — those pixels sit in GeomShift-DOMINANT regions, so the
+    // dominant-class condition excludes them while a genuinely recoloured fill or
+    // recoloured glyph (ColorErr-dominant region) still hard-fails here.
     let hard_color = regions.iter().any(|r| {
         r.dominant == PixelClass::ColorErr && r.area_pct >= G_COLOR_PCT.0 && r.delta_e >= COLOR_DE_FAIL
-    }) || (t.color_de >= COLOR_DE_FAIL && t.color_pct >= G_COLOR_PCT.0);
+    });
 
     let any_fail = whole_missing
         || hard_color
