@@ -17,6 +17,8 @@
 //! proof), so the committed baseline does not move.
 
 pub(crate) mod combine;
+pub(crate) mod coords;
+pub(crate) mod pdf_geom;
 pub(crate) mod raster;
 
 #[cfg(test)]
@@ -26,27 +28,33 @@ use serde::{Deserialize, Serialize};
 
 use super::manifest::ManifestEntry;
 use super::report::Status;
+use coords::CoordSidecar;
 
 /// What a verifier is asked to look at: the per-fixture artifacts the harness
 /// already produced in `process_entry`. A verifier reads only the fields it needs.
 ///
-/// PHASE 1: only `entry` is consumed (by `RasterVerifier`, which carries the
-/// already-computed signals it needs). `pdf`/`cand`/`reference` are threaded
-/// through for the Phase 2 `PdfGeometry` verifier (which reads the candidate PDF
-/// bytes + raster); they are `#[allow(dead_code)]` until then so the seam in
-/// `process_entry` is the same shape the spec (§1.4) prescribes.
+/// PHASE 1: only `entry` is consumed (by `RasterVerifier`). PHASE 2a: `pdf` +
+/// `coords` are now read by the `PdfGeometry` verifier (it tokenizes the candidate
+/// PDF bytes and asserts them against the committed sidecar). `cand`/`reference`
+/// remain threaded for a future raster-side cross-check; they are
+/// `#[allow(dead_code)]` until then so the seam in `process_entry` keeps the same
+/// shape the spec (§1.4) prescribes.
 pub(crate) struct VerifyCtx<'a> {
     #[allow(dead_code)]
     pub(crate) entry: &'a ManifestEntry,
-    /// Candidate PDF bytes (already in memory in `process_entry`). Phase 2.
-    #[allow(dead_code)]
+    /// Candidate PDF bytes (already in memory in `process_entry`). Read by
+    /// `PdfGeometry` (the vector geometry tokenizer).
     pub(crate) pdf: &'a [u8],
-    /// CALIBRATED candidate raster. Phase 2.
+    /// CALIBRATED candidate raster. (Future raster cross-check.)
     #[allow(dead_code)]
     pub(crate) cand: &'a image::RgbaImage,
-    /// Reference raster. Phase 2.
+    /// Reference raster. (Future raster cross-check.)
     #[allow(dead_code)]
     pub(crate) reference: &'a image::RgbaImage,
+    /// Expected pt geometry, if a sidecar is committed for this fixture. `None`
+    /// makes `PdfGeometry` not apply (geometry authority stays with raster).
+    /// PHASE 2a: always `None` (no sidecar files exist yet).
+    pub(crate) coords: Option<&'a CoordSidecar>,
 }
 
 /// A single verifier's opinion on ONE fixture, on ONE concern (a "gate axis").

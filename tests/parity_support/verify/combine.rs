@@ -113,11 +113,19 @@ pub(crate) fn combine(subs: &[SubVerdict]) -> CombinedVerdict {
             .map(|s| s.status)
             .unwrap_or(Status::Unknown);
 
-        // Soft cross-signal downgrade (§1.3): a NON-authoritative verifier that
-        // FAILs on this concern downgrades a PASS to PARTIAL and is recorded as a
-        // disagreement. It can never force a Fail and never raises a status. With
-        // only RasterDiff present (Phase 1) there are no challengers, so this loop
-        // records nothing and `axis_status == auth_status`.
+        // Cross-signal challengers (§1.3): a NON-authoritative verifier with a
+        // WORSE opinion on this concern is recorded as a disagreement and can
+        // SOFT-DOWNGRADE a PASS to PARTIAL — EXCEPT the one case the exact verifier
+        // exists to override: RasterDiff's GEOMETRY opinion when PdfGeometry holds
+        // authority. That raster geometry signal is the noisy `content_bbox` scan
+        // (the structural ~1px false-fail); since PdfGeometry has measured the box
+        // EXACTLY in pt, the raster jitter is DISCARDED for the verdict (no
+        // downgrade) and only recorded as a disagreement. This is exactly how the
+        // ~1px false-fail is fixed (PdfGeom PASS-exact + RasterGeom FAIL-jitter ->
+        // PASS + disagreement). A challenger can never force a Fail and never raises
+        // a status. PHASE 1/2a (no sidecar): only RasterDiff is present, so it owns
+        // every axis, there are no challengers, and `axis_status == auth_status` —
+        // the loop records nothing (no-op).
         let mut axis_status = auth_status;
         for s in subs {
             if s.concern != concern || s.verifier == owner {
@@ -137,8 +145,14 @@ pub(crate) fn combine(subs: &[SubVerdict]) -> CombinedVerdict {
                     challenger_by: s.verifier,
                     note: s.headline.clone(),
                 });
-                // Downgrade Pass->Partial only; never below Partial, never raise.
-                if axis_status == Status::Pass {
+                // The discarded-jitter exception: RasterDiff challenging Geometry
+                // owned by PdfGeometry is forgiven outright (no downgrade).
+                let raster_geom_jitter = concern == Concern::Geometry
+                    && owner == VerifierKind::PdfGeometry
+                    && s.verifier == VerifierKind::RasterDiff;
+                // Otherwise, soft-downgrade Pass->Partial only; never below Partial,
+                // never raise.
+                if !raster_geom_jitter && axis_status == Status::Pass {
                     axis_status = Status::Partial;
                 }
             }

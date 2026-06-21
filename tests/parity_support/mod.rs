@@ -448,14 +448,21 @@ fn process_entry(
     // baseline does not move. The Phase-2 `PdfGeometry` verifier (which reads the
     // PDF bytes + sidecar) plugs into this same `verifiers` list; the ctx already
     // carries the artifacts it will need.
+    // PHASE 2a: load the committed coordinate sidecar (if any). NO sidecar files
+    // exist yet, so this is `None` for every fixture -> `PdfGeomVerifier.applies()`
+    // is false everywhere and the combined status is still byte-identical to today
+    // (proven no-op). Sidecar generation is Phase 2b.
+    let coords = verify::coords::load_coords_sidecar(parity_dir, entry);
     let ctx = verify::VerifyCtx {
         entry,
         pdf: &pdf,
         cand: &cand_cal,
         reference: &reference,
+        coords: coords.as_ref(),
     };
     let raster_verifier = verify::raster::RasterVerifier::from_outcome(&outcome, entry);
-    let verifiers: [&dyn verify::Verifier; 1] = [&raster_verifier];
+    let pdf_geom_verifier = verify::pdf_geom::PdfGeomVerifier;
+    let verifiers: [&dyn verify::Verifier; 2] = [&raster_verifier, &pdf_geom_verifier];
     let mut subs: Vec<verify::SubVerdict> = Vec::new();
     for v in verifiers {
         if v.applies(&ctx) {
