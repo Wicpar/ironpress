@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::config::{CHANNEL_TOL, DPI, SCORE_EPSILON, WHITE_TOL};
+use super::config::{DPI, SCORE_EPSILON, WHITE_TOL};
 use super::report::{
     CategoryReport, Counts, Coverage, EnvBlock, FeatureReport, FixFirst, FixtureResult, Overall,
     Report, StaleRef, Status,
@@ -190,7 +190,9 @@ pub(crate) fn build_report(mut results: Vec<FixtureResult>, pdftoppm_available: 
         schema_version: 4,
         env: EnvBlock {
             dpi: DPI,
-            channel_tol: CHANNEL_TOL,
+            // Legacy channel tolerance removed in C6; retained as 0 for schema
+            // back-compat (see EnvBlock::channel_tol).
+            channel_tol: 0,
             white_tol: WHITE_TOL,
             pdftoppm_available,
         },

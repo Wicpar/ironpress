@@ -1,11 +1,14 @@
-//! Raster geometry: content detection, bounding boxes, union/crop, the clamped
-//! small-offset registration search, and image translation.
+//! Raster geometry: content detection, bounding boxes, union/crop, content masks,
+//! and image translation.
 //!
 //! Extracted verbatim from the former monolithic `mod.rs` (C1 mechanical split).
+//! The clamped best-shift registration search (`best_registration_offset`) was
+//! removed in C6 — the V2 path uses a single fixed page-origin calibration and
+//! never searches per-fixture (that masked real layout bugs).
 
 use image::{ImageBuffer, Rgba, RgbaImage};
 
-use super::config::{MAX_REG, WHITE_TOL};
+use super::config::WHITE_TOL;
 
 pub(crate) fn is_content(px: &Rgba<u8>) -> bool {
     let [r, g, b, _] = px.0;
@@ -44,69 +47,11 @@ pub(crate) fn content_bbox(img: &RgbaImage) -> Option<BBox> {
     }
 }
 
-/// Pick the integer translation `(dx, dy)` within `±MAX_REG` that best aligns the
-/// candidate onto the reference, by minimizing a cheap per-pixel colour
-/// difference over the reference's content region. This cancels the universal
-/// page-origin offset (and 1–2px cross-rasterizer edge rounding) far more
-/// accurately than the single bbox-corner estimate, which systematically left a
-/// thin mismatch frame around content that was actually identical.
-///
-/// Safety: the search is bounded by `±MAX_REG`, so a genuine layout shift larger
-/// than that window still leaves a residual and is NOT masked (same guarantee as
-/// the corner-based offset). Sampled on a stride for speed — the chosen offset
-/// then drives the full perceptual diff. `dx, dy` follow `shift_image`'s
-/// convention (candidate pixel `(x, y)` moves to `(x + dx, y + dy)`), so the
-/// candidate pixel landing at reference position `(x, y)` is `(x - dx, y - dy)`.
-pub(crate) fn best_registration_offset(cand: &RgbaImage, reference: &RgbaImage, rb: BBox) -> (i32, i32) {
-    const STRIDE: u32 = 3;
-    const COLOR_DELTA: i32 = 60;
-    let (cw, ch) = cand.dimensions();
-    let (min_x, min_y, max_x, max_y) = rb;
-    let mut best_cost = i64::MAX;
-    let mut best = (0, 0);
-    let mut best_mag = i32::MAX;
-    for dy in -MAX_REG..=MAX_REG {
-        for dx in -MAX_REG..=MAX_REG {
-            let mut cost: i64 = 0;
-            let mut y = min_y;
-            while y <= max_y {
-                let mut x = min_x;
-                while x <= max_x {
-                    let rp = reference.get_pixel(x, y).0;
-                    let sx = x as i32 - dx;
-                    let sy = y as i32 - dy;
-                    let cp = if sx >= 0 && sy >= 0 && (sx as u32) < cw && (sy as u32) < ch {
-                        cand.get_pixel(sx as u32, sy as u32).0
-                    } else {
-                        [255, 255, 255, 255]
-                    };
-                    let d = (rp[0] as i32 - cp[0] as i32).abs()
-                        + (rp[1] as i32 - cp[1] as i32).abs()
-                        + (rp[2] as i32 - cp[2] as i32).abs();
-                    if d > COLOR_DELTA {
-                        cost += 1;
-                    }
-                    x += STRIDE;
-                }
-                y += STRIDE;
-            }
-            // On ties prefer the smallest-magnitude offset so equal-cost
-            // alignments don't introduce a spurious shift.
-            let mag = dx * dx + dy * dy;
-            if cost < best_cost || (cost == best_cost && mag < best_mag) {
-                best_cost = cost;
-                best_mag = mag;
-                best = (dx, dy);
-            }
-        }
-    }
-    best
-}
-
 /// Translate `img` by `(dx, dy)` pixels on a white background (same dimensions),
-/// so registered content lands at the reference's page position before cropping.
-/// Out-of-frame source pixels become white; this is only ever called with the
-/// small clamped registration offset, so at most `MAX_REG` px is lost per edge.
+/// so calibrated content lands at the reference's page position before cropping.
+/// Out-of-frame source pixels become white. Used by the V2 calibration step
+/// (`calibrate::calibrate` applies the fixed `-GLOBAL_OFFSET` shift), so only a
+/// few px is lost per edge.
 pub(crate) fn shift_image(img: &RgbaImage, dx: i32, dy: i32) -> RgbaImage {
     if dx == 0 && dy == 0 {
         return img.clone();
@@ -123,19 +68,6 @@ pub(crate) fn shift_image(img: &RgbaImage, dx: i32, dy: i32) -> RgbaImage {
         }
     }
     out
-}
-
-/// Translate an inclusive bbox by `(dx, dy)`, clamping to the image bounds so the
-/// shifted box stays valid for `union_bbox`/`crop_rect`. Matches `shift_image`.
-pub(crate) fn shift_bbox(bb: BBox, dx: i32, dy: i32, dims: (u32, u32)) -> BBox {
-    let (w, h) = dims;
-    let clamp = |v: i32, hi: u32| v.clamp(0, hi.saturating_sub(1) as i32) as u32;
-    (
-        clamp(bb.0 as i32 + dx, w),
-        clamp(bb.1 as i32 + dy, h),
-        clamp(bb.2 as i32 + dx, w),
-        clamp(bb.3 as i32 + dy, h),
-    )
 }
 
 /// Union of two inclusive bboxes (min of mins, max of maxes).

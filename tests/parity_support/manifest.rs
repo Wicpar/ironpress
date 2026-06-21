@@ -8,9 +8,6 @@ use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
 
-use super::config::{
-    DEFAULT_PARTIAL_PCT, DEFAULT_PASS_PCT, NOISE_FLOOR_PARTIAL_PCT, NOISE_FLOOR_PASS_PCT,
-};
 use super::report::RefMismatch;
 use super::util::strip_comments;
 
@@ -75,19 +72,11 @@ pub(crate) fn default_geometry() -> String {
     "free".to_string()
 }
 
-impl ManifestEntry {
-    pub(crate) fn pass_threshold(&self) -> f64 {
-        self.pass_threshold_pct
-            .unwrap_or(DEFAULT_PASS_PCT)
-            .max(NOISE_FLOOR_PASS_PCT)
-    }
-    pub(crate) fn partial_threshold(&self) -> f64 {
-        self.partial_threshold_pct
-            .unwrap_or(DEFAULT_PARTIAL_PCT)
-            .max(NOISE_FLOOR_PARTIAL_PCT)
-            .max(self.pass_threshold())
-    }
-}
+// NOTE (C6): the legacy `pass_threshold()`/`partial_threshold()` accessors were
+// removed with the legacy comparator. The V2 verdict reads the raw
+// `pass_threshold_pct`/`partial_threshold_pct` Option fields directly (only to
+// RELAX `G_COLOR_PCT`; see `compare::verdict`), so no floor-clamped accessor is
+// needed.
 
 // ---------------------------------------------------------------------------
 // Manifest loading + validation

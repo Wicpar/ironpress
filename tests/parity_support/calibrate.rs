@@ -79,8 +79,9 @@ pub(crate) fn check_probe_offset(cand_bb: BBox, ref_bb: BBox) -> Result<i32, Str
 /// translation. On any violation, returns an `Err` (the run aborts loudly); on
 /// success, returns the audited `Calibration`.
 ///
-/// This is CALLED only from `run()` when `PARITY_VERDICT=v2`; the golden tests
-/// exercise the pure `check_probe_offset` directly (they do not render).
+/// This is CALLED from `run()` on every scoring run (pdftoppm available, not a
+/// filtered dev run); the golden tests exercise the pure `check_probe_offset`
+/// directly (they do not render).
 pub(crate) fn assert_calibration(
     entries: &[ManifestEntry],
     parity_dir: &Path,
