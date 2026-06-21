@@ -30,11 +30,13 @@ pub(crate) fn calibrate(cand: &image::RgbaImage) -> image::RgbaImage {
 /// of `GLOBAL_OFFSET ± PROBE_JITTER_PX` (proves zero scale). Returns the max
 /// per-axis deviation from the expected offset on success, or an error string.
 pub(crate) fn check_probe_offset(cand_bb: BBox, ref_bb: BBox) -> Result<i32, String> {
-    // dTL = ref.tl - cand.tl ; dBR = ref.br - cand.br.
-    let dtl_x = ref_bb.0 as i32 - cand_bb.0 as i32;
-    let dtl_y = ref_bb.1 as i32 - cand_bb.1 as i32;
-    let dbr_x = ref_bb.2 as i32 - cand_bb.2 as i32;
-    let dbr_y = ref_bb.3 as i32 - cand_bb.3 as i32;
+    // d = cand - ref (ironpress content sits +GLOBAL_OFFSET PAST the Chrome ref —
+    // 120px margin vs ~116px — so the candidate box is at the LARGER coordinate;
+    // `calibrate` then shifts the candidate by -GLOBAL_OFFSET to land on the ref).
+    let dtl_x = cand_bb.0 as i32 - ref_bb.0 as i32;
+    let dtl_y = cand_bb.1 as i32 - ref_bb.1 as i32;
+    let dbr_x = cand_bb.2 as i32 - ref_bb.2 as i32;
+    let dbr_y = cand_bb.3 as i32 - ref_bb.3 as i32;
 
     let lo = GLOBAL_OFFSET.0 - PROBE_JITTER_PX;
     let hi = GLOBAL_OFFSET.0 + PROBE_JITTER_PX;
@@ -113,8 +115,8 @@ pub(crate) fn assert_calibration(
             Ok(dev) => {
                 max_dev = max_dev.max(dev);
                 measured = (
-                    ref_bb.0 as i32 - cand_bb.0 as i32,
-                    ref_bb.1 as i32 - cand_bb.1 as i32,
+                    cand_bb.0 as i32 - ref_bb.0 as i32,
+                    cand_bb.1 as i32 - ref_bb.1 as i32,
                 );
                 probed += 1;
             }

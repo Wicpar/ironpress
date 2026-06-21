@@ -84,6 +84,15 @@ pub(crate) const PROBE_JITTER_PX: i32 = 1;
 /// Post-calibration sub-pixel rounding band: a residual displacement within this
 /// radius is classed `GeomShift` (counted, never zeroed), not `ColorErr`.
 pub(crate) const RESIDUAL_JITTER_PX: i32 = 1;
+/// Cross-rasterizer edge-jitter radius (device px). A `Missing`/`Extra` pixel whose
+/// SAME-COLOUR ink reappears within this radius in the other image is a displaced
+/// glyph/border edge (two rasterizers place the same stroke a px or two apart), not
+/// real missing/extra content — it is forgiven as `AaEdge`. This is ΔE-gated (a
+/// recoloured displaced edge is NOT forgiven) and CANNOT mask a consistent shift or
+/// size change: those are caught independently by the bbox-extent gate
+/// (`G_EDGE_CSS`, from `edge_delta_css`), which does not depend on this forgiveness.
+/// ~2 device px = ~0.64 CSS px, below the 1.0 CSS-px edge PASS bound.
+pub(crate) const EDGE_JITTER_PX: i32 = 2;
 
 /// V2 per-pixel match threshold (pixelmatch `threshold`, 0..1), TIGHTER than the
 /// legacy 0.12. Only used by the V2 path's `t_match()`.

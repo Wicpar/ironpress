@@ -9,7 +9,7 @@
 
 use image::RgbaImage;
 
-use super::super::config::{t_aa, t_match, COLOR_DE_PASS, RESIDUAL_JITTER_PX};
+use super::super::config::{t_aa, t_match, COLOR_DE_PASS, EDGE_JITTER_PX, RESIDUAL_JITTER_PX};
 use super::super::geom::Mask;
 use super::color::{ciede2000, srgb_to_lab};
 use super::color_delta;
@@ -53,6 +53,48 @@ fn color_present_near(img: &RgbaImage, target: &image::Rgba<u8>, x: u32, y: u32,
                 continue;
             }
             if color_delta(target, img.get_pixel(nx as u32, ny as u32), false).abs() <= budget {
+                return true;
+            }
+        }
+    }
+    false
+}
+
+/// Whether the SAME-COLOUR ink as `target` reappears within `radius` of `(x,y)` in
+/// `img` (only pixels that are ink per `mask` count). "Same colour" = ΔE2000 within
+/// the JND (`COLOR_DE_PASS`), with a cheap YIQ pre-filter so the ΔE is computed only
+/// for near-colour neighbours. Used to forgive a displaced glyph/border edge: a
+/// `Missing`/`Extra` fringe pixel whose ink merely moved a px or two (cross-rasterizer
+/// jitter) — NOT a recolour (ΔE-gated) and NOT a consistent shift/size change (those
+/// are caught by the bbox-extent gate, independent of this test).
+fn ink_color_present_near(
+    img: &RgbaImage,
+    mask: &Mask,
+    target: &image::Rgba<u8>,
+    x: u32,
+    y: u32,
+    radius: i32,
+) -> bool {
+    let (w, h) = img.dimensions();
+    let aa = t_aa();
+    let tlab = srgb_to_lab([target[0], target[1], target[2]]);
+    for dy in -radius..=radius {
+        for dx in -radius..=radius {
+            let nx = x as i32 + dx;
+            let ny = y as i32 + dy;
+            if nx < 0 || ny < 0 || nx as u32 >= w || ny as u32 >= h {
+                continue;
+            }
+            let (nx, ny) = (nx as u32, ny as u32);
+            if !mask.get(nx, ny) {
+                continue; // neighbour must itself be ink
+            }
+            let p = img.get_pixel(nx, ny);
+            // Cheap YIQ pre-filter: skip the ΔE for clearly-different colours.
+            if color_delta(target, p, false).abs() > aa {
+                continue;
+            }
+            if ciede2000(tlab, srgb_to_lab([p[0], p[1], p[2]])) <= COLOR_DE_PASS {
                 return true;
             }
         }
@@ -110,11 +152,25 @@ pub(crate) fn classify_pixels(
                 // 2. AaEdge — only inside the shared edge band.
                 PixelClass::AaEdge
             } else if ink_r && !ink_c {
-                // 3. Missing — reference paints, candidate is paper-white.
-                PixelClass::Missing
+                // 3. Missing — reference paints, candidate is paper-white. UNLESS
+                // the same-colour ink reappears within EDGE_JITTER_PX in the
+                // candidate: then it is a displaced glyph/border edge (cross-
+                // rasterizer sub-px jitter), forgiven as AaEdge. A genuinely missing
+                // feature has no nearby matching ink and stays Missing; a consistent
+                // shift/size change is still caught by the bbox-extent gate.
+                if ink_color_present_near(cand, mask_c, r, x, y, EDGE_JITTER_PX) {
+                    PixelClass::AaEdge
+                } else {
+                    PixelClass::Missing
+                }
             } else if ink_c && !ink_r {
-                // 4. Extra — candidate paints, reference is paper-white.
-                PixelClass::Extra
+                // 4. Extra — candidate paints, reference is paper-white. Same edge-
+                // jitter forgiveness as Missing, mirrored (ref ink nearby => AaEdge).
+                if ink_color_present_near(reference, mask_r, c, x, y, EDGE_JITTER_PX) {
+                    PixelClass::AaEdge
+                } else {
+                    PixelClass::Extra
+                }
             } else if ink_c
                 && ink_r
                 && color_present_near(cand, r, x, y, RESIDUAL_JITTER_PX, tm)

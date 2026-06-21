@@ -413,6 +413,16 @@ fn process_entry(
         let outcome = compare_v2(&cand_cal, &reference, entry);
         let diff_pct = util::round4(outcome.diff_pct);
 
+        // Per-class breakdown for tuning (set PARITY_DEBUG_TALLY=1). Non-gating.
+        if std::env::var("PARITY_DEBUG_TALLY").is_ok() {
+            let t = &outcome.tally;
+            eprintln!(
+                "tally {}/{}: color={:.2}% (ΔE {:.2}) missing={:.2}% extra={:.2}% edge_max={:.2}css shift_max={:.2}css aa={:.2}% dom={:?}",
+                entry.category, entry.id, t.color_pct, t.color_de, t.missing_pct, t.extra_pct,
+                t.edge_max_css, t.shift_max_css, t.aa_pct, outcome.verdict.dominant_class
+            );
+        }
+
         let reports_diff = reports_dir
             .join(&entry.category)
             .join(format!("{}.diff.png", entry.id));

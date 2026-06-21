@@ -425,21 +425,24 @@ fn golden_calibration_drift() {
     // (double the expected page-origin (4,4)) is drift -> Err (the live run would
     // abort). Tested on synthetic bboxes (no rendering).
     //
-    // A correct probe: candidate box at (10,10)-(110,110); reference shifted +4,+4.
+    // A correct probe: the CANDIDATE (ironpress) sits +4,+4 PAST the reference
+    // (cand - ref == GLOBAL_OFFSET), mirroring real geometry (ironpress 120px
+    // margin vs Chrome ~116px). Candidate box at (10,10)-(110,110); ref at -4,-4.
     let cand_bb = (10u32, 10u32, 110u32, 110u32);
-    let good_ref = (14u32, 14u32, 114u32, 114u32); // +4,+4 pure translation
+    let good_ref = (6u32, 6u32, 106u32, 106u32); // cand - ref = +4,+4 pure translation
     assert!(
         check_probe_offset(cand_bb, good_ref).is_ok(),
         "a clean (4,4) probe offset must pass calibration"
     );
 
-    // Drifted probe: reference shifted +8,+8 -> outside (4,4)±1 -> Err.
-    let drift_ref = (18u32, 18u32, 118u32, 118u32);
+    // Drifted probe: cand - ref == +8,+8 -> outside (4,4)±1 -> Err.
+    let drift_ref = (2u32, 2u32, 102u32, 102u32);
     let res = check_probe_offset(cand_bb, drift_ref);
     assert!(res.is_err(), "a (8,8) raw offset must be reported as drift, got {res:?}");
 
     // A scale (not a pure translation) -> Err even if TL is in band.
-    let scaled_ref = (14u32, 14u32, 124u32, 124u32); // TL +4, BR +14 -> non-uniform
+    // cand - ref: TL +4, BR +14 -> non-uniform.
+    let scaled_ref = (6u32, 6u32, 96u32, 96u32);
     assert!(
         check_probe_offset(cand_bb, scaled_ref).is_err(),
         "a non-uniform (scale) offset must be reported as drift"
