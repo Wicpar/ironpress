@@ -338,7 +338,10 @@ pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &Manife
     // Exact derived back-compat scalar (% real-diff px, AA+Match excluded).
     let diff_pct = tally.diff_pct(&class_map);
     verdict.diff_pct = diff_pct;
-    let overlay = render_classed_overlay(&class_map);
+    // The classed-diff overlay (spec §3.3 item 2): per-pixel class fill + region
+    // bbox frames. Lives in the top-level `overlay` module (the C5 presentation
+    // layer); see `crate::overlay::render_classed_overlay`.
+    let overlay = super::overlay::render_classed_overlay(&class_map, &regions, &cand_u, &ref_u);
 
     // Diagnosis (spec §2). Computed here (the only stage with the class map +
     // aligned cand/ref) but PURELY additive: it reads the same owned products the
@@ -354,28 +357,5 @@ pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &Manife
         overlay,
         diagnosis,
     }
-}
-
-/// Minimal classed-diff overlay (the rich HTML quad is C5). Recolours each pixel
-/// by its `PixelClass` so the committed `.diff.png` shows WHAT differed and HOW,
-/// not a flat red mask: Missing=magenta, Extra=green, ColorErr=blue,
-/// GeomShift=orange, AaEdge=faint-yellow, Match=faint-grey.
-pub(crate) fn render_classed_overlay(cm: &ClassMap) -> RgbaImage {
-    let mut out: RgbaImage = ImageBuffer::from_pixel(cm.w.max(1), cm.h.max(1), Rgba([255, 255, 255, 255]));
-    for y in 0..cm.h {
-        for x in 0..cm.w {
-            let c = cm.px[(y as usize) * (cm.w as usize) + x as usize];
-            let color = match c {
-                PixelClass::Match => Rgba([245, 245, 245, 255]),
-                PixelClass::AaEdge => Rgba([255, 240, 150, 255]),
-                PixelClass::ColorErr => Rgba([40, 80, 255, 255]),
-                PixelClass::GeomShift => Rgba([255, 150, 30, 255]),
-                PixelClass::Missing => Rgba([230, 0, 230, 255]),
-                PixelClass::Extra => Rgba([0, 200, 60, 255]),
-            };
-            out.put_pixel(x, y, color);
-        }
-    }
-    out
 }
 

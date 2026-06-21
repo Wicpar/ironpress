@@ -33,6 +33,7 @@ mod diagnose;
 mod gate;
 mod geom;
 mod manifest;
+mod overlay;
 mod rasterize;
 mod render;
 mod report;
@@ -244,7 +245,7 @@ pub fn run() -> Result<(), String> {
     // corrupt the baseline) and must NOT enforce the gate. Print the summary and
     // return early.
     if filtered_run {
-        if let Err(e) = write_html_reports(&reports_dir, &report) {
+        if let Err(e) = write_html_reports(&reports_dir, &cases_dir, &report) {
             eprintln!("parity: WARNING could not write HTML reports: {e}");
         }
         println!(
@@ -262,8 +263,8 @@ pub fn run() -> Result<(), String> {
     write_report_json(&baseline_path, &report)?;
     write_report_md(&parity_dir.join("REPORT.md"), &report)?;
 
-    // Generate the in-repo per-theme visual HTML reports (triptych galleries).
-    if let Err(e) = write_html_reports(&reports_dir, &report) {
+    // Generate the in-repo per-theme visual HTML reports (diagnostic quad cards).
+    if let Err(e) = write_html_reports(&reports_dir, &cases_dir, &report) {
         eprintln!("parity: WARNING could not write HTML reports: {e}");
     }
 
