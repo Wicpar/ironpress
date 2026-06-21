@@ -5031,8 +5031,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 19.200pt (> 3pt) — content displaced; worst fill#2 unmatched (nearest 56.250pt)",
-                  "magnitude": 56.25
+                  "headline": "pdf-geom FAIL: border#0 h Δ112.500pt",
+                  "magnitude": 112.5
                 }
               ],
               "disagreements": []
@@ -5235,8 +5235,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 82.950pt (> 3pt) — content displaced; worst fill#1 h Δ659.400pt",
-                  "magnitude": 659.4
+                  "headline": "pdf-geom: gross page offset 46.200pt (> 3pt) — content displaced; worst border#3 unmatched (nearest 112.500pt)",
+                  "magnitude": 112.5
                 }
               ],
               "disagreements": []
@@ -5426,7 +5426,16 @@
                   "magnitude": 44.25
                 }
               ],
-              "disagreements": []
+              "disagreements": [
+                {
+                  "concern": "Geometry",
+                  "authoritative": "FAIL",
+                  "authoritative_by": "PdfGeometry",
+                  "challenger": "PASS",
+                  "challenger_by": "RasterDiff",
+                  "note": "vector FAIL capped to PARTIAL (image not broken): pdf-geom: gross page offset 43.200pt (> 3pt) — content displaced; worst fill#0 unmatched (nearest 44.250pt)"
+                }
+              ]
             },
             {
               "id": "block-margin-collapse-adjacent",
@@ -5716,7 +5725,16 @@
                   "magnitude": 33.75
                 }
               ],
-              "disagreements": []
+              "disagreements": [
+                {
+                  "concern": "Geometry",
+                  "authoritative": "FAIL",
+                  "authoritative_by": "PdfGeometry",
+                  "challenger": "PASS",
+                  "challenger_by": "RasterDiff",
+                  "note": "vector FAIL capped to PARTIAL (image not broken): pdf-geom: gross page offset 32.700pt (> 3pt) — content displaced; worst fill#0 unmatched (nearest 33.750pt)"
+                }
+              ]
             }
           ]
         },
@@ -6124,8 +6142,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: worst fill#0 h Δ72.000pt (offset 1.050pt cancelled)",
-                  "magnitude": 72.00000000000006
+                  "headline": "pdf-geom: gross page offset 10.050pt (> 3pt) — content displaced; worst fill#0 unmatched (nearest 9.000pt)",
+                  "magnitude": 9.0
                 }
               ],
               "disagreements": []
@@ -6442,7 +6460,16 @@
                   "magnitude": 3.0
                 }
               ],
-              "disagreements": []
+              "disagreements": [
+                {
+                  "concern": "Geometry",
+                  "authoritative": "FAIL",
+                  "authoritative_by": "PdfGeometry",
+                  "challenger": "PASS",
+                  "challenger_by": "RasterDiff",
+                  "note": "vector FAIL capped to PARTIAL (image not broken): pdf-geom: worst fill#1 w/size Δ3.000pt (offset 1.050pt cancelled)"
+                }
+              ]
             },
             {
               "id": "block-width-percent",
@@ -6584,8 +6611,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom FAIL: fill#0 h Δ629.400pt",
-                  "magnitude": 629.4
+                  "headline": "pdf-geom FAIL: fill#2 unmatched (nearest 145.500pt)",
+                  "magnitude": 145.5
                 }
               ],
               "disagreements": []
@@ -13973,7 +14000,7 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 16.050pt (> 3pt) — content displaced; worst border#0 unmatched (nearest 30.000pt)",
+                  "headline": "pdf-geom: gross page offset 16.050pt (> 3pt) — content displaced; worst fill#0 unmatched (nearest 30.000pt)",
                   "magnitude": 30.0
                 }
               ],
@@ -14088,8 +14115,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#0 h Δ599.400pt",
-                  "magnitude": 599.4
+                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#3 unmatched (nearest 3.750pt)",
+                  "magnitude": 3.75
                 }
               ],
               "disagreements": []
@@ -14246,8 +14273,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 36.450pt (> 3pt) — content displaced; worst fill#2 unmatched (nearest 64.500pt)",
-                  "magnitude": 64.50000600000004
+                  "headline": "pdf-geom: gross page offset 35.700pt (> 3pt) — content displaced; worst fill#2 unmatched (nearest 65.250pt)",
+                  "magnitude": 65.25
                 }
               ],
               "disagreements": []
@@ -14373,8 +14400,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#0 h Δ663.900pt",
-                  "magnitude": 663.9
+                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#3 unmatched (nearest 3.750pt)",
+                  "magnitude": 3.75
                 }
               ],
               "disagreements": []
@@ -14500,8 +14527,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#0 h Δ651.900pt",
-                  "magnitude": 651.9
+                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#2 h Δ15.000pt",
+                  "magnitude": 15.0
                 }
               ],
               "disagreements": []
@@ -14754,8 +14781,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 14.325pt (> 3pt) — content displaced; worst fill#0 h Δ651.900pt",
-                  "magnitude": 651.9
+                  "headline": "pdf-geom: gross page offset 14.325pt (> 3pt) — content displaced; worst fill#1 h Δ15.000pt",
+                  "magnitude": 15.0
                 }
               ],
               "disagreements": []
@@ -15135,8 +15162,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#0 h Δ651.900pt",
-                  "magnitude": 651.9
+                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#2 h Δ22.500pt",
+                  "magnitude": 22.5
                 }
               ],
               "disagreements": []
@@ -15262,8 +15289,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 14.700pt (> 3pt) — content displaced; worst fill#0 h Δ651.900pt",
-                  "magnitude": 651.9
+                  "headline": "pdf-geom: gross page offset 14.700pt (> 3pt) — content displaced; worst fill#2 h Δ22.500pt",
+                  "magnitude": 22.5
                 }
               ],
               "disagreements": []
@@ -15377,8 +15404,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 15.075pt (> 3pt) — content displaced; worst fill#0 h Δ651.900pt",
-                  "magnitude": 651.9
+                  "headline": "pdf-geom: gross page offset 15.075pt (> 3pt) — content displaced; worst fill#1 h Δ22.500pt",
+                  "magnitude": 22.5
                 }
               ],
               "disagreements": []
@@ -15746,8 +15773,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 15.450pt (> 3pt) — content displaced; worst fill#1 w/size Δ166.500pt",
-                  "magnitude": 166.5
+                  "headline": "pdf-geom: gross page offset 18.450pt (> 3pt) — content displaced; worst fill#3 unmatched (nearest 54.000pt)",
+                  "magnitude": 54.0
                 }
               ],
               "disagreements": []
@@ -15873,8 +15900,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#0 h Δ651.900pt",
-                  "magnitude": 651.9
+                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst fill#2 h Δ15.000pt",
+                  "magnitude": 15.0
                 }
               ],
               "disagreements": []
@@ -23058,8 +23085,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 15.450pt (> 3pt) — content displaced; worst border#3 unmatched (nearest 222.000pt)",
-                  "magnitude": 222.0
+                  "headline": "pdf-geom: gross page offset 88.950pt (> 3pt) — content displaced; worst border#3 unmatched (nearest 148.500pt)",
+                  "magnitude": 148.5
                 }
               ],
               "disagreements": []
@@ -23173,8 +23200,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 15.450pt (> 3pt) — content displaced; worst border#3 unmatched (nearest 200.250pt)",
-                  "magnitude": 200.25
+                  "headline": "pdf-geom: gross page offset 75.600pt (> 3pt) — content displaced; worst fill#2 w/size Δ210.450pt",
+                  "magnitude": 210.45
                 }
               ],
               "disagreements": []
@@ -23288,8 +23315,8 @@
                   "verifier": "PdfGeometry",
                   "status": "FAIL",
                   "concern": "Geometry",
-                  "headline": "pdf-geom: gross page offset 13.950pt (> 3pt) — content displaced; worst border#0 w/size Δ299.400pt",
-                  "magnitude": 299.4000000000001
+                  "headline": "pdf-geom: gross page offset 15.450pt (> 3pt) — content displaced; worst border#2 unmatched (nearest 126.000pt)",
+                  "magnitude": 126.0
                 }
               ],
               "disagreements": []
