@@ -82,8 +82,19 @@ pub(crate) const GLOBAL_OFFSET: (i32, i32) = (4, 4);
 /// Allowed raw-probe deviation from `GLOBAL_OFFSET` during calibration audit.
 pub(crate) const PROBE_JITTER_PX: i32 = 1;
 /// Post-calibration sub-pixel rounding band: a residual displacement within this
-/// radius is classed `GeomShift` (counted, never zeroed), not `ColorErr`.
+/// radius is classed `GeomShift` (counted, never zeroed), not `ColorErr`. Also the
+/// residual band that `DiffRegion::is_translation` uses (a measured per-region
+/// shift magnitude must EXCEED this to count as a translation).
 pub(crate) const RESIDUAL_JITTER_PX: i32 = 1;
+/// Search radius (device px) for `best_local_shift` — DECOUPLED from
+/// `RESIDUAL_JITTER_PX` (review #2/#3). The old radius (1) capped a measured shift
+/// at `1/CSS_PX ≈ 0.32` CSS px per axis, below the `G_SHIFT_CSS` PASS bound (1.0),
+/// so the shift gate was structurally dead. 16 device px ≈ 5.1 CSS px exceeds the
+/// FAIL bound (4.0), so a real residual translation is measurable and the gate can
+/// escalate. This does NOT reintroduce best-shift masking: it only diagnoses how far
+/// an already-classified GeomShift boundary moved, AFTER scoring (no candidate pixel
+/// is moved before the per-pixel classify).
+pub(crate) const SHIFT_SEARCH_PX: i32 = 16;
 /// Cross-rasterizer edge-jitter radius (device px). A `Missing`/`Extra` pixel whose
 /// SAME-COLOUR ink reappears within this radius in the other image is a displaced
 /// glyph/border edge (two rasterizers place the same stroke a px or two apart), not

@@ -215,7 +215,7 @@ pub(crate) fn diagnose(
             None
         }
     });
-    let residual_shift_css = whole_frame_shift(tally, regions);
+    let residual_shift_css = whole_frame_shift(primary, tally, regions);
     let magnitude = Magnitude {
         edge_delta_css: tally.edge_delta_css,
         missing_area_pct: tally.missing_pct,
@@ -283,6 +283,18 @@ fn classify_region(
         PixelClass::Missing => (ErrorClass::Missing, None),
         PixelClass::Extra => (ErrorClass::Extra, None),
         PixelClass::GeomShift => (geometry_signature(tally).unwrap_or(ErrorClass::GeometryShift), None),
+        // A ColorErr-DOMINANT region whose ColorErr is entirely on the structural
+        // boundary (interior_color_px ~0) is NOT a fill recolour — it is a
+        // shifted/resized element's correct-colour fill abutting a different
+        // background (the §1-B "fill recolour ΔRGB…" misattribution: the interiors
+        // were byte-identical). When such a region also carries a real geometry
+        // signal, name the geometry, not a phantom colour (review §1-B / F9).
+        PixelClass::ColorErr if r.interior_color_px == 0 => {
+            match geometry_signature(tally) {
+                Some(geo) => (geo, None),
+                None => refine_color(r, cand, reference),
+            }
+        }
         PixelClass::ColorErr => refine_color(r, cand, reference),
         // Match/AaEdge never dominate a real-diff region; treat as a colour value
         // fallback if one ever appears so the diagnosis stays total.
@@ -465,27 +477,54 @@ fn recover_alpha(r: &DiffRegion, cand: &RgbaImage, reference: &RgbaImage) -> Opt
 /// transform markedly better than identity — the gradient/blend colour-space
 /// drift. Best-effort: a coarse residual comparison on the region's sampled
 /// pixels; returns false (=> ColorValue) when the gamma fit does not clearly win.
+///
+/// Hardened (review #6): the old test fired the gamma model on the GREEN channel
+/// ALONE and over ANY region, so essentially any "fill rendered too light" neutral
+/// recolour was mislabelled ColorSpace ("sRGB vs linear"), misdirecting triage. We
+/// now require BOTH:
+///   1. the >=3x residual reduction to hold JOINTLY on all of R, G, B (a true gamma
+///      drift is a transfer-curve effect on every channel, not just luma), AND
+///   2. non-trivial intra-region VARIANCE in the reference (a gamma/colour-space
+///      drift is a GRADIENT/blend; a UNIFORM flat fill that merely came out lighter
+///      is a ColorValue recolour, not a colour-space mismatch).
 fn fit_colorspace(r: &DiffRegion, cand: &RgbaImage, reference: &RgbaImage) -> bool {
     let samples = sample_region_pairs(r, cand, reference, 4096);
     if samples.len() < 16 {
         return false;
     }
-    // Identity residual vs gamma residual on the green channel (luma proxy). For a
-    // gamma drift, cand ≈ srgb_oetf(ref_linear) so applying the inverse OETF to
-    // both should collapse the error far more than leaving them as-is.
-    let mut id_res = 0.0_f64;
-    let mut gamma_res = 0.0_f64;
-    for (c, rr) in &samples {
-        let cv = c[1] as f64 / 255.0;
-        let rv = rr[1] as f64 / 255.0;
-        id_res += (cv - rv).powi(2);
-        // Map candidate through inverse sRGB OETF (toward linear) and compare to a
-        // linear interpretation of the reference value.
-        let c_lin = srgb_eotf(cv);
-        gamma_res += (c_lin - rv).powi(2);
+    // (1) Gradient gate: the reference must vary across the region. A flat recolour
+    // has ~zero variance and is excluded (-> ColorValue). Measured as the per-channel
+    // value spread (max−min) of the reference samples; require a meaningful ramp on
+    // at least one channel.
+    let mut lo = [255i32; 3];
+    let mut hi = [0i32; 3];
+    for (_, rr) in &samples {
+        for ch in 0..3 {
+            lo[ch] = lo[ch].min(rr[ch] as i32);
+            hi[ch] = hi[ch].max(rr[ch] as i32);
+        }
     }
-    // ColorSpace only when the gamma model reduces the residual by >=3x (spec §2.2).
-    gamma_res > 0.0 && id_res >= 3.0 * gamma_res
+    let ref_spread = (0..3).map(|ch| hi[ch] - lo[ch]).max().unwrap_or(0);
+    if ref_spread < 24 {
+        return false; // uniform-modal flat fill -> ColorValue, not ColorSpace
+    }
+    // (2) Per-channel identity vs gamma residual; the gamma model (inverse OETF on
+    // the candidate toward linear) must collapse the residual by >=3x on EVERY
+    // channel — a one-channel win is a coincidence, not a transfer-curve drift.
+    for ch in 0..3 {
+        let mut id_res = 0.0_f64;
+        let mut gamma_res = 0.0_f64;
+        for (c, rr) in &samples {
+            let cv = c[ch] as f64 / 255.0;
+            let rv = rr[ch] as f64 / 255.0;
+            id_res += (cv - rv).powi(2);
+            gamma_res += (srgb_eotf(cv) - rv).powi(2);
+        }
+        if !(gamma_res > 0.0 && id_res >= 3.0 * gamma_res) {
+            return false;
+        }
+    }
+    true
 }
 
 /// sRGB EOTF (display-encoded -> linear-light), the standard inverse transfer.
@@ -588,7 +627,13 @@ fn elect_from_tally(tally: &ClassTally, census: &Census) -> ErrorClass {
 
 /// Whole-frame residual translation (CSS px): the largest translation among the
 /// regions flagged `is_translation`, reported as a signed [dx, dy].
-fn whole_frame_shift(_tally: &ClassTally, regions: &[DiffRegion]) -> [f64; 2] {
+///
+/// When the primary class is GeometryShift but NO region carried a measured
+/// translation peak (the shift came from the symmetric bbox-EXTENT signal, not a
+/// per-region `best_local_shift`), fall back to the symmetric per-side extent delta
+/// (review #19) so the reported magnitude AGREES with the headline (which already
+/// uses that fallback) instead of disagreeing at [0,0].
+fn whole_frame_shift(primary: ErrorClass, tally: &ClassTally, regions: &[DiffRegion]) -> [f64; 2] {
     let mut best = (0.0_f64, [0.0, 0.0]);
     for r in regions {
         if r.is_translation {
@@ -596,6 +641,14 @@ fn whole_frame_shift(_tally: &ClassTally, regions: &[DiffRegion]) -> [f64; 2] {
             if mag > best.0 {
                 best = (mag, [r.shift_css.0, r.shift_css.1]);
             }
+        }
+    }
+    if best.0 == 0.0 && primary == ErrorClass::GeometryShift {
+        // A pure translation moves all four sides by the same signed extent delta;
+        // use that (L for x, T for y) so the magnitude matches the headline fallback.
+        let d = tally.edge_delta_css;
+        if d.iter().any(|v| v.abs() > 1e-6) {
+            return [d[0], d[2]];
         }
     }
     best.1
@@ -671,10 +724,27 @@ fn headline_for(primary: ErrorClass, mag: &Magnitude, tally: &ClassTally, census
         ErrorClass::GeometrySize => {
             let (side, delta) = dominant_side(mag.edge_delta_css);
             let sign = if delta >= 0.0 { "+" } else { "−" };
-            format!(
-                "box {sign}{:.1}px on {side} edge — box-sizing:border-box likely not applied",
-                delta.abs()
-            )
+            // Only NAME box-sizing when the signature actually matches it (review
+            // #13): a content-box-vs-border-box mismatch grows BOTH the right and
+            // bottom edges by a similar positive amount (the box is wider AND taller
+            // by ~the border+padding). For any other asymmetric extent (one side, an
+            // opposite-edge shift, a single-axis difference) we report the observed
+            // signal WITHOUT asserting a single CSS cause.
+            let d = mag.edge_delta_css; // [L, R, T, B]
+            let right = d[1];
+            let bottom = d[3];
+            let border_box_pattern = right > 0.4
+                && bottom > 0.4
+                && (right - bottom).abs() <= 0.25 * right.max(bottom)
+                && d[0].abs() < 0.4
+                && d[2].abs() < 0.4;
+            if border_box_pattern {
+                format!(
+                    "box +{right:.1}px right / +{bottom:.1}px bottom — box-sizing:border-box likely not applied"
+                )
+            } else {
+                format!("box {sign}{:.1}px on {side} edge (size/box-model mismatch)", delta.abs())
+            }
         }
         ErrorClass::GeometryShift => {
             let (dx, dy) = (mag.residual_shift_css[0], mag.residual_shift_css[1]);
@@ -792,6 +862,8 @@ mod tests {
             shift_max_css: 0.0,
             aa_pct: 0.0,
             color_de: 0.0,
+            interior_color_pct: 0.0,
+            interior_color_de: 0.0,
             modal_drgb: [0, 0, 0],
             total_px: 0,
         }
@@ -807,6 +879,7 @@ mod tests {
             fill_ratio: 1.0,
             modal_drgb: drgb,
             delta_e: de,
+            interior_color_px: if dominant == PixelClass::ColorErr { 100 } else { 0 },
             shift_css: (0.0, 0.0),
             is_translation: false,
         }
@@ -828,25 +901,41 @@ mod tests {
     }
 
     #[test]
-    fn diagnose_geometry_size_names_box_sizing_on_the_dominant_side() {
-        // A box +4.0 CSS px on the BOTTOM edge only (asymmetric) -> GeometrySize,
-        // headline names box-sizing + the bottom side. The dominant region is a
-        // GeomShift strip along the bottom, but the SIZE signature is read from the
-        // asymmetric per-side extent delta (the geometry_signature path).
+    fn diagnose_geometry_size_names_box_sizing_only_on_the_border_box_signature() {
+        // (a) The genuine box-sizing signature: BOTH right and bottom grew by ~the
+        // same positive amount (content-box vs border-box) -> GeometrySize, and the
+        // headline NAMES box-sizing (review #13: box-sizing is asserted only when the
+        // delta pattern matches it).
         let cm = class_map(8, 8, PixelClass::GeomShift);
         let mut tally = quiet_tally();
-        tally.edge_delta_css = [0.0, 0.0, 0.0, 4.0]; // bottom only
+        tally.edge_delta_css = [0.0, 4.0, 0.0, 4.0]; // right + bottom, equal
         tally.edge_max_css = 4.0;
-        // No surviving region with a SIZE dominant class -> primary falls back to
-        // the tally geometry signature, which is asymmetric => GeometrySize.
         let d = diagnose(&tally, &[], &cm, &white(8, 8), &white(8, 8));
         assert_eq!(d.primary_class, "GeometrySize", "asymmetric extent => GeometrySize");
         assert!(
-            d.headline.contains("bottom") && d.headline.contains("box-sizing"),
-            "headline must name the bottom edge + box-sizing, got: {}",
+            d.headline.contains("box-sizing") && d.headline.contains("4.0px"),
+            "border-box signature must name box-sizing + magnitude, got: {}",
             d.headline
         );
-        assert!(d.headline.contains("4.0px"), "headline must carry the magnitude, got: {}", d.headline);
+
+        // (b) A bottom-ONLY extent is a size error but NOT the box-sizing pattern, so
+        // the headline must describe the side WITHOUT asserting box-sizing (review #13:
+        // the old code hard-coded box-sizing for EVERY asymmetric delta).
+        let mut tally2 = quiet_tally();
+        tally2.edge_delta_css = [0.0, 0.0, 0.0, 4.0]; // bottom only
+        tally2.edge_max_css = 4.0;
+        let d2 = diagnose(&tally2, &[], &cm, &white(8, 8), &white(8, 8));
+        assert_eq!(d2.primary_class, "GeometrySize", "asymmetric extent => GeometrySize");
+        assert!(
+            d2.headline.contains("bottom") && d2.headline.contains("4.0px"),
+            "headline must name the bottom edge + magnitude, got: {}",
+            d2.headline
+        );
+        assert!(
+            !d2.headline.contains("box-sizing"),
+            "a bottom-only delta must NOT assert box-sizing, got: {}",
+            d2.headline
+        );
     }
 
     #[test]
@@ -920,6 +1009,7 @@ mod tests {
             fill_ratio: 1.0,
             modal_drgb: [0, 0, 0],
             delta_e: 8.0,
+            interior_color_px: w * h,
             shift_css: (0.0, 0.0),
             is_translation: false,
         };

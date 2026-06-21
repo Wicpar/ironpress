@@ -36,6 +36,14 @@ pub(crate) struct ClassTally {
     pub(crate) aa_pct: f64,
     /// Area-weighted mean ΔE2000 over ColorErr regions.
     pub(crate) color_de: f64,
+    /// INTERIOR (non-edge-band) ColorErr px / union content px — the SOLID-recolour
+    /// area fraction. A geometry-boundary / curved-AA-ring ColorErr lives in the
+    /// edge band and is excluded, so this is ~0 for a moved/resized correct-colour
+    /// fill but high for a genuine fill/border recolour. Gates `hard_color`.
+    pub(crate) interior_color_pct: f64,
+    /// Area-weighted (by interior px) mean of the per-region MEDIAN interior ΔE —
+    /// the robust solid-recolour ΔE the hard-colour FAIL gate reads.
+    pub(crate) interior_color_de: f64,
     /// Modal (median) per-channel ΔRGB over all ColorErr px.
     pub(crate) modal_drgb: [i16; 3],
     pub(crate) total_px: u64,
@@ -144,6 +152,22 @@ pub(crate) fn aggregate(
     }
     let color_de = if de_area > 0 { de_weight / de_area as f64 } else { 0.0 };
 
+    // INTERIOR-ColorErr aggregate (the hard-colour gate signal). Sum the per-region
+    // interior ColorErr px (edge-band ColorErr excluded by `segment`) and the
+    // interior-px-weighted region median ΔE. This fires hard_color on a SOLID
+    // recolour (interior area + ΔE) while a geometry-edge strip / curved-AA ring
+    // (all ColorErr in the edge band -> interior_color_px ~0) does NOT.
+    let mut interior_px = 0u64;
+    let mut interior_de_weight = 0.0;
+    for r in regions {
+        if r.interior_color_px > 0 {
+            interior_px += r.interior_color_px as u64;
+            interior_de_weight += r.delta_e * r.interior_color_px as f64;
+        }
+    }
+    let interior_color_pct = pct(interior_px, union_content);
+    let interior_color_de = if interior_px > 0 { interior_de_weight / interior_px as f64 } else { 0.0 };
+
     let modal_drgb = modal_colorerr_drgb(cm, cand, reference);
     // If ColorErr pixels exist but no ColorErr-dominant region cleared the speck
     // filter, still surface a representative ΔE so the hard-colour gate can act (a
@@ -163,6 +187,8 @@ pub(crate) fn aggregate(
         shift_max_css,
         aa_pct,
         color_de,
+        interior_color_pct,
+        interior_color_de,
         modal_drgb,
         total_px,
     }

@@ -423,9 +423,10 @@ fn process_entry(
                 t.edge_max_css, t.shift_max_css, t.aa_pct, outcome.verdict.dominant_class
             );
             eprintln!(
-                "DIAG {}/{}: [{}] {}  (conf {:.2})",
-                entry.category, entry.id, outcome.diagnosis.primary_class,
-                outcome.diagnosis.headline, outcome.diagnosis.confidence
+                "DIAG {}/{}: STATUS={} [{}] {}  (conf {:.2}) interior_color%={:.3} interior_de={:.2}",
+                entry.category, entry.id, outcome.status.as_str(), outcome.diagnosis.primary_class,
+                outcome.diagnosis.headline, outcome.diagnosis.confidence,
+                outcome.tally.interior_color_pct, outcome.tally.interior_color_de
             );
         }
 

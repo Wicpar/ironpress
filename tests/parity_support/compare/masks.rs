@@ -12,9 +12,11 @@ use image::RgbaImage;
 
 use super::super::config::EDGE_GRAD;
 
-/// Three packed bitsets over the union-cropped frame (1 bit/px, row-major):
+/// Four packed bitsets over the union-cropped frame (1 bit/px, row-major):
 /// - `edge`: per-image structural edge (kept for diagnosis; unused by the gate).
-/// - `edge_band`: `edge` dilated 1px — kept per-image then ANDed below.
+/// - `edge_band`: union of both images' 1px-dilated edge bands — the structural
+///   boundary locus (fill-vs-border / box-vs-background). The interior-recolour
+///   gate excludes it (interior = `ColorErr && !edge_band`).
 /// - `shared`: `edge_band(cand) AND edge_band(ref)` — the only locus of AA mercy.
 pub(crate) struct StructuralMasks {
     w: u32,
@@ -23,6 +25,10 @@ pub(crate) struct StructuralMasks {
     /// overlay and diagnosis); the AA gate uses `shared`, not this.
     #[allow(dead_code)]
     edge: Vec<u64>,
+    /// Union of both images' DILATED edge bands. A ColorErr pixel inside this band
+    /// is a structural-boundary recolour (geometry-edge jitter / curved-AA ring),
+    /// NOT a solid interior recolour — the hard-colour gate excludes it.
+    edge_band: Vec<u64>,
     shared: Vec<u64>,
 }
 
@@ -48,6 +54,18 @@ impl StructuralMasks {
             return false;
         }
         Self::test(&self.shared, (y as usize) * (self.w as usize) + x as usize)
+    }
+    /// Whether `(x,y)` is within 1px of a structural edge in EITHER image — a
+    /// fill/border/background boundary. A ColorErr pixel here is boundary jitter
+    /// (a moved/resized fill abutting a different colour, or a curved-AA ring), NOT
+    /// a solid interior recolour; the hard-colour gate excludes it. Out-of-bounds
+    /// reads as `false` (a degenerate pixel is treated as interior, never masked).
+    #[inline]
+    pub(crate) fn in_edge_band(&self, x: u32, y: u32) -> bool {
+        if x >= self.w || y >= self.h {
+            return false;
+        }
+        Self::test(&self.edge_band, (y as usize) * (self.w as usize) + x as usize)
     }
 }
 
@@ -132,8 +150,11 @@ pub(crate) fn structural_masks(cand: &RgbaImage, reference: &RgbaImage) -> Struc
 
     let words = band_c.len();
     let mut shared = vec![0u64; words];
+    let mut edge_band = vec![0u64; words];
     for i in 0..words {
         shared[i] = band_c[i] & band_r[i];
+        // Union of the dilated bands: the structural-boundary locus (either image).
+        edge_band[i] = band_c[i] | band_r[i];
     }
 
     // `edge` (informational): union of both images' raw edges.
@@ -142,5 +163,5 @@ pub(crate) fn structural_masks(cand: &RgbaImage, reference: &RgbaImage) -> Struc
         edge[i] = edge_c[i] | edge_r[i];
     }
 
-    StructuralMasks { w, h, edge, shared }
+    StructuralMasks { w, h, edge, edge_band, shared }
 }

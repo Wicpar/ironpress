@@ -285,6 +285,44 @@ pub(crate) struct V2Outcome {
     pub(crate) diagnosis: super::diagnose::Diagnosis,
 }
 
+/// A loud UNKNOWN outcome for an unscoreable pair (e.g. a dimension mismatch). The
+/// `note` is carried on the diagnosis headline so the report names the reason; every
+/// magnitude is zero (we deliberately do NOT fabricate a score).
+fn unknown_outcome(note: String) -> V2Outcome {
+    let tally = ClassTally {
+        color_pct: 0.0,
+        missing_pct: 0.0,
+        extra_pct: 0.0,
+        edge_max_css: 0.0,
+        edge_delta_css: [0.0; 4],
+        shift_max_css: 0.0,
+        aa_pct: 0.0,
+        color_de: 0.0,
+        interior_color_pct: 0.0,
+        interior_color_de: 0.0,
+        modal_drgb: [0, 0, 0],
+        total_px: 0,
+    };
+    let verdict = Verdict {
+        status: Status::Unknown,
+        diff_pct: 0.0,
+        dominant_class: PixelClass::Match,
+    };
+    let diagnosis = super::diagnose::Diagnosis {
+        headline: note,
+        ..Default::default()
+    };
+    V2Outcome {
+        status: Status::Unknown,
+        diff_pct: 0.0,
+        tally,
+        regions: Vec::new(),
+        verdict,
+        overlay: ImageBuffer::from_pixel(1, 1, Rgba([255, 255, 255, 255])),
+        diagnosis,
+    }
+}
+
 /// Run the §1.2 V2 pipeline over a candidate and reference in shared page space.
 ///
 /// CONTRACT: `cand` is ALREADY CALIBRATED — the caller (`process_entry`, and the
@@ -299,6 +337,21 @@ pub(crate) struct V2Outcome {
 /// compare -> structural edge bands -> per-pixel classify -> region segmentation
 /// -> aggregate to per-class severities -> multi-gate verdict -> classed overlay.
 pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &ManifestEntry) -> V2Outcome {
+    // Dimension guard (review #9): the whole pipeline assumes the candidate and
+    // reference share pixel dimensions (the bbox deltas, union crop, and per-pixel
+    // classify all compare like-for-like at the same page position). Cross-rasterizer
+    // pages are normally identical-dim, but a width/height rounding difference would
+    // SILENTLY corrupt the bbox deltas (a false-FAIL or false-PASS in either
+    // direction). Mirror legacy `diff_images`' guard: surface a loud UNKNOWN instead
+    // of scoring garbage, so the mismatch is visible rather than absorbed.
+    if cand.dimensions() != reference.dimensions() {
+        return unknown_outcome(format!(
+            "dimension mismatch: cand {:?} != ref {:?} (cross-rasterizer page-size drift) — refusing to score",
+            cand.dimensions(),
+            reference.dimensions()
+        ));
+    }
+
     let cand_bb = content_bbox(cand);
     let ref_bb = content_bbox(reference);
 
@@ -332,7 +385,7 @@ pub(crate) fn compare_v2(cand: &RgbaImage, reference: &RgbaImage, entry: &Manife
 
     let masks = masks::structural_masks(&cand_u, &ref_u);
     let class_map = classify_pixels(&cand_u, &ref_u, &mask_c, &mask_r, &masks);
-    let regions = segment(&class_map, &cand_u, &ref_u);
+    let regions = segment(&class_map, &cand_u, &ref_u, &masks);
     let tally = aggregate(&class_map, &regions, bbox_delta, &mask_c, &mask_r, &cand_u, &ref_u);
     let mut verdict = verdict(&tally, &regions, entry);
     // Exact derived back-compat scalar (% real-diff px, AA+Match excluded).

@@ -41,25 +41,22 @@ pub(crate) fn verdict(t: &ClassTally, regions: &[DiffRegion], entry: &ManifestEn
     let dominant_class = elect_dominant(regions);
 
     // --- FAIL gates -------------------------------------------------------
-    // (1) Whole feature absent: a Missing-dominant region covering >=50% of ref.
-    let whole_missing = regions
-        .iter()
-        .any(|r| r.dominant == PixelClass::Missing)
-        && t.missing_pct >= 50.0;
+    // Hard colour: a SOLID INTERIOR recolour. We gate on the INTERIOR-ColorErr
+    // signal (ColorErr px NOT in the structural edge band), area-relative to union
+    // CONTENT (review #4 — `r.area_pct` was whole-FRAME, a unit mismatch with
+    // G_COLOR_PCT's content-relative meaning), with the robust median interior ΔE
+    // (review #17). This fires on a genuine fill/border recolour (solid interior
+    // pixels) but NOT on:
+    //   * scattered glyph-edge ColorErr from cross-rasterizer text AA (in the edge
+    //     band -> not interior),
+    //   * a shifted/resized element's fill abutting a different background (colours
+    //     CORRECT, the boundary moved -> all ColorErr in the edge band, review §1-B),
+    //   * a curved/coloured AA ring (border-radius-circle: interior byte-identical,
+    //     only the perimeter AA differs -> interior_color_pct ~0).
+    let hard_color =
+        t.interior_color_de >= COLOR_DE_FAIL && t.interior_color_pct >= G_COLOR_PCT.0;
 
-    // (2) Hard colour: a SOLID block dominated by a real colour error — a ColorErr-
-    // DOMINANT region above the area floor with ΔE >= FAIL. We deliberately do NOT
-    // fire on the aggregate (`color_de >= FAIL && color_pct >= floor`): scattered
-    // glyph-edge ColorErr from cross-rasterizer text AA has a huge ΔE (black-on-white)
-    // but is NOT a recolour — those pixels sit in GeomShift-DOMINANT regions, so the
-    // dominant-class condition excludes them while a genuinely recoloured fill or
-    // recoloured glyph (ColorErr-dominant region) still hard-fails here.
-    let hard_color = regions.iter().any(|r| {
-        r.dominant == PixelClass::ColorErr && r.area_pct >= G_COLOR_PCT.0 && r.delta_e >= COLOR_DE_FAIL
-    });
-
-    let any_fail = whole_missing
-        || hard_color
+    let any_fail = hard_color
         || t.color_pct > color_partial
         || t.missing_pct > G_MISSING_PCT.1
         || t.extra_pct > G_EXTRA_PCT.1
@@ -69,12 +66,18 @@ pub(crate) fn verdict(t: &ClassTally, regions: &[DiffRegion], entry: &ManifestEn
     let status = if any_fail {
         Status::Fail
     } else if t.color_pct <= color_pass
-        && t.color_de <= COLOR_DE_PASS
+        && t.interior_color_de <= COLOR_DE_PASS
         && t.missing_pct <= G_MISSING_PCT.0
         && t.extra_pct <= G_EXTRA_PCT.0
         && t.edge_max_css <= G_EDGE_CSS.0
         && t.shift_max_css <= G_SHIFT_CSS.0
     {
+        // Colour PASS reads the INTERIOR ΔE, not the boundary-inclusive `color_de`:
+        // a structural-boundary / curved-AA ColorErr (correct colours, moved
+        // boundary — e.g. border-radius-circle, interior byte-identical) has a high
+        // boundary `color_de` but zero interior ΔE, so it must not be denied PASS by
+        // a phantom recolour. A genuine small interior recolour still has
+        // interior_color_de > JND and is correctly held back to PARTIAL.
         Status::Pass
     } else {
         Status::Partial

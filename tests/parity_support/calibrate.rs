@@ -38,13 +38,22 @@ pub(crate) fn check_probe_offset(cand_bb: BBox, ref_bb: BBox) -> Result<i32, Str
     let dbr_x = cand_bb.2 as i32 - ref_bb.2 as i32;
     let dbr_y = cand_bb.3 as i32 - ref_bb.3 as i32;
 
-    let lo = GLOBAL_OFFSET.0 - PROBE_JITTER_PX;
-    let hi = GLOBAL_OFFSET.0 + PROBE_JITTER_PX;
-    for (label, v) in [("dTL.x", dtl_x), ("dTL.y", dtl_y), ("dBR.x", dbr_x), ("dBR.y", dbr_y)] {
-        if v < lo || v > hi {
+    // Per-AXIS bounds (review #5): X deltas check vs GLOBAL_OFFSET.0, Y deltas vs
+    // GLOBAL_OFFSET.1, each with its own expected value in the error message. The old
+    // code derived a single (lo,hi) from GLOBAL_OFFSET.0 and applied it to all four
+    // deltas including the Y pair (with .0 hard-coded in the message) — masked only
+    // because GLOBAL_OFFSET is the symmetric (4,4); an asymmetric origin would
+    // mis-gate the very calibration audit meant to catch a margin regression.
+    for (label, v, expected) in [
+        ("dTL.x", dtl_x, GLOBAL_OFFSET.0),
+        ("dTL.y", dtl_y, GLOBAL_OFFSET.1),
+        ("dBR.x", dbr_x, GLOBAL_OFFSET.0),
+        ("dBR.y", dbr_y, GLOBAL_OFFSET.1),
+    ] {
+        if v < expected - PROBE_JITTER_PX || v > expected + PROBE_JITTER_PX {
             return Err(format!(
-                "{label}={v} outside expected {}±{} (raw offset is not the page-origin translation)",
-                GLOBAL_OFFSET.0, PROBE_JITTER_PX
+                "{label}={v} outside expected {expected}±{PROBE_JITTER_PX} \
+                 (raw offset is not the page-origin translation)"
             ));
         }
     }
@@ -113,11 +122,16 @@ pub(crate) fn assert_calibration(
 
         match check_probe_offset(cand_bb, ref_bb) {
             Ok(dev) => {
-                max_dev = max_dev.max(dev);
-                measured = (
-                    cand_bb.0 as i32 - ref_bb.0 as i32,
-                    cand_bb.1 as i32 - ref_bb.1 as i32,
-                );
+                // Record `measured_px` from the probe that produced the MAX deviation
+                // (review #11) — the old code overwrote it every probe, so it reported
+                // the LAST probe's offset, inconsistent with the aggregated `max_dev`.
+                if dev >= max_dev {
+                    max_dev = dev;
+                    measured = (
+                        cand_bb.0 as i32 - ref_bb.0 as i32,
+                        cand_bb.1 as i32 - ref_bb.1 as i32,
+                    );
+                }
                 probed += 1;
             }
             Err(why) => {

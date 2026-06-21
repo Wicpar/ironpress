@@ -127,10 +127,23 @@ pub(crate) fn classify_pixels(
             // is ΔE2000 ~3.6 — above the JND. YIQ alone would launder it as Match,
             // defeating the whole point of the ΔE colour detector. So for two INK
             // pixels we additionally require the perceptual ΔE to be within the
-            // JND (`COLOR_DE_PASS`) before calling it a match. (Paper-white vs
-            // paper-white, or AA ramps, are handled by the YIQ budget and the
-            // shared-band gate respectively — this only tightens ink-vs-ink.)
-            let perceptual_match = if ink_c && ink_r {
+            // JND (`COLOR_DE_PASS`) before calling it a match.
+            //
+            // CRITICAL one-side-ink case (`ink_c != ink_r`): a feature painted in
+            // ONLY ONE render must NEVER be a Match. The coarse YIQ `d <= tm` budget
+            // (~352) is far larger than the YIQ delta of a faint/pale fill against
+            // paper-white, so a low-contrast feature present in only one image would
+            // be laundered as Match before the Missing/Extra branches ever ran (this
+            // was the root cause of the border-radius-per-corner / text-shadow-offset
+            // false-passes). When exactly one side is ink we therefore force a
+            // non-match and let the Missing/Extra/fringe branches below decide — the
+            // ink mask already proved the pixel is content in one image and not the
+            // other. (The Missing/Extra branches still forgive a same-colour displaced
+            // edge via `ink_color_present_near`, so genuine glyph-AA jitter stays
+            // forgiven.) Paper-white vs paper-white keeps the plain YIQ budget.
+            let perceptual_match = if ink_c != ink_r {
+                false
+            } else if ink_c && ink_r {
                 d <= tm
                     && ciede2000(
                         srgb_to_lab([r[0], r[1], r[2]]),
@@ -143,10 +156,14 @@ pub(crate) fn classify_pixels(
             let class = if perceptual_match {
                 // 1. Match (YIQ within budget AND, for ink pixels, ΔE within JND).
                 PixelClass::Match
-            } else if d <= tm {
+            } else if ink_c && ink_r && d <= tm {
                 // YIQ matched but ΔE exceeded the JND on two ink pixels: a genuine
                 // sub-YIQ recolour (not anti-aliasing — AA is intermediate values
                 // on a contrast edge, which this is not). Score it as ColorErr.
+                // GUARDED to both-ink: a one-side-ink faint pixel (which now has
+                // perceptual_match=false even when its YIQ delta is sub-`tm`) must
+                // NOT be sucked into ColorErr here — it has to fall through to the
+                // Missing/Extra branches that the ink-mask disagreement implies.
                 PixelClass::ColorErr
             } else if masks.in_shared_band(x, y) && d <= ta {
                 // 2. AaEdge — only inside the shared edge band.
