@@ -376,6 +376,7 @@ BT\n/F1 12 Tf\n1 0 0 1 120.96 134.4 Tm\n<0048> Tj\nET\n";
     assert!(near(b.rect_pt[2], 200.0, 1e-6), "border w");
     assert!(near(b.rect_pt[3], 100.0, 1e-6), "border h");
     assert!(near(b.width_pt, 2.0, 1e-6), "stroke width");
+    assert!(b.from_segments, "a `m..l..S` run reconstructs the OUTER bbox (from_segments)");
 
     // Clip.
     assert_eq!(g.clips.len(), 1, "one clip rect");
@@ -525,7 +526,11 @@ fn verifier_border_centerline_normalization_matches_chrome() {
     };
     let cand = PdfGeometry {
         fills: vec![],
-        borders: vec![BorderRect { rect_pt: [28.8, 28.8, 150.0, 105.0], width_pt: 9.0 }],
+        borders: vec![BorderRect {
+            rect_pt: [28.8, 28.8, 150.0, 105.0],
+            width_pt: 9.0,
+            from_segments: true,
+        }],
         clips: vec![],
         text_runs: vec![],
     };
@@ -542,12 +547,148 @@ fn verifier_border_centerline_normalization_matches_chrome() {
     // width, so the centerline w/h are ~12pt off -> FAIL (not aligned away).
     let cand_wrong = PdfGeometry {
         fills: vec![],
-        borders: vec![BorderRect { rect_pt: [28.8, 28.8, 138.0, 93.0], width_pt: 9.0 }],
+        borders: vec![BorderRect {
+            rect_pt: [28.8, 28.8, 138.0, 93.0],
+            width_pt: 9.0,
+            from_segments: true,
+        }],
         clips: vec![],
         text_runs: vec![],
     };
     let vw = verify_geometry_for_test(&cand_wrong, &sc);
     assert_eq!(vw.status, Status::Fail, "12pt-undersized border -> FAIL ({})", vw.headline);
+}
+
+#[test]
+fn verifier_re_s_centerline_border_not_double_inset() {
+    // REGRESSION GUARD for the multi-border reconstruction bug. A grid/flex CHILD
+    // draws its uniform border as a self-contained `re S` whose `re` rect is ALREADY
+    // the centerline (= the element's OUTER background fill inset by the border
+    // width). Ground truth: the validated grid red cell — outer fill [45.3,45.3,75,75]
+    // pt, border `re S` [46.05,46.05,73.5,73.5] pt at 1.5pt width. The centerline is
+    // the cell's OWN value, 73.5x73.5; the prior verifier inset the `re` a SECOND
+    // time -> 72.0x72.0 (Δ1.5pt FALSE-fail). With the fill cross-check the co-located
+    // outer fill (75) defines the box and centerline = 75 - 1.5 = 73.5 == the `re`.
+    // The centerline TOP-LEFT sits half a width inside the fill corner: 45.3 + 0.75.
+    let sc = CoordSidecar {
+        schema: 1,
+        frame: "chrome-ref-pt".into(),
+        page_pt: [612.0, 792.0],
+        boxes: vec![CoordBox { role: "fill".into(), rect_pt: [45.3, 45.3, 75.0, 75.0], selector: None }],
+        borders: vec![CoordBox {
+            role: "border".into(),
+            rect_pt: [46.05, 46.05, 73.5, 73.5],
+            selector: None,
+        }],
+        text_runs: vec![],
+    };
+    let cand = PdfGeometry {
+        fills: vec![FillRect { rect_pt: [45.3, 45.3, 75.0, 75.0], fill: [1.0, 0.0, 0.0] }],
+        // The `re S` border at the centerline (from_segments == false).
+        borders: vec![BorderRect {
+            rect_pt: [45.3, 45.3, 73.5, 73.5],
+            width_pt: 1.5,
+            from_segments: false,
+        }],
+        clips: vec![],
+        text_runs: vec![],
+    };
+    let v = verify_geometry_for_test(&cand, &sc);
+    assert_eq!(
+        v.status,
+        Status::Pass,
+        "centerline `re S` border is NOT inset twice -> PASS (mag {}, {})",
+        v.magnitude, v.headline
+    );
+    assert!(v.magnitude <= 0.30 + 1e-9, "size matches exactly (mag {})", v.magnitude);
+}
+
+#[test]
+fn verifier_does_not_match_box_to_full_page_background() {
+    // REGRESSION GUARD for the primitive-matching bug (`fill#0 h Δ629pt`). ironpress
+    // paints an opaque full-page background rect sharing the page's top-left corner
+    // with the first real box. Matching by POSITION alone picked the page bg for a
+    // small expected box -> a ~page-height size delta. The verifier (a) drops the
+    // page-background fill by area, and (b) matches by SIZE-then-position, so the
+    // real box wins. Ground truth shapes: LETTER printable bg + a 300x105 parent box.
+    let sc = CoordSidecar {
+        schema: 1,
+        frame: "chrome-ref-pt".into(),
+        page_pt: [612.0, 792.0],
+        boxes: vec![CoordBox {
+            role: "fill".into(),
+            rect_pt: [27.75, 27.75, 300.0, 105.0],
+            selector: None,
+        }],
+        borders: vec![],
+        text_runs: vec![],
+    };
+    let cand = PdfGeometry {
+        fills: vec![
+            // The full-page background (printable area), same top-left corner.
+            FillRect { rect_pt: [28.8, 28.8, 554.4, 734.4], fill: [1.0, 1.0, 1.0] },
+            // The real parent box (~1.05pt frame offset, exact size).
+            FillRect { rect_pt: [28.8, 28.8, 300.0, 105.0], fill: [0.8, 0.85, 0.9] },
+        ],
+        borders: vec![],
+        clips: vec![],
+        text_runs: vec![],
+    };
+    let v = verify_geometry_for_test(&cand, &sc);
+    assert_eq!(
+        v.status,
+        Status::Pass,
+        "the 300x105 box matches the real box, not the page bg -> PASS (mag {}, {})",
+        v.magnitude, v.headline
+    );
+    assert!(v.magnitude < 1.0, "no ~629pt phantom size delta (mag {})", v.magnitude);
+}
+
+#[test]
+fn verifier_concentric_nested_border_uses_own_background() {
+    // REGRESSION GUARD for the nested-box fill cross-check. Three concentric fills
+    // share the SAME center as the innermost element's border. The border's outer box
+    // must be the element's OWN (tightest enclosing) background, NOT an ancestor's
+    // larger one. Ground truth: block-nested-containment — fills 225/189/153, the
+    // l3 border `re`-bbox 153 (segments) at 3pt; centerline = 153 - 3 = 150.
+    let sc = CoordSidecar {
+        schema: 1,
+        frame: "chrome-ref-pt".into(),
+        page_pt: [612.0, 792.0],
+        boxes: vec![
+            CoordBox { role: "fill".into(), rect_pt: [27.75, 27.75, 225.0, 225.0], selector: None },
+            CoordBox { role: "fill".into(), rect_pt: [45.75, 45.75, 189.0, 189.0], selector: None },
+            CoordBox { role: "fill".into(), rect_pt: [63.75, 63.75, 153.0, 153.0], selector: None },
+        ],
+        borders: vec![CoordBox {
+            role: "border".into(),
+            rect_pt: [65.25, 65.25, 150.0, 150.0],
+            selector: None,
+        }],
+        text_runs: vec![],
+    };
+    let cand = PdfGeometry {
+        fills: vec![
+            FillRect { rect_pt: [28.8, 28.8, 225.0, 225.0], fill: [0.18, 0.42, 0.87] },
+            FillRect { rect_pt: [46.8, 46.8, 189.0, 189.0], fill: [0.85, 0.31, 0.31] },
+            FillRect { rect_pt: [64.8, 64.8, 153.0, 153.0], fill: [0.94, 0.89, 0.29] },
+        ],
+        // Segment-reconstructed outer bbox of the innermost border (153 outer).
+        borders: vec![BorderRect {
+            rect_pt: [64.8, 64.8, 153.0, 153.0],
+            width_pt: 3.0,
+            from_segments: true,
+        }],
+        clips: vec![],
+        text_runs: vec![],
+    };
+    let v = verify_geometry_for_test(&cand, &sc);
+    assert_eq!(
+        v.status,
+        Status::Pass,
+        "concentric border insets to 150 using its OWN bg, not the 225 ancestor (mag {}, {})",
+        v.magnitude, v.headline
+    );
 }
 
 #[test]
@@ -735,13 +876,51 @@ fn combiner_pdfgeom_pass_raster_geom_fail_jitter_is_pass_plus_disagreement() {
 }
 
 #[test]
-fn combiner_pdfgeom_fail_is_fail_hard_floor() {
-    // PdfGeom FAIL on Geometry -> hard floor -> combined FAIL, regardless of raster
-    // passing every axis.
+fn combiner_pdfgeom_fail_capped_when_image_not_broken() {
+    // THE IMAGE-CONFIRMATION TEMPER (no-false-fail-on-correct-geometry): PdfGeom
+    // FAIL (a real but SUB-VISUAL vector discrepancy, e.g. a flex/grid container
+    // ~3pt off in its cross-axis) while RasterDiff's GEOMETRY opinion is NOT a FAIL
+    // (the image matches). The vector FAIL is capped to PARTIAL and the cap is
+    // recorded as a disagreement (the discrepancy is surfaced, never hidden) ->
+    // combined PARTIAL, not a hard FAIL.
     let mut subs = raster_triple(Status::Pass, Status::Pass, Status::Pass);
     subs.push(sv(VK::PdfGeometry, Concern::Geometry, Status::Fail));
     let c = combine(&subs);
-    assert_eq!(c.status, Status::Fail, "PdfGeom Geometry FAIL is unmaskable (hard floor)");
+    assert_eq!(
+        c.status,
+        Status::Partial,
+        "vector FAIL on visually-correct geometry is capped to PARTIAL, not FAIL"
+    );
+    let geom = c.per_concern.iter().find(|p| p.concern == Concern::Geometry).unwrap();
+    assert_eq!(geom.authority, VK::PdfGeometry);
+    assert_eq!(geom.status, Status::Partial, "geometry axis tempered to PARTIAL");
+    assert!(
+        c.disagreements.iter().any(|d| d.note.contains("capped to PARTIAL")),
+        "the cap is recorded as a disagreement"
+    );
+}
+
+#[test]
+fn combiner_pdfgeom_fail_stands_when_raster_geom_also_fails() {
+    // The temper does NOT apply when the bug is VISIBLE: RasterDiff also FAILs
+    // Geometry, so PdfGeom's FAIL is confirmed by the image and the combined verdict
+    // is FAIL. (Genuinely-broken geometry still FAILs — the verifier keeps teeth.)
+    let mut subs = raster_triple(Status::Fail, Status::Pass, Status::Pass);
+    subs.push(sv(VK::PdfGeometry, Concern::Geometry, Status::Fail));
+    let c = combine(&subs);
+    assert_eq!(c.status, Status::Fail, "vector FAIL confirmed by raster geometry FAIL -> FAIL");
+}
+
+#[test]
+fn combiner_pdfgeom_fail_capped_when_raster_geom_partial() {
+    // The common container case: PdfGeom FAIL (3pt) + RasterDiff Geometry PARTIAL
+    // (mild visible edge) -> the image is not BROKEN (only mildly off) -> cap to
+    // PARTIAL. Raster's other axes pass, so combined PARTIAL (no regression from the
+    // raster baseline, which was PARTIAL).
+    let mut subs = raster_triple(Status::Partial, Status::Pass, Status::Pass);
+    subs.push(sv(VK::PdfGeometry, Concern::Geometry, Status::Fail));
+    let c = combine(&subs);
+    assert_eq!(c.status, Status::Partial, "PdfGeom FAIL + raster PARTIAL geometry -> PARTIAL");
 }
 
 #[test]

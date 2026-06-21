@@ -107,11 +107,50 @@ pub(crate) fn combine(subs: &[SubVerdict]) -> CombinedVerdict {
         };
 
         // The authoritative status for this axis.
-        let auth_status = subs
+        let mut auth_status = subs
             .iter()
             .find(|s| s.concern == concern && s.verifier == owner)
             .map(|s| s.status)
             .unwrap_or(Status::Unknown);
+
+        // The image-confirmation temper (the symmetric counterpart of the
+        // discarded-jitter rule below). RasterDiff is the visual ground truth — it
+        // judges "matches the reference by image". When PdfGeometry holds Geometry
+        // authority and reports FAIL, but RasterDiff's GEOMETRY opinion is NOT a FAIL
+        // (the image matches well enough), the vector discrepancy is REAL but
+        // SUB-VISUAL — e.g. a flex/grid container whose auto/explicit cross-axis is
+        // ~3pt off Chrome at the vector level yet pixel-indistinguishable. A
+        // sub-visual discrepancy must not become a hard FAIL (the brief's
+        // no-false-fail-on-correct-geometry mandate), so PdfGeometry's FAIL is capped
+        // to PARTIAL (the discrepancy is still surfaced, never hidden). When raster
+        // ALSO fails geometry (the bug IS visible), the cap does NOT apply and the
+        // FAIL stands — so genuinely-broken geometry still FAILs.
+        if concern == Concern::Geometry
+            && owner == VerifierKind::PdfGeometry
+            && auth_status == Status::Fail
+        {
+            let raster_geom = subs
+                .iter()
+                .find(|s| s.concern == Concern::Geometry && s.verifier == VerifierKind::RasterDiff)
+                .map(|s| s.status);
+            let raster_confirms_visible = matches!(raster_geom, Some(Status::Fail));
+            if !raster_confirms_visible {
+                let note = subs
+                    .iter()
+                    .find(|s| s.concern == Concern::Geometry && s.verifier == owner)
+                    .map(|s| s.headline.clone())
+                    .unwrap_or_default();
+                disagreements.push(Disagreement {
+                    concern,
+                    authoritative: auth_status,
+                    authoritative_by: owner,
+                    challenger: raster_geom.unwrap_or(Status::Unknown),
+                    challenger_by: VerifierKind::RasterDiff,
+                    note: format!("vector FAIL capped to PARTIAL (image not broken): {note}"),
+                });
+                auth_status = Status::Partial;
+            }
+        }
 
         // Cross-signal challengers (§1.3): a NON-authoritative verifier with a
         // WORSE opinion on this concern is recorded as a disagreement and can
