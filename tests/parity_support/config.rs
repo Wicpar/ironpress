@@ -32,11 +32,16 @@ pub(crate) const PM_MAX_DELTA: f64 = 35215.0;
 
 /// Device px per CSS px @ 300 DPI (96 CSS px/in -> 300/96 = 3.125).
 pub(crate) const CSS_PX: f64 = 3.125;
-/// Fixed page-origin correction (device px): ironpress content sits +4,+4 vs the
-/// Chrome reference because Chrome's `--print-to-pdf` rounds the printable margin.
-/// We shift the candidate by `-GLOBAL_OFFSET` once, uniformly, and audit it — we
-/// do NOT search per-fixture (that masked real layout bugs). See spec §0.1/§1.3.
-pub(crate) const GLOBAL_OFFSET: (i32, i32) = (4, 4);
+/// Fixed page-origin correction (device px). Every fixture now declares
+/// `@page { size: <content>; margin: 0 }` (sized to what it tests — no white-space
+/// skew), so content sits at the page ORIGIN in BOTH engines and there is no
+/// margin for Chrome's `--print-to-pdf` to round: the measured cand-vs-ref offset
+/// is (0,0). (Historically this was (4,4) from the 28.8pt printable-margin
+/// rounding under the old uniform-LETTER fixtures.) We still shift the candidate
+/// by `-GLOBAL_OFFSET` (now a no-op) and AUDIT it on the rigid probes — a nonzero
+/// drift means a real margin/origin regression and aborts the run. We do NOT
+/// search per-fixture (that masked real layout bugs). See spec §0.1/§1.3.
+pub(crate) const GLOBAL_OFFSET: (i32, i32) = (0, 0);
 /// Allowed raw-probe deviation from `GLOBAL_OFFSET` during calibration audit.
 pub(crate) const PROBE_JITTER_PX: i32 = 1;
 /// Post-calibration sub-pixel rounding band: a residual displacement within this
@@ -69,6 +74,22 @@ pub(crate) const SHIFT_SEARCH_PX: i32 = 16;
 /// bidirectional same-ink test that cannot mask a whole-element shift — that is the
 /// bbox-extent gate's job.)
 pub(crate) const EDGE_JITTER_PX: i32 = 2;
+/// Wider radius (device px) for the BOTH-INK AA-ramp forgiveness ONLY (classify
+/// branch 5, `GeomShift`): a pixel where BOTH images have ink but at different
+/// tones is forgiven when each side's tone reappears within this radius in the
+/// other image (a displaced anti-aliased edge ramp). Cross-engine text places the
+/// SAME glyph outlines (same font, same poppler rasterizer) at sub-pixel-different
+/// positions, so a glyph edge's AA ramp can land several device px apart on a
+/// multi-line block (measured up to ~7px on `inline-text-word-break-break-all`);
+/// the 2px `EDGE_JITTER_PX` was too small, mislabelling these displaced ramps as a
+/// hard "fill recolour" (ΔE ~85, black-vs-white) — confusing cross-engine AA with
+/// a real colour error. This radius applies ONLY to branch 5 — NOT to the
+/// Missing/Extra branches (3/4), which keep the tight `EDGE_JITTER_PX` so a
+/// genuinely absent feature is never laundered. It cannot mask a solid recolour
+/// (the bidirectional SAME-COLOUR test fails in a uniformly-recoloured region) nor
+/// a consistent shift/size change (caught independently by the bbox-extent gate
+/// `G_EDGE_CSS`). ~6 device px ≈ 1.9 CSS px.
+pub(crate) const AA_RAMP_RADIUS_PX: i32 = 6;
 
 /// V2 per-pixel match threshold (pixelmatch `threshold`, 0..1), tighter than the
 /// removed legacy 0.12. Used by the V2 path's `t_match()`.
@@ -107,6 +128,20 @@ pub(crate) const G_SHIFT_CSS: (f64, f64) = (1.0, 4.0);
 pub(crate) const COLOR_DE_PASS: f64 = 2.5;
 /// ΔE2000: at/above this is a hard colour failure regardless of area.
 pub(crate) const COLOR_DE_FAIL: f64 = 6.0;
+
+// --- floor-forgiveness (combine.rs §1.x) -----------------------------------
+// When `PdfGeometry` has PROVEN a fixture's geometry exact (Geometry=Pass — every
+// committed Chrome box matched within `GEOM_TOL_PT`), a SMALL residual RasterDiff
+// PRESENCE PARTIAL is the cross-rasterizer edge floor: border coverage differences
+// where Chrome and resvg paint slightly different pixels along a 2px box border
+// (~0.5-0.8% missing/extra), not a real defect. Only Presence is forgiven —
+// Appearance is NOT, because a real clip/fill difference at a box boundary is a
+// small edge-band ColorErr indistinguishable by magnitude from genuine border AA,
+// and PdfGeometry verifies box rects, not clip regions or fills. PARTIAL-only,
+// never FAIL; well below the PARTIAL→FAIL bound (6.0).
+/// Max RasterDiff Presence missing/extra (%) forgiven to PASS under a PdfGeometry
+/// geometry proof. Box-edge coverage AA floor measured ≤ ~0.8%.
+pub(crate) const FLOOR_PRESENCE_PCT: f64 = 1.5;
 
 // ===========================================================================
 // PDF-GEOMETRY VERIFIER CONSTANTS (spec §2.3 / Phase 2a)

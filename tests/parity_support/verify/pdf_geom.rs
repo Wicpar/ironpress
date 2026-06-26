@@ -334,9 +334,57 @@ struct PathState {
 
 /// Extract candidate geometry from PDF bytes. `None` if the content stream is
 /// filtered/unfindable (degrade to raster fallback, never guess).
+/// Parse the page height (pt) from the first `/MediaBox [x0 y0 x1 y1]`. Per-fixture
+/// `@page` sizing means the page is NO LONGER a fixed LETTER 792pt — the y-flip must
+/// use the candidate's actual page height. Defaults to `PAGE_H_PT` when absent or
+/// unparseable (golden hand-written streams + any legacy LETTER PDF are unchanged).
+fn parse_media_box_height(pdf: &[u8]) -> f64 {
+    let Some(pos) = find(pdf, b"/MediaBox") else {
+        return PAGE_H_PT;
+    };
+    let rest = &pdf[pos..];
+    let Some(lb) = find(rest, b"[") else {
+        return PAGE_H_PT;
+    };
+    let Some(rb) = find(&rest[lb..], b"]") else {
+        return PAGE_H_PT;
+    };
+    let inner = &rest[lb + 1..lb + rb];
+    let nums: Vec<f64> = inner
+        .split(|&b| b" \r\n\t".contains(&b))
+        .filter(|s| !s.is_empty())
+        .filter_map(parse_num)
+        .collect();
+    if nums.len() == 4 {
+        (nums[3] - nums[1]).abs()
+    } else {
+        PAGE_H_PT
+    }
+}
+
 pub(crate) fn extract_geometry(pdf: &[u8]) -> Option<PdfGeometry> {
     let body = find_content_stream(pdf)?;
-    Some(extract_from_body(body))
+    let mut geo = extract_from_body(body);
+    // `extract_from_body` flips PDF (bottom-left) y to top-left using the nominal
+    // `PAGE_H_PT`. Correct to the candidate's ACTUAL page height: the flip is linear
+    // (`y_tl = page_h - y_bl`), so a uniform y shift of `(page_h - PAGE_H_PT)` on
+    // every top-left y is exact. (No-op when the page is LETTER 792 — delta 0.)
+    let delta = parse_media_box_height(pdf) - PAGE_H_PT;
+    if delta != 0.0 {
+        for f in &mut geo.fills {
+            f.rect_pt[1] += delta;
+        }
+        for b in &mut geo.borders {
+            b.rect_pt[1] += delta;
+        }
+        for c in &mut geo.clips {
+            c.rect_pt[1] += delta;
+        }
+        for t in &mut geo.text_runs {
+            t.origin_pt[1] += delta;
+        }
+    }
+    Some(geo)
 }
 
 /// Tokenize + interpret an already-located content-stream body. Split out so the
@@ -852,9 +900,32 @@ pub(crate) fn verify_geometry_for_test(cand: &PdfGeometry, sidecar: &CoordSideca
 
 /// The full vector-geometry assertion (spec §2.3) with the whole-page offset
 /// refinement. Returns ONE Geometry SubVerdict.
+/// A sidecar "fill" whose minor axis is below this (pt) is a BORDER HAIRLINE, not
+/// a content box. Chrome's `border-collapse` paints each collapsed cell border as
+/// a thin filled rect (`x y w h re f`, ~1.5-4pt minor axis), so it lands in the
+/// sidecar's `boxes`. ironpress draws the same borders as STROKED line paths
+/// (`m..l..S`), which are not `re` fills, so they can never match — producing a
+/// false `fill#N unmatched` FAIL even when the render is pixel-identical (e.g.
+/// tables-layout-fixed: 0.18% raster diff, all RasterDiff concerns PASS, yet
+/// PdfGeometry FAILs on the 17 border-segment fills). PdfGeometry's contract is
+/// CONTENT-BOX geometry (offset-cancelled size verification of real boxes); border
+/// REPRESENTATION (fill vs stroke) is engine-specific and is already judged by
+/// RasterDiff's Presence/Appearance at the border pixels. So thin fills are
+/// excluded from the content-fill match. Content cells/boxes are far larger
+/// (≥~20pt), so this never drops a real box; any thin-element defect is still
+/// caught by RasterDiff.
+const THIN_FILL_PT: f64 = 4.0;
+
 fn verify_geometry(cand: &PdfGeometry, sidecar: &CoordSidecar) -> SubVerdict {
     // Expected + candidate primitives, grouped by kind (fills, borders, text).
-    let exp_fills: Vec<Prim> = sidecar.boxes.iter().map(box_prim).collect();
+    // Border-hairline fills (Chrome's collapsed-border-as-fill segments) are
+    // excluded — see THIN_FILL_PT.
+    let exp_fills: Vec<Prim> = sidecar
+        .boxes
+        .iter()
+        .filter(|b| b.rect_pt[2].min(b.rect_pt[3]) >= THIN_FILL_PT)
+        .map(box_prim)
+        .collect();
     let exp_borders: Vec<Prim> = sidecar.borders.iter().map(box_prim).collect();
     let exp_text: Vec<Prim> = sidecar.text_runs.iter().map(text_prim).collect();
 
