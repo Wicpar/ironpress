@@ -1,0 +1,521 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>parity · grid</title><style>:root{--bg:#fff;--fg:#1f2328;--muted:#57606a;--line:#d0d7de;--card:#f6f8fa;}*{box-sizing:border-box}body{margin:0;padding:24px;font:14px/1.5 -apple-system,BlinkMacSystemFont,'Segoe UI',Helvetica,Arial,sans-serif;color:var(--fg);background:var(--bg)}h1{font-size:22px;margin:0 0 4px}h2{font-size:17px;margin:28px 0 8px}a{color:#0969da;text-decoration:none}a:hover{text-decoration:underline}.meta{color:var(--muted);font-size:13px;margin:0 0 16px}.badge{display:inline-block;padding:1px 8px;border-radius:999px;color:#fff;font-weight:600;font-size:12px}table{border-collapse:collapse;width:100%;margin:8px 0 24px;font-size:13px}th,td{border:1px solid var(--line);padding:6px 8px;text-align:left;vertical-align:top}th{background:var(--card);position:sticky;top:0;cursor:pointer;user-select:none}tr:nth-child(even) td{background:#fafbfc}.num{text-align:right;font-variant-numeric:tabular-nums}.trip{display:flex;gap:4px;flex-wrap:nowrap}.trip figure{margin:0;flex:1;min-width:0}.trip figcaption{font-size:11px;color:var(--muted);text-align:center;margin-top:2px}.trip img{width:100%;max-width:240px;height:auto;border:1px solid var(--line);background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 50%/16px 16px;display:block}.desc{color:var(--muted);max-width:34ch}.real{color:#cf222e;font-weight:600}.confound{color:#9a6700}.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:8px}.jump{font-size:13px;margin:4px 0 18px;line-height:2.1}.jump a{display:inline-block;padding:2px 8px;margin:2px 2px 2px 0;border:1px solid var(--line);border-radius:999px;background:var(--card)}.jump .sc{color:var(--muted);font-variant-numeric:tabular-nums}section.feat{margin:0 0 26px}section.feat h2{display:flex;align-items:baseline;gap:10px;border-bottom:2px solid var(--line);padding-bottom:4px}section.feat h2 .top{margin-left:auto;font-size:12px;font-weight:400}.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(360px,1fr));gap:12px;margin-top:10px}.card{border:1px solid var(--line);border-radius:8px;padding:8px;background:#fff}.chead{font-size:13px;margin-bottom:6px;display:flex;align-items:center;gap:6px;flex-wrap:wrap}details{margin:4px 0;border:1px solid var(--line);border-radius:6px;padding:6px 10px;background:var(--card)}summary{cursor:pointer;font-weight:600}.featlist{margin:6px 0 4px;columns:2;font-size:13px;list-style:none;padding:0}.featlist li{break-inside:avoid;margin:2px 0}.chip{display:inline-block;padding:1px 7px;border-radius:6px;font-size:11px;font-weight:600;border:1px solid var(--line);background:var(--card);font-variant-numeric:tabular-nums}.chip.cls{color:#fff;border:0}.quad{display:flex;gap:4px;flex-wrap:nowrap;margin:4px 0}.quad figure{margin:0;flex:1;min-width:0}.quad figcaption{font-size:11px;color:var(--muted);text-align:center;margin-top:2px}.quad img{width:100%;max-width:240px;height:auto;border:1px solid var(--line);background:repeating-conic-gradient(#eee 0% 25%,#fff 0% 50%) 50%/16px 16px;display:block}.legend{display:flex;flex-wrap:wrap;gap:4px 12px;font-size:11px;color:var(--muted);margin:4px 0;padding:4px 6px;border:1px dashed var(--line);border-radius:6px}.legend .lg{display:inline-flex;align-items:center;gap:4px}.legend .sw{display:inline-block;width:11px;height:11px;border-radius:2px;border:1px solid rgba(0,0,0,.15)}.legend .note{flex-basis:100%;color:#9a6700;font-style:italic}.regtbl{font-size:12px;margin:6px 0 2px}.regtbl th{position:static;cursor:default}.src{margin:4px 0}.src pre{margin:0;max-height:280px;overflow:auto;background:#0d1117;color:#e6edf3;border-radius:6px;padding:8px 10px;font:12px/1.45 ui-monospace,SFMono-Regular,Menlo,Consolas,monospace}.src code{white-space:pre}.src .ln{color:#6e7681;display:inline-block;width:3ch;text-align:right;margin-right:12px;user-select:none}.filterbar{display:flex;gap:8px;align-items:center;flex-wrap:wrap;margin:8px 0 14px;font-size:13px}.filterbar label{color:var(--muted)}.filterbar select,.filterbar input{font:13px inherit;padding:2px 6px;border:1px solid var(--line);border-radius:6px}.fxrow.hidden{display:none}</style><script>function sortTable(t,col){var tb=t.tBodies[0];var rows=[].slice.call(tb.rows);var asc=t.getAttribute('data-sort')!=col+'a';rows.sort(function(a,b){var x=a.cells[col].getAttribute('data-k')||a.cells[col].innerText;var y=b.cells[col].getAttribute('data-k')||b.cells[col].innerText;var nx=parseFloat(x),ny=parseFloat(y);if(!isNaN(nx)&&!isNaN(ny)){return asc?nx-ny:ny-nx;}return asc?x.localeCompare(y):y.localeCompare(x);});rows.forEach(function(r){tb.appendChild(r);});t.setAttribute('data-sort',col+(asc?'a':'d'));}function filterCards(){var st=(document.getElementById('f-status')||{}).value||'';var cl=(document.getElementById('f-class')||{}).value||'';var md=parseFloat((document.getElementById('f-diff')||{}).value)||0;var cards=document.querySelectorAll('.card.fxrow');var shown=0;cards.forEach(function(c){var ok=(!st||c.getAttribute('data-status')===st)&&(!cl||c.getAttribute('data-class')===cl)&&(parseFloat(c.getAttribute('data-diff'))>=md);c.classList.toggle('hidden',!ok);if(ok)shown++;});var fc=document.getElementById('f-count');if(fc)fc.textContent=shown+' / '+cards.length+' fixtures';}function sortCards(){var mode=(document.getElementById('f-sort')||{}).value||'fail';var rank={FAIL:0,PARTIAL:1,PASS:2,UNKNOWN:3};document.querySelectorAll('.cards').forEach(function(grid){var cards=[].slice.call(grid.querySelectorAll('.card.fxrow'));cards.sort(function(a,b){var da=parseFloat(a.getAttribute('data-diff'))||0,db=parseFloat(b.getAttribute('data-diff'))||0;if(mode==='diffd')return db-da;if(mode==='diffa')return da-db;var ra=rank[a.getAttribute('data-status')],rb=rank[b.getAttribute('data-status')];return ra!==rb?ra-rb:db-da;});cards.forEach(function(c){grid.appendChild(c);});});}function filterWorklist(){var cl=(document.getElementById('wl-class')||{}).value||'';document.querySelectorAll('tr.wl').forEach(function(r){r.style.display=(!cl||r.getAttribute('data-class')===cl)?'':'none';});}</script></head><body><h1>grid — 0.00%</h1><p class="meta"><a href="index.html">&larr; all categories</a> · PASS 0 · PARTIAL 0 · FAIL 16 · UNKNOWN 0 · 16 fixtures · V2 classed-diff · 300 DPI</p><nav class="jump"><strong>Features:</strong> <a href="#feat-grid-template-columns">grid-template-columns <span class="sc">0%</span></a> <a href="#feat-align-items">align-items <span class="sc">0%</span></a> <a href="#feat-display">display <span class="sc">0%</span></a> <a href="#feat-gap">gap <span class="sc">0%</span></a> <a href="#feat-grid-auto-flow">grid-auto-flow <span class="sc">0%</span></a> <a href="#feat-grid-auto-rows">grid-auto-rows <span class="sc">0%</span></a> <a href="#feat-grid-column">grid-column <span class="sc">0%</span></a> <a href="#feat-grid-row">grid-row <span class="sc">0%</span></a> <a href="#feat-grid-template-rows">grid-template-rows <span class="sc">0%</span></a> <a href="#feat-justify-items">justify-items <span class="sc">0%</span></a> <a href="#feat-place-items">place-items <span class="sc">0%</span></a> </nav><div class="filterbar"><label>status <select id="f-status" onchange="filterCards()"><option value="">all</option><option value="FAIL">FAIL</option><option value="PARTIAL">PARTIAL</option><option value="PASS">PASS</option><option value="UNKNOWN">UNKNOWN</option></select></label><label>class <select id="f-class" onchange="filterCards()"><option value="">all</option><option value="Missing">Missing</option></select></label><label>min diff% <input id="f-diff" type="number" min="0" step="1" value="0" style="width:6ch" oninput="filterCards()"></label><label>sort <select id="f-sort" onchange="sortCards()"><option value="fail">FAIL-first</option><option value="diffd">diff% high→low</option><option value="diffa">diff% low→high</option></select></label><span id="f-count" class="meta"></span></div><section class="feat"><h2 id="feat-grid-template-columns">grid-template-columns — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 6</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="54.6278"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">54.63%</span> <strong>grid-template-columns-auto</strong> · auto · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−321.6px R</span><span class="chip">missing 95.9%</span><span class="chip">extra 45.7%</span><span class="chip">ΔE 29.6</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-template-columns-auto.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-template-columns-auto.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-template-columns-auto.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Three columns sized 100px auto 100px so the auto track absorbs the leftover width.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 741,102</td><td class="num">54.63</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-template-columns-auto.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid template-columns auto&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 100px auto 100px;
+<span class="ln">12</span>    grid-template-rows: 100px;
+<span class="ln">13</span>    width: 400px;
+<span class="ln">14</span>    height: 100px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>&lt;/style&gt;
+<span class="ln">23</span>&lt;/head&gt;
+<span class="ln">24</span>&lt;body&gt;
+<span class="ln">25</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>  &lt;/div&gt;
+<span class="ln">30</span>&lt;/body&gt;
+<span class="ln">31</span>&lt;/html&gt;
+</code></pre></details></div><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="54.5677"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">54.57%</span> <strong>grid-template-columns-percent</strong> · percent · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−321.6px R</span><span class="chip">missing 96.3%</span><span class="chip">extra 45.7%</span><span class="chip">ΔE 31.3</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-template-columns-percent.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-template-columns-percent.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-template-columns-percent.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Three columns sized 25% 50% 25% of a fixed-width grid container.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 741,112</td><td class="num">54.57</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-template-columns-percent.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid template-columns percent&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 25% 50% 25%;
+<span class="ln">12</span>    grid-template-rows: 110px;
+<span class="ln">13</span>    width: 400px;
+<span class="ln">14</span>    height: 110px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>&lt;/style&gt;
+<span class="ln">23</span>&lt;/head&gt;
+<span class="ln">24</span>&lt;body&gt;
+<span class="ln">25</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>  &lt;/div&gt;
+<span class="ln">30</span>&lt;/body&gt;
+<span class="ln">31</span>&lt;/html&gt;
+</code></pre></details></div><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="49.3774"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">49.38%</span> <strong>grid-template-columns-fr-mix</strong> · fr-mix · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−361.6px R</span><span class="chip">missing 96.6%</span><span class="chip">extra 51.2%</span><span class="chip">ΔE 29.7</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-template-columns-fr-mix.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-template-columns-fr-mix.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-template-columns-fr-mix.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Three columns sized 1fr 2fr 1fr so the middle track is twice the width of the side tracks.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 741,122</td><td class="num">49.38</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-template-columns-fr-mix.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid template-columns fr mix&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 1fr 2fr 1fr;
+<span class="ln">12</span>    grid-template-rows: 120px;
+<span class="ln">13</span>    width: 360px;
+<span class="ln">14</span>    height: 120px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>&lt;/style&gt;
+<span class="ln">23</span>&lt;/head&gt;
+<span class="ln">24</span>&lt;body&gt;
+<span class="ln">25</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>  &lt;/div&gt;
+<span class="ln">30</span>&lt;/body&gt;
+<span class="ln">31</span>&lt;/html&gt;
+</code></pre></details></div><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="47.0307"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">47.03%</span> <strong>grid-template-columns-minmax</strong> · minmax · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−381.1px R</span><span class="chip">missing 95.9%</span><span class="chip">extra 53.8%</span><span class="chip">ΔE 29.8</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-template-columns-minmax.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-template-columns-minmax.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-template-columns-minmax.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Two flexible columns using minmax(80px,1fr) and minmax(120px,1fr) distributing remaining space.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 741,102</td><td class="num">47.03</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-template-columns-minmax.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid template-columns minmax&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: minmax(80px, 1fr) minmax(120px, 1fr);
+<span class="ln">12</span>    grid-template-rows: 100px;
+<span class="ln">13</span>    width: 340px;
+<span class="ln">14</span>    height: 100px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>&lt;/style&gt;
+<span class="ln">22</span>&lt;/head&gt;
+<span class="ln">23</span>&lt;body&gt;
+<span class="ln">24</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">25</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>  &lt;/div&gt;
+<span class="ln">28</span>&lt;/body&gt;
+<span class="ln">29</span>&lt;/html&gt;
+</code></pre></details></div><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="44.9811"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">44.98%</span> <strong>grid-template-columns-repeat</strong> · repeat · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−397.4px R</span><span class="chip">missing 95.5%</span><span class="chip">extra 56.4%</span><span class="chip">ΔE 29.8</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-template-columns-repeat.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-template-columns-repeat.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-template-columns-repeat.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Four equal 80px columns produced by repeat(4, 80px).</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 739,92</td><td class="num">44.98</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-template-columns-repeat.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid template-columns repeat&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: repeat(4, 80px);
+<span class="ln">12</span>    grid-template-rows: 90px;
+<span class="ln">13</span>    width: 320px;
+<span class="ln">14</span>    height: 90px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>  .d { background: #5a3fff; }
+<span class="ln">23</span>&lt;/style&gt;
+<span class="ln">24</span>&lt;/head&gt;
+<span class="ln">25</span>&lt;body&gt;
+<span class="ln">26</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell d&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>  &lt;/div&gt;
+<span class="ln">32</span>&lt;/body&gt;
+<span class="ln">33</span>&lt;/html&gt;
+</code></pre></details></div><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="28.5749"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">28.57%</span> <strong>grid-named-lines-basic</strong> · named-lines · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−519.4px R</span><span class="chip">missing 96.7%</span><span class="chip">extra 72.7%</span><span class="chip">ΔE 29.5</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-named-lines-basic.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-named-lines-basic.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-named-lines-basic.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Named column lines [start] [mid] [end] referenced by grid-column to place overlapping cells.</div><details><summary>regions (2)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>20,0 → 741,126</td><td class="num">28.50</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>0,0 → 20,4</td><td class="num">0.08</td><td></td><td>extra paint where Chrome is blank (0.1%)</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-named-lines-basic.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid named lines basic&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: [start] 100px [mid] 100px [end];
+<span class="ln">12</span>    grid-template-rows: 120px;
+<span class="ln">13</span>    width: 200px;
+<span class="ln">14</span>    height: 120px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; grid-column: start / end; }
+<span class="ln">20</span>  .b { background: #2ec4b6; grid-column: mid / end; }
+<span class="ln">21</span>&lt;/style&gt;
+<span class="ln">22</span>&lt;/head&gt;
+<span class="ln">23</span>&lt;body&gt;
+<span class="ln">24</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">25</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>  &lt;/div&gt;
+<span class="ln">28</span>&lt;/body&gt;
+<span class="ln">29</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-align-items">align-items — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="12.6203"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">12.62%</span> <strong>grid-align-items-start</strong> · start · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−477.4px R</span><span class="chip">missing 92.6%</span><span class="chip">extra 67.3%</span><span class="chip">ΔE 29.7</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-align-items-start.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-align-items-start.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-align-items-start.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">align-items: start aligns short cells to the block (top) start of each track.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 739,160</td><td class="num">12.62</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-align-items-start.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid align-items start&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 120px 120px;
+<span class="ln">12</span>    grid-template-rows: 160px;
+<span class="ln">13</span>    align-items: start;
+<span class="ln">14</span>    width: 240px;
+<span class="ln">15</span>    height: 160px;
+<span class="ln">16</span>    margin: 20px;
+<span class="ln">17</span>    border: 2px solid #000000;
+<span class="ln">18</span>  }
+<span class="ln">19</span>  .cell {
+<span class="ln">20</span>    width: 120px;
+<span class="ln">21</span>    height: 50px;
+<span class="ln">22</span>    border: 2px solid #003a8c;
+<span class="ln">23</span>  }
+<span class="ln">24</span>  .a { background: #ff5a5f; }
+<span class="ln">25</span>  .b { background: #2ec4b6; }
+<span class="ln">26</span>&lt;/style&gt;
+<span class="ln">27</span>&lt;/head&gt;
+<span class="ln">28</span>&lt;body&gt;
+<span class="ln">29</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">32</span>  &lt;/div&gt;
+<span class="ln">33</span>&lt;/body&gt;
+<span class="ln">34</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-display">display — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="28.4111"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">28.41%</span> <strong>grid-display-grid</strong> · grid · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−517.4px R</span><span class="chip">missing 97.9%</span><span class="chip">extra 72.7%</span><span class="chip">ΔE 30.3</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-display-grid.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-display-grid.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-display-grid.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">2x2 grid of fixed-px tracks establishing a grid formatting context; four colored cells fill the tracks.</div><details><summary>regions (2)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>20,0 → 739,202</td><td class="num">28.36</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>0,0 → 20,4</td><td class="num">0.05</td><td></td><td>extra paint where Chrome is blank (0.0%)</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-display-grid.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid display-grid&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 100px 100px;
+<span class="ln">12</span>    grid-template-rows: 100px 100px;
+<span class="ln">13</span>    width: 200px;
+<span class="ln">14</span>    height: 200px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>  .d { background: #5a3fff; }
+<span class="ln">23</span>&lt;/style&gt;
+<span class="ln">24</span>&lt;/head&gt;
+<span class="ln">25</span>&lt;body&gt;
+<span class="ln">26</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell d&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>  &lt;/div&gt;
+<span class="ln">32</span>&lt;/body&gt;
+<span class="ln">33</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-gap">gap — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="19.699"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">19.70%</span> <strong>grid-gap</strong> · row-column-gap · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−479.4px R</span><span class="chip">missing 96.8%</span><span class="chip">extra 73.7%</span><span class="chip">ΔE 54.4</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-gap.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-gap.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-gap.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">2x2 grid with distinct row-gap (20px) and column-gap (40px) separating the cells.</div><details><summary>regions (4)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 260,200</td><td class="num">13.97</td><td>ΔE 55.0 ΔRGB(-46,-90,-129)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>142,102 → 221,182</td><td class="num">4.33</td><td></td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>260,0 → 739,24</td><td class="num">1.37</td><td></td><td>extra paint where Chrome is blank (1.4%)</td></tr><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>258,3 → 260,21</td><td class="num">0.02</td><td></td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-gap.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid gap&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 80px 80px;
+<span class="ln">12</span>    grid-template-rows: 80px 80px;
+<span class="ln">13</span>    row-gap: 20px;
+<span class="ln">14</span>    column-gap: 40px;
+<span class="ln">15</span>    width: 240px;
+<span class="ln">16</span>    height: 200px;
+<span class="ln">17</span>    margin: 20px;
+<span class="ln">18</span>    border: 2px solid #000000;
+<span class="ln">19</span>  }
+<span class="ln">20</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">21</span>  .a { background: #ff5a5f; }
+<span class="ln">22</span>  .b { background: #2ec4b6; }
+<span class="ln">23</span>  .c { background: #ffbf00; }
+<span class="ln">24</span>  .d { background: #5a3fff; }
+<span class="ln">25</span>&lt;/style&gt;
+<span class="ln">26</span>&lt;/head&gt;
+<span class="ln">27</span>&lt;body&gt;
+<span class="ln">28</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">29</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">32</span>    &lt;div class=&quot;cell d&quot;&gt;&lt;/div&gt;
+<span class="ln">33</span>  &lt;/div&gt;
+<span class="ln">34</span>&lt;/body&gt;
+<span class="ln">35</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-grid-auto-flow">grid-auto-flow — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="23.7235"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">23.72%</span> <strong>grid-auto-flow-column</strong> · column · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−479.4px R</span><span class="chip">missing 96.9%</span><span class="chip">extra 72.3%</span><span class="chip">ΔE 29.5</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-auto-flow-column.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-auto-flow-column.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-auto-flow-column.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">grid-auto-flow: column places items down each column before wrapping to the next.</div><details><summary>regions (3)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>20,2 → 260,162</td><td class="num">22.13</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>260,0 → 739,4</td><td class="num">1.54</td><td></td><td>extra paint where Chrome is blank (1.5%)</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>0,0 → 20,4</td><td class="num">0.06</td><td></td><td>extra paint where Chrome is blank (0.1%)</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-auto-flow-column.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid auto-flow column&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 80px 80px 80px;
+<span class="ln">12</span>    grid-template-rows: 80px 80px;
+<span class="ln">13</span>    grid-auto-flow: column;
+<span class="ln">14</span>    width: 240px;
+<span class="ln">15</span>    height: 160px;
+<span class="ln">16</span>    margin: 20px;
+<span class="ln">17</span>    border: 2px solid #000000;
+<span class="ln">18</span>  }
+<span class="ln">19</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">20</span>  .a { background: #ff5a5f; }
+<span class="ln">21</span>  .b { background: #2ec4b6; }
+<span class="ln">22</span>  .c { background: #ffbf00; }
+<span class="ln">23</span>  .d { background: #5a3fff; }
+<span class="ln">24</span>&lt;/style&gt;
+<span class="ln">25</span>&lt;/head&gt;
+<span class="ln">26</span>&lt;body&gt;
+<span class="ln">27</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>    &lt;div class=&quot;cell d&quot;&gt;&lt;/div&gt;
+<span class="ln">32</span>  &lt;/div&gt;
+<span class="ln">33</span>&lt;/body&gt;
+<span class="ln">34</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-grid-auto-rows">grid-auto-rows — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="23.2954"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">23.30%</span> <strong>grid-implicit-tracks</strong> · implicit-tracks · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−557.4px R</span><span class="chip">missing 97.7%</span><span class="chip">extra 78.1%</span><span class="chip">ΔE 30.3</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-implicit-tracks.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-implicit-tracks.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-implicit-tracks.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Six items in a two-column grid generate implicit rows sized by grid-auto-rows: 60px.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 739,182</td><td class="num">23.30</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-implicit-tracks.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid implicit tracks&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 80px 80px;
+<span class="ln">12</span>    grid-auto-rows: 60px;
+<span class="ln">13</span>    width: 160px;
+<span class="ln">14</span>    height: 180px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>  .d { background: #5a3fff; }
+<span class="ln">23</span>  .e { background: #ff8c42; }
+<span class="ln">24</span>  .f { background: #1d3557; }
+<span class="ln">25</span>&lt;/style&gt;
+<span class="ln">26</span>&lt;/head&gt;
+<span class="ln">27</span>&lt;body&gt;
+<span class="ln">28</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">29</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">32</span>    &lt;div class=&quot;cell d&quot;&gt;&lt;/div&gt;
+<span class="ln">33</span>    &lt;div class=&quot;cell e&quot;&gt;&lt;/div&gt;
+<span class="ln">34</span>    &lt;div class=&quot;cell f&quot;&gt;&lt;/div&gt;
+<span class="ln">35</span>  &lt;/div&gt;
+<span class="ln">36</span>&lt;/body&gt;
+<span class="ln">37</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-grid-column">grid-column — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="28.8274"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">28.83%</span> <strong>grid-column-span</strong> · span · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−477.4px R</span><span class="chip">missing 97.0%</span><span class="chip">extra 67.3%</span><span class="chip">ΔE 29.9</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-column-span.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-column-span.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-column-span.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">First cell spans two columns (grid-column: span 2) within a 3x2 grid.</div><details><summary>regions (2)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>20,0 → 739,162</td><td class="num">28.77</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>0,0 → 20,4</td><td class="num">0.06</td><td></td><td>extra paint where Chrome is blank (0.1%)</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-column-span.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid column span&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 80px 80px 80px;
+<span class="ln">12</span>    grid-template-rows: 80px 80px;
+<span class="ln">13</span>    width: 240px;
+<span class="ln">14</span>    height: 160px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; grid-column: span 2; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>  .d { background: #5a3fff; }
+<span class="ln">23</span>&lt;/style&gt;
+<span class="ln">24</span>&lt;/head&gt;
+<span class="ln">25</span>&lt;body&gt;
+<span class="ln">26</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell d&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>  &lt;/div&gt;
+<span class="ln">32</span>&lt;/body&gt;
+<span class="ln">33</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-grid-row">grid-row — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="23.4896"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">23.49%</span> <strong>grid-row-span</strong> · span · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−557.4px R</span><span class="chip">missing 97.4%</span><span class="chip">extra 78.1%</span><span class="chip">ΔE 30.1</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-row-span.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-row-span.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-row-span.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">First cell spans two rows (grid-row: span 2) within a 2x2 grid.</div><details><summary>regions (2)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>20,0 → 739,162</td><td class="num">23.43</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>0,0 → 20,4</td><td class="num">0.06</td><td></td><td>extra paint where Chrome is blank (0.1%)</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-row-span.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid row span&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 80px 80px;
+<span class="ln">12</span>    grid-template-rows: 80px 80px;
+<span class="ln">13</span>    width: 160px;
+<span class="ln">14</span>    height: 160px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; grid-row: span 2; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>&lt;/style&gt;
+<span class="ln">23</span>&lt;/head&gt;
+<span class="ln">24</span>&lt;body&gt;
+<span class="ln">25</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>  &lt;/div&gt;
+<span class="ln">30</span>&lt;/body&gt;
+<span class="ln">31</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-grid-template-rows">grid-template-rows — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="20.3937"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">20.39%</span> <strong>grid-template-rows</strong> · px · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−577.3px R</span><span class="chip">missing 98.2%</span><span class="chip">extra 80.8%</span><span class="chip">ΔE 31.1</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-template-rows.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-template-rows.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-template-rows.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">Single column with three explicit-px rows of 50px, 110px and 70px height.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 739,232</td><td class="num">20.39</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-template-rows.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid template-rows&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 140px;
+<span class="ln">12</span>    grid-template-rows: 50px 110px 70px;
+<span class="ln">13</span>    width: 140px;
+<span class="ln">14</span>    height: 230px;
+<span class="ln">15</span>    margin: 20px;
+<span class="ln">16</span>    border: 2px solid #000000;
+<span class="ln">17</span>  }
+<span class="ln">18</span>  .cell { border: 2px solid #003a8c; }
+<span class="ln">19</span>  .a { background: #ff5a5f; }
+<span class="ln">20</span>  .b { background: #2ec4b6; }
+<span class="ln">21</span>  .c { background: #ffbf00; }
+<span class="ln">22</span>&lt;/style&gt;
+<span class="ln">23</span>&lt;/head&gt;
+<span class="ln">24</span>&lt;body&gt;
+<span class="ln">25</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">26</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">27</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">28</span>    &lt;div class=&quot;cell c&quot;&gt;&lt;/div&gt;
+<span class="ln">29</span>  &lt;/div&gt;
+<span class="ln">30</span>&lt;/body&gt;
+<span class="ln">31</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-justify-items">justify-items — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="16.2548"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">16.25%</span> <strong>grid-justify-items-end</strong> · end · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−477.4px R</span><span class="chip">missing 94.7%</span><span class="chip">extra 76.7%</span><span class="chip">ΔE 29.7</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-justify-items-end.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-justify-items-end.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-justify-items-end.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">justify-items: end aligns narrow cells to the inline (right) end of each track.</div><details><summary>regions (1)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>0,0 → 739,122</td><td class="num">16.25</td><td>ΔE 29.8 ΔRGB(0,-58,-140)</td><td>feature not rendered — candidate blank where Chrome paints</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-justify-items-end.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid justify-items end&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 120px 120px;
+<span class="ln">12</span>    grid-template-rows: 120px;
+<span class="ln">13</span>    justify-items: end;
+<span class="ln">14</span>    width: 240px;
+<span class="ln">15</span>    height: 120px;
+<span class="ln">16</span>    margin: 20px;
+<span class="ln">17</span>    border: 2px solid #000000;
+<span class="ln">18</span>  }
+<span class="ln">19</span>  .cell {
+<span class="ln">20</span>    width: 50px;
+<span class="ln">21</span>    height: 120px;
+<span class="ln">22</span>    border: 2px solid #003a8c;
+<span class="ln">23</span>  }
+<span class="ln">24</span>  .a { background: #ff5a5f; }
+<span class="ln">25</span>  .b { background: #2ec4b6; }
+<span class="ln">26</span>&lt;/style&gt;
+<span class="ln">27</span>&lt;/head&gt;
+<span class="ln">28</span>&lt;body&gt;
+<span class="ln">29</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">32</span>  &lt;/div&gt;
+<span class="ln">33</span>&lt;/body&gt;
+<span class="ln">34</span>&lt;/html&gt;
+</code></pre></details></div></div></section><section class="feat"><h2 id="feat-place-items">place-items — 0.00% <span class="meta">PASS 0 · PARTIAL 0 · FAIL 1</span><a class="top" href="index.html">all categories ↑</a></h2><div class="cards"><div class="card fxrow" data-status="FAIL" data-class="Missing" data-diff="9.2884"><div class="chead"><span class="badge" style="background:#cf222e">FAIL</span> <span class="num">9.29%</span> <strong>grid-place-items-center</strong> · center · <span class="real">REAL</span><span class="chip cls" style="background:#e600e6">Missing</span><span class="chip">−479.4px R</span><span class="chip">missing 92.6%</span><span class="chip">extra 83.1%</span><span class="chip">ΔE 11.5</span></div><div class="quad"><figure><img loading="lazy" src="../refs/grid/grid-place-items-center.png" alt="Chrome ref"><figcaption>Chrome ref</figcaption></figure><figure><img loading="lazy" src="../out/grid/grid-place-items-center.png" alt="ironpress"><figcaption>ironpress</figcaption></figure><figure><img loading="lazy" src="grid/grid-place-items-center.diff.png" alt="classed diff"><figcaption>classed diff</figcaption></figure></div><div class="legend"><strong>diff colours:</strong><span class="lg"><span class="sw" style="background:rgb(230,0,230)"></span>Missing</span><span class="lg"><span class="sw" style="background:rgb(0,200,60)"></span>Extra</span><span class="lg"><span class="sw" style="background:rgb(40,80,255)"></span>ColorErr</span><span class="lg"><span class="sw" style="background:rgb(255,150,30)"></span>GeomShift</span><span class="lg"><span class="sw" style="background:rgb(255,240,150)"></span>AA edge</span><span class="lg"><span class="sw" style="background:rgb(245,245,245)"></span>Match</span><span class="note">AA / edge-jitter = cross-rasterizer measurement ceiling, not a bug.</span></div><div class="desc"><strong>why:</strong> feature not rendered — candidate blank where Chrome paints</div><div class="desc">place-items: center centers smaller cells both horizontally and vertically inside larger tracks.</div><details><summary>regions (6)</summary><table class="regtbl"><thead><tr><th>class</th><th>bbox (CSS px)</th><th class="num">area%</th><th>magnitude</th><th>reason</th></tr></thead><tbody><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>57,37 → 107,87</td><td class="num">2.81</td><td></td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>177,37 → 227,87</td><td class="num">2.81</td><td></td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>260,0 → 739,4</td><td class="num">2.07</td><td></td><td>extra paint where Chrome is blank (2.1%)</td></tr><tr><td><span class="chip cls" style="background:#e600e6">Missing</span></td><td>20,5 → 260,120</td><td class="num">1.01</td><td></td><td>feature not rendered — candidate blank where Chrome paints</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>22,3 → 257,4</td><td class="num">0.42</td><td></td><td>extra paint where Chrome is blank (0.4%)</td></tr><tr><td><span class="chip cls" style="background:#1a9e3c">Extra</span></td><td>0,0 → 242,4</td><td class="num">0.16</td><td>ΔRGB(32,11,11)</td><td>extra paint where Chrome is blank (0.2%)</td></tr></tbody></table></details><details open class="src"><summary>source · cases/grid/grid-place-items-center.html</summary><pre><code><span class="ln">1</span>&lt;!DOCTYPE html&gt;
+<span class="ln">2</span>&lt;html lang=&quot;en&quot;&gt;
+<span class="ln">3</span>&lt;head&gt;
+<span class="ln">4</span>&lt;meta charset=&quot;utf-8&quot;&gt;
+<span class="ln">5</span>&lt;title&gt;grid place-items center&lt;/title&gt;
+<span class="ln">6</span>&lt;style&gt;
+<span class="ln">7</span>  * { margin: 0; box-sizing: border-box; }
+<span class="ln">8</span>  html, body { background: #ffffff; }
+<span class="ln">9</span>  .grid {
+<span class="ln">10</span>    display: grid;
+<span class="ln">11</span>    grid-template-columns: 120px 120px;
+<span class="ln">12</span>    grid-template-rows: 120px;
+<span class="ln">13</span>    place-items: center;
+<span class="ln">14</span>    width: 240px;
+<span class="ln">15</span>    height: 120px;
+<span class="ln">16</span>    margin: 20px;
+<span class="ln">17</span>    border: 2px solid #000000;
+<span class="ln">18</span>  }
+<span class="ln">19</span>  .cell {
+<span class="ln">20</span>    width: 50px;
+<span class="ln">21</span>    height: 50px;
+<span class="ln">22</span>    border: 2px solid #003a8c;
+<span class="ln">23</span>  }
+<span class="ln">24</span>  .a { background: #ff5a5f; }
+<span class="ln">25</span>  .b { background: #2ec4b6; }
+<span class="ln">26</span>&lt;/style&gt;
+<span class="ln">27</span>&lt;/head&gt;
+<span class="ln">28</span>&lt;body&gt;
+<span class="ln">29</span>  &lt;div class=&quot;grid&quot;&gt;
+<span class="ln">30</span>    &lt;div class=&quot;cell a&quot;&gt;&lt;/div&gt;
+<span class="ln">31</span>    &lt;div class=&quot;cell b&quot;&gt;&lt;/div&gt;
+<span class="ln">32</span>  &lt;/div&gt;
+<span class="ln">33</span>&lt;/body&gt;
+<span class="ln">34</span>&lt;/html&gt;
+</code></pre></details></div></div></section></body></html>
