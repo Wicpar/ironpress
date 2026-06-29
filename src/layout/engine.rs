@@ -1210,6 +1210,29 @@ pub fn compute_root_padding(rules: &[CssRule], page_size: PageSize) -> (f32, f32
     )
 }
 
+/// Resolve the inherited root/body font family used by page-margin boxes.
+pub fn compute_root_font_family(
+    rules: &[CssRule],
+    page_size: PageSize,
+) -> crate::style::computed::FontFamily {
+    let mut style = ComputedStyle::default();
+    let parent = ComputedStyle {
+        viewport_width: page_size.width,
+        viewport_height: page_size.height,
+        root_font_size: style.font_size,
+        width: Some(page_size.width),
+        ..ComputedStyle::default()
+    };
+
+    for rule in rules {
+        let sel = rule.selector.trim();
+        if sel == "body" || sel == "html" || sel == ":root" {
+            crate::style::computed::apply_style_map(&mut style, &rule.declarations, &parent);
+        }
+    }
+    style.font_family
+}
+
 /// Lay out the DOM nodes into pages with stylesheet rules.
 #[allow(dead_code)]
 pub fn layout_with_rules(
@@ -1687,6 +1710,8 @@ pub fn layout_with_rules_and_fonts(
                 )
             })
             .collect();
+    let mut footnote_area = page_margin_overrides.footnote_area;
+    footnote_area.content_width = available_width;
     let mut pages = super::paginate::paginate_with_first_page(
         elements,
         content_height,
@@ -1694,6 +1719,7 @@ pub fn layout_with_rules_and_fonts(
         first_page,
         page_margin_overrides.spread,
         named_pages,
+        footnote_area,
     );
     let mut dom_targets = HashMap::new();
     collect_dom_targets(nodes, &mut dom_targets);
@@ -3097,6 +3123,14 @@ pub(crate) fn flatten_element(
     env.counter_state.apply_resets(&style.counter_reset);
     env.counter_state.apply_increments(&style.counter_increment);
     env.counter_state.apply_sets(&style.counter_set);
+
+    if let Some(name) = style.running_name.clone() {
+        if let Some(running) = build_running_element(name, el, &style, ctx, ancestors, env) {
+            output.push(running);
+        }
+        env.counter_state.pop_resets(&style.counter_reset);
+        return;
+    }
 
     // Bail out on excessively deep nesting to prevent stack overflow.
     if ancestors.len() > 30 {

@@ -1,7 +1,8 @@
 use super::engine::{
-    FOOTNOTE_CALL_FONT_SCALE, FootnoteItem, LayoutElement, Page, PageBreakSide, TableCell,
+    FOOTNOTE_CALL_FONT_SCALE, FootnoteItem, LayoutElement, Page, PageBreakSide, TableCell, TextRun,
     decode_footnote_link_data, layout_element_paint_order, table_cell_content_height,
 };
+use super::text::{OverflowWrap, TextWrapOptions, wrap_text_runs};
 use crate::style::computed::{
     BorderCollapse, BoxDecorationBreak, Clear, Float, ObjectFit, Position,
 };
@@ -72,18 +73,160 @@ fn collect_footnotes_from_element(element: &LayoutElement, out: &mut Vec<Footnot
     }
 }
 
-fn footnote_reserved_height(footnotes: &[FootnoteItem]) -> f32 {
-    footnotes
-        .iter()
-        .map(|footnote| {
-            let factor = if footnote.line_height_factor.is_finite() {
-                footnote.line_height_factor
-            } else {
-                1.2
+fn extract_page_state_markers(
+    element: &mut LayoutElement,
+    running_elements: &mut HashMap<String, LayoutElement>,
+    running_started: &mut HashSet<String>,
+    named_strings: &mut HashMap<String, String>,
+    named_strings_first: &mut HashMap<String, String>,
+) {
+    let LayoutElement::Container { children, .. } = element else {
+        return;
+    };
+    let mut kept = Vec::with_capacity(children.len());
+    for mut child in children.drain(..) {
+        match child {
+            LayoutElement::RunningElement { name, element } => {
+                running_started.insert(name.clone());
+                running_elements.insert(name, *element);
+            }
+            LayoutElement::NamedString { name, value } => {
+                named_strings_first
+                    .entry(name.clone())
+                    .or_insert_with(|| value.clone());
+                named_strings.insert(name, value);
+            }
+            _ => {
+                extract_page_state_markers(
+                    &mut child,
+                    running_elements,
+                    running_started,
+                    named_strings,
+                    named_strings_first,
+                );
+                kept.push(child);
+            }
+        }
+    }
+    *children = kept;
+}
+
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct FootnoteAreaLayout {
+    pub content_width: f32,
+    pub max_height: Option<f32>,
+    pub padding_top: f32,
+    pub border_top_width: f32,
+}
+
+impl Default for FootnoteAreaLayout {
+    fn default() -> Self {
+        Self {
+            content_width: f32::INFINITY,
+            max_height: None,
+            padding_top: 0.0,
+            border_top_width: 0.0,
+        }
+    }
+}
+
+fn footnote_lines_height(footnotes: &[FootnoteItem], content_width: f32) -> f32 {
+    let fonts = HashMap::new();
+    let mut total = 0.0f32;
+    let mut compact_runs: Vec<TextRun> = Vec::new();
+    let flush_compact = |runs: &mut Vec<TextRun>, total: &mut f32| {
+        if runs.is_empty() {
+            return;
+        }
+        let font_size = runs.first().map(|run| run.font_size).unwrap_or(12.0);
+        let line_height = runs
+            .first()
+            .map(|run| run.line_height_factor)
+            .filter(|factor| factor.is_finite())
+            .unwrap_or(1.2);
+        let lines = wrap_text_runs(
+            std::mem::take(runs),
+            TextWrapOptions::new(
+                content_width.max(1.0),
+                font_size,
+                line_height,
+                OverflowWrap::Normal,
+            ),
+            &fonts,
+        );
+        *total += lines.iter().map(|line| line.height).sum::<f32>();
+    };
+
+    for footnote in footnotes {
+        let runs = footnote.text_runs();
+        if footnote.display_compact {
+            compact_runs.extend(runs);
+            continue;
+        }
+        flush_compact(&mut compact_runs, &mut total);
+        let lines = wrap_text_runs(
+            runs,
+            TextWrapOptions::new(
+                content_width.max(1.0),
+                footnote.font_size,
+                if footnote.line_height_factor.is_finite() {
+                    footnote.line_height_factor
+                } else {
+                    1.2
+                },
+                OverflowWrap::Normal,
+            ),
+            &fonts,
+        );
+        total += lines.iter().map(|line| line.height).sum::<f32>();
+    }
+    flush_compact(&mut compact_runs, &mut total);
+    total
+}
+
+fn footnote_reserved_height(footnotes: &[FootnoteItem], area: FootnoteAreaLayout) -> f32 {
+    if footnotes.is_empty() {
+        return 0.0;
+    }
+    let height = footnote_lines_height(footnotes, area.content_width);
+    area.max_height.map_or(height, |max| {
+        if height > max + 0.5 { 0.0 } else { height }
+    })
+}
+
+pub(crate) fn move_overflow_footnotes_to_next_page(
+    pages: &mut Vec<Page>,
+    area: FootnoteAreaLayout,
+) {
+    let Some(max_height) = area.max_height else {
+        return;
+    };
+    let mut index = 0usize;
+    while index < pages.len() {
+        let height = footnote_lines_height(&pages[index].footnotes, area.content_width);
+        if height > max_height + 0.5
+            && !pages[index].footnotes.is_empty()
+            && !pages[index].elements.is_empty()
+        {
+            let footnotes = std::mem::take(&mut pages[index].footnotes);
+            let carry = Page {
+                elements: Vec::new(),
+                running_elements: pages[index].running_elements.clone(),
+                running_elements_started: HashSet::new(),
+                named_strings: pages[index].named_strings.clone(),
+                named_strings_first: HashMap::new(),
+                footnotes,
+                margin_override: pages[index].margin_override,
+                page_size_override: pages[index].page_size_override,
+                page_name: pages[index].page_name.clone(),
+                is_blank: false,
             };
-            footnote.font_size * factor
-        })
-        .sum()
+            pages.insert(index + 1, carry);
+            index += 2;
+        } else {
+            index += 1;
+        }
+    }
 }
 
 /// A tracked float region for simplified float layout.
@@ -1753,6 +1896,7 @@ pub(crate) struct PageMarginOverrides {
     pub first: Option<Margin>,
     pub spread: SpreadMargins,
     pub named: HashMap<String, NamedPageOverride>,
+    pub footnote_area: FootnoteAreaLayout,
 }
 
 /// Geometry of a named page (CSS Paged Media 3 §3.4), pre-resolved at the layout
@@ -1783,6 +1927,7 @@ pub(crate) fn paginate(
         None,
         SpreadMargins::default(),
         HashMap::new(),
+        FootnoteAreaLayout::default(),
     )
 }
 
@@ -1797,6 +1942,7 @@ pub(crate) fn paginate_with_first_page(
     first_page: Option<FirstPageGeom>,
     spread: SpreadMargins,
     named_pages: HashMap<String, NamedPageGeom>,
+    footnote_area: FootnoteAreaLayout,
 ) -> Vec<Page> {
     // The content height in force for the page currently being filled. Page 1
     // uses the first-page override (if any); every page after page 1 reverts to
@@ -1905,7 +2051,7 @@ pub(crate) fn paginate_with_first_page(
     // before (every existing `continue`/placement is unchanged), so the whole
     // single-page corpus is byte-for-byte identical.
     let mut work: std::collections::VecDeque<LayoutElement> = elements.into();
-    while let Some(element) = work.pop_front() {
+    while let Some(mut element) = work.pop_front() {
         if let LayoutElement::RunningElement { name, element } = element {
             current_running_elements_started.insert(name.clone());
             current_running_elements.insert(name, *element);
@@ -1918,6 +2064,13 @@ pub(crate) fn paginate_with_first_page(
             current_named_strings.insert(name, value);
             continue;
         }
+        extract_page_state_markers(
+            &mut element,
+            &mut current_running_elements,
+            &mut current_running_elements_started,
+            &mut current_named_strings,
+            &mut current_named_strings_first,
+        );
 
         // When the FIRST row of a `break-inside: avoid` table cannot fit in the
         // space left on the current page but DOES fit on an empty one, the break
@@ -2429,8 +2582,8 @@ pub(crate) fn paginate_with_first_page(
         let element_height = margin_top_val + content_h_val + margin_bottom_val;
         let mut pending_footnotes = Vec::new();
         collect_footnotes_from_element(&element, &mut pending_footnotes);
-        let footnote_reserve = footnote_reserved_height(&current_footnotes)
-            + footnote_reserved_height(&pending_footnotes);
+        let footnote_reserve = footnote_reserved_height(&current_footnotes, footnote_area)
+            + footnote_reserved_height(&pending_footnotes, footnote_area);
         let effective_content_height = (content_height - footnote_reserve).max(0.0);
 
         // Handle position: absolute -- place at fixed position, don't affect flow
@@ -3004,6 +3157,7 @@ mod break_tests {
             None,
             SpreadMargins::default(),
             named,
+            FootnoteAreaLayout::default(),
         );
         assert_eq!(pages.len(), 2);
         assert_eq!(
@@ -3032,6 +3186,7 @@ mod break_tests {
             None,
             SpreadMargins::default(),
             HashMap::new(),
+            FootnoteAreaLayout::default(),
         );
         assert_eq!(pages.len(), 2);
         assert_eq!(pages[1].margin_override, None);

@@ -1,9 +1,10 @@
 use crate::error::IronpressError;
 use crate::layout::engine::{
-    FootnoteItem, ImageFormat, LayoutElement, Page, PngMetadata, TableCell, TextLine, TextRun,
-    decode_footnote_link, is_internal_target_anchor, layout_element_paint_order,
+    FootnoteItem, ImageFormat, LayoutBorder, LayoutElement, Page, PngMetadata, TableCell, TextLine,
+    TextRun, decode_footnote_link, is_internal_target_anchor, layout_element_paint_order,
     table_cell_content_height, table_cell_intrinsic_content_height,
 };
+use crate::layout::text::{OverflowWrap, TextWrapOptions, wrap_text_runs};
 use crate::parser::ttf::TtfFont;
 use crate::render::background::{
     BackgroundPaintContext, RasterBackgroundRequest, overflow_from_viewport_box,
@@ -2192,6 +2193,14 @@ impl PageOrientation {
 }
 
 /// Header, footer, and physical page decorations.
+#[derive(Clone, Copy, Default)]
+pub struct FootnoteAreaDecoration {
+    pub max_height: Option<f32>,
+    pub padding_top: f32,
+    pub border_top_width: f32,
+    pub border_top_color: Option<crate::types::Color>,
+}
+
 #[derive(Default)]
 pub struct PageDecoration {
     /// Header text rendered top-center of each page.
@@ -2203,6 +2212,8 @@ pub struct PageDecoration {
     /// and page counters declared via `@top-center { content: … }` etc. Rendered
     /// on every page with `counter(page)`/`counter(pages)` resolved per page.
     pub margin_boxes: Vec<crate::parser::css::MarginBox>,
+    /// Inherited root/body font family for page-margin box generated content.
+    pub margin_box_font_family: FontFamily,
     /// CSS Paged Media `bleed`, in points.
     pub bleed: f32,
     /// Render crop marks outside the page box.
@@ -2211,6 +2222,8 @@ pub struct PageDecoration {
     pub marks_cross: bool,
     /// CSS Paged Media `page-orientation`, applied after layout.
     pub page_orientation: PageOrientation,
+    /// CSS GCPM `@footnote` area declarations.
+    pub footnote_area: FootnoteAreaDecoration,
 }
 
 fn page_margin_box_applies(
@@ -2417,11 +2430,68 @@ fn render_running_margin_element(
     true
 }
 
+fn wrapped_footnote_lines(
+    footnotes: &[FootnoteItem],
+    available_width: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+) -> Vec<TextLine> {
+    let mut lines = Vec::new();
+    let mut compact_runs = Vec::new();
+    let flush_compact = |runs: &mut Vec<TextRun>, lines: &mut Vec<TextLine>| {
+        if runs.is_empty() {
+            return;
+        }
+        let font_size = runs.first().map(|run| run.font_size).unwrap_or(12.0);
+        let line_height = runs
+            .first()
+            .map(|run| run.line_height_factor)
+            .filter(|factor| factor.is_finite())
+            .unwrap_or(1.2);
+        lines.extend(wrap_text_runs(
+            std::mem::take(runs),
+            TextWrapOptions::new(
+                available_width.max(1.0),
+                font_size,
+                line_height,
+                OverflowWrap::Normal,
+            ),
+            custom_fonts,
+        ));
+    };
+
+    for footnote in footnotes {
+        let runs = footnote.text_runs();
+        if footnote.display_compact {
+            compact_runs.extend(runs);
+            continue;
+        }
+        flush_compact(&mut compact_runs, &mut lines);
+        lines.extend(wrap_text_runs(
+            runs,
+            TextWrapOptions::new(
+                available_width.max(1.0),
+                footnote.font_size,
+                if footnote.line_height_factor.is_finite() {
+                    footnote.line_height_factor
+                } else {
+                    1.2
+                },
+                OverflowWrap::Normal,
+            ),
+            custom_fonts,
+        ));
+    }
+    flush_compact(&mut compact_runs, &mut lines);
+    lines
+}
+
 #[allow(clippy::too_many_arguments)]
 fn render_page_footnotes(
     content: &mut String,
     footnotes: &[FootnoteItem],
+    page_size: PageSize,
     margin: Margin,
+    _area: FootnoteAreaDecoration,
     custom_fonts: &HashMap<String, TtfFont>,
     prepared_custom_fonts: &PreparedCustomFonts,
     pdf_writer: &mut PdfWriter,
@@ -2430,33 +2500,8 @@ fn render_page_footnotes(
     if footnotes.is_empty() {
         return;
     }
-    let mut lines: Vec<TextLine> = Vec::new();
-    for footnote in footnotes {
-        let runs = footnote.text_runs();
-        let height = runs
-            .iter()
-            .map(|run| {
-                let factor = if run.line_height_factor.is_finite() {
-                    run.line_height_factor
-                } else {
-                    1.2
-                };
-                run.font_size * factor
-            })
-            .fold(0.0f32, f32::max);
-        if footnote.display_compact
-            && let Some(line) = lines.last_mut()
-        {
-            line.height = line.height.max(height);
-            line.runs.extend(runs);
-            continue;
-        }
-        lines.push(TextLine {
-            runs,
-            height,
-            x_offset: 0.0,
-        });
-    }
+    let available_width = page_size.width - margin.left - margin.right;
+    let lines = wrapped_footnote_lines(footnotes, available_width, custom_fonts);
 
     let total_h: f32 = lines.iter().map(|line| line.height).sum();
     let mut line_top = margin.bottom + total_h;
@@ -2504,6 +2549,152 @@ fn render_pdf_to_writer_with_fonts<W: std::io::Write>(
     custom_fonts: &HashMap<String, TtfFont>,
 ) -> Result<(), IronpressError> {
     render_pdf_to_writer_full(pages, page_size, margin, writer, custom_fonts, None)
+}
+
+fn pages_with_margin_box_font_usage(pages: &[Page], decoration: &PageDecoration) -> Vec<Page> {
+    let mut usage_pages: Vec<Page> = pages
+        .iter()
+        .map(|page| Page {
+            elements: page.elements.clone(),
+            running_elements: page.running_elements.clone(),
+            running_elements_started: page.running_elements_started.clone(),
+            named_strings: page.named_strings.clone(),
+            named_strings_first: page.named_strings_first.clone(),
+            footnotes: page.footnotes.clone(),
+            margin_override: page.margin_override,
+            page_size_override: page.page_size_override,
+            page_name: page.page_name.clone(),
+            is_blank: page.is_blank,
+        })
+        .collect();
+
+    let text = margin_box_font_usage_text(pages, decoration);
+    if text.is_empty() {
+        return usage_pages;
+    }
+    usage_pages.push(Page {
+        elements: vec![(
+            0.0,
+            margin_box_font_usage_block(text.clone(), decoration.margin_box_font_family.clone()),
+        )],
+        ..Page::default()
+    });
+    usage_pages
+}
+
+fn margin_box_font_usage_text(pages: &[Page], decoration: &PageDecoration) -> String {
+    use crate::parser::css::MarginContentToken;
+    let mut text = String::new();
+    for mb in &decoration.margin_boxes {
+        for token in &mb.content {
+            match token {
+                MarginContentToken::Literal(value) => text.push_str(value),
+                MarginContentToken::PageNumber | MarginContentToken::PageCount => {
+                    text.push_str("0123456789");
+                }
+                MarginContentToken::NamedString(name, _) => {
+                    for page in pages {
+                        if let Some(value) = page
+                            .named_strings_first
+                            .get(name)
+                            .or_else(|| page.named_strings.get(name))
+                        {
+                            text.push_str(value);
+                        }
+                    }
+                }
+                MarginContentToken::Element(_) => {}
+            }
+        }
+    }
+    text
+}
+
+fn margin_box_font_usage_block(text: String, font_family: FontFamily) -> LayoutElement {
+    let run = TextRun {
+        text,
+        font_size: 12.0,
+        bold: false,
+        italic: false,
+        underline: false,
+        line_through: false,
+        overline: false,
+        color: (0.0, 0.0, 0.0),
+        decoration_color: None,
+        link_url: None,
+        font_family,
+        background_color: None,
+        padding: (0.0, 0.0),
+        border_radius: 0.0,
+        line_height_factor: 1.2,
+        inline_box: None,
+        disable_ligatures: false,
+        vertical_align: VerticalAlign::Baseline,
+        text_shadow: Vec::new(),
+    };
+    LayoutElement::TextBlock {
+        box_decoration_break: crate::style::computed::BoxDecorationBreak::Slice,
+        orphans: 2,
+        widows: 2,
+        lines: vec![TextLine {
+            runs: vec![run],
+            height: 12.0,
+            x_offset: 0.0,
+        }],
+        margin_top: 0.0,
+        margin_bottom: 0.0,
+        text_align: TextAlign::Left,
+        writing_mode: crate::style::computed::WritingMode::HorizontalTb,
+        background_color: None,
+        padding_top: 0.0,
+        padding_bottom: 0.0,
+        padding_left: 0.0,
+        padding_right: 0.0,
+        border: LayoutBorder::default(),
+        block_width: None,
+        block_height: None,
+        opacity: 1.0,
+        mix_blend_mode: crate::style::computed::BlendMode::Normal,
+        background_blend_mode: crate::style::computed::BlendMode::Normal,
+        float: Float::None,
+        clear: Clear::None,
+        position: Position::Static,
+        offset_top: 0.0,
+        offset_left: 0.0,
+        offset_bottom: 0.0,
+        offset_right: 0.0,
+        containing_block: None,
+        box_shadow: Vec::new(),
+        visible: true,
+        clip_rect: None,
+        transform: None,
+        transform_origin: crate::style::computed::TransformOrigin::default(),
+        border_radius: 0.0,
+        border_radii: [0.0; 4],
+        border_radii_y: [0.0; 4],
+        outline_offset: 0.0,
+        outline_width: 0.0,
+        outline_color: None,
+        text_indent: 0.0,
+        letter_spacing: 0.0,
+        word_spacing: 0.0,
+        vertical_align: VerticalAlign::Baseline,
+        background_gradient: None,
+        background_radial_gradient: None,
+        background_conic_gradient: None,
+        background_svg: None,
+        background_blur_radius: 0.0,
+        background_size: BackgroundSize::default(),
+        background_position: BackgroundPosition::default(),
+        background_repeat: BackgroundRepeat::default(),
+        background_origin: BackgroundOrigin::default(),
+        background_clip: BackgroundClip::default(),
+        z_index: 0,
+        repeat_on_each_page: false,
+        positioned_depth: 0,
+        heading_level: None,
+        clip_children_count: 0,
+    }
 }
 
 /// Full render function with optional page decoration (headers/footers).
@@ -2814,7 +3005,11 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
     // `available_width` is derived per page inside the loop below, since a page
     // may carry an `@page :first` margin override that changes its content box.
     let mut bookmarks: Vec<BookmarkEntry> = Vec::new();
-    let prepared_custom_fonts = prepare_custom_fonts(pages, custom_fonts);
+    let font_usage_pages = decoration.map(|dec| pages_with_margin_box_font_usage(pages, dec));
+    let prepared_custom_fonts = font_usage_pages.as_deref().map_or_else(
+        || prepare_custom_fonts(pages, custom_fonts),
+        |pages| prepare_custom_fonts(pages, custom_fonts),
+    );
 
     register_used_custom_fonts(&mut pdf_writer, custom_fonts, &prepared_custom_fonts);
 
@@ -8288,7 +8483,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
         render_page_footnotes(
             &mut content,
             &page.footnotes,
+            page_size,
             margin,
+            decoration.map(|dec| dec.footnote_area).unwrap_or_default(),
             custom_fonts,
             &prepared_custom_fonts,
             &mut pdf_writer,
@@ -8421,15 +8618,41 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 }
                 let default_margin_font_size =
                     if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
-                        12.5
-                    } else if mb.background_color.is_some() {
-                        11.9
+                        12.3
                     } else {
-                        12.2
+                        12.0
                     };
                 let mb_font_size = mb.font_size.unwrap_or(default_margin_font_size);
-                let text_w =
-                    crate::fonts::str_width(&text, mb_font_size, &FontFamily::Helvetica, false);
+                let margin_run = TextRun {
+                    text: text.clone(),
+                    font_size: mb_font_size,
+                    bold: false,
+                    italic: false,
+                    underline: false,
+                    line_through: false,
+                    overline: false,
+                    color: mb
+                        .color
+                        .unwrap_or(crate::types::Color::BLACK)
+                        .to_f32_rgb(),
+                    decoration_color: None,
+                    link_url: None,
+                    font_family: if matches!(mb.selector, crate::parser::css::PageSelector::Blank)
+                    {
+                        FontFamily::Helvetica
+                    } else {
+                        dec.margin_box_font_family.clone()
+                    },
+                    background_color: None,
+                    padding: (0.0, 0.0),
+                    border_radius: 0.0,
+                    line_height_factor: 1.2,
+                    inline_box: None,
+                    disable_ligatures: false,
+                    vertical_align: VerticalAlign::Baseline,
+                    text_shadow: Vec::new(),
+                };
+                let text_w = estimate_run_width_with_fonts(&margin_run, custom_fonts);
                 let plain_top_center = if mb.background_color.is_none() {
                     margin.top.min(15.0) / 2.0
                 } else {
@@ -8502,7 +8725,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     ),
                 };
                 let blank_adjust = matches!(mb.selector, crate::parser::css::PageSelector::Blank);
-                let x = if blank_adjust { x + 0.5 } else { x };
+                let x = if blank_adjust { x + 0.25 } else { x };
                 let corner_lift = match mb.position {
                     crate::parser::css::MarginBoxPosition::TopLeftCorner
                     | crate::parser::css::MarginBoxPosition::TopRightCorner
@@ -8512,7 +8735,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     }
                     _ => 0.0,
                 };
-                let blank_lift = if blank_adjust { 0.8 } else { 0.0 };
+                let blank_lift = if blank_adjust { 1.05 } else { 0.0 };
                 let background_lift = if mb.background_color.is_some() {
                     1.0
                 } else {
@@ -8593,14 +8816,18 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         content.push_str(&format!("{bg_x} {bg_y} {bg_w} {bg_h} re f\n"));
                     }
                 }
-                let (r, g, b) = mb.color.unwrap_or(crate::types::Color::BLACK).to_f32_rgb();
-                let encoded = encode_pdf_text(&text);
-                content.push_str("BT\n");
-                content.push_str(&format!("/Helvetica {mb_font_size} Tf\n"));
-                content.push_str(&format!("{r} {g} {b} rg\n"));
-                content.push_str(&format!("{x} {text_y} Td\n"));
-                content.push_str(&format!("({encoded}) Tj\n"));
-                content.push_str("ET\n");
+                render_run_text(
+                    &mut content,
+                    &margin_run,
+                    x,
+                    text_y,
+                    mb_font_size,
+                    custom_fonts,
+                    &prepared_custom_fonts,
+                    0.0,
+                    &mut pdf_writer,
+                    &mut page_images,
+                );
             }
         }
 
@@ -8649,11 +8876,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
         // the scale is formatted at full f64 precision here.
         const CHROME_PRINT_CTM_NET: f64 = 0.74999996875;
         const PT_PER_CSS_PX: f64 = 0.75;
-        let chrome_match = if page.page_name.is_some() {
-            1.0
-        } else {
-            CHROME_PRINT_CTM_NET / PT_PER_CSS_PX
-        }; // ≈0.99999995833
+        let chrome_match = CHROME_PRINT_CTM_NET / PT_PER_CSS_PX; // ≈0.99999995833
         let shrink = if bleed > 0.0 {
             1.0
         } else {

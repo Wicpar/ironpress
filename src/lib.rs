@@ -668,6 +668,25 @@ impl HtmlConverter {
                 );
             }
         }
+        let mut footnote_area = layout::paginate::FootnoteAreaLayout::default();
+        let mut footnote_decoration = render::pdf::FootnoteAreaDecoration::default();
+        for pr in &page_rules {
+            if let Some(max_height) = pr.footnote_max_height {
+                footnote_area.max_height = Some(max_height);
+                footnote_decoration.max_height = Some(max_height);
+            }
+            if let Some(padding_top) = pr.footnote_padding_top {
+                footnote_area.padding_top = padding_top;
+                footnote_decoration.padding_top = padding_top;
+            }
+            if let Some(border_top_width) = pr.footnote_border_top_width {
+                footnote_area.border_top_width = border_top_width;
+                footnote_decoration.border_top_width = border_top_width;
+            }
+            if let Some(border_top_color) = pr.footnote_border_top_color {
+                footnote_decoration.border_top_color = Some(border_top_color);
+            }
+        }
 
         // Step 4: Parse custom fonts (API-registered + @font-face from CSS)
         let mut parsed_fonts = self.parse_custom_fonts();
@@ -760,7 +779,7 @@ impl HtmlConverter {
         });
 
         // Step 5: Layout
-        let pages = layout::engine::layout_with_rules_and_fonts(
+        let mut pages = layout::engine::layout_with_rules_and_fonts(
             &result.nodes,
             effective_page_size,
             effective_margin,
@@ -775,7 +794,15 @@ impl HtmlConverter {
                     right: right_page_margin,
                 },
                 named: named_page_overrides,
+                footnote_area,
             },
+        );
+        let mut footnote_area_for_overflow = footnote_area;
+        footnote_area_for_overflow.content_width =
+            effective_page_size.width - effective_margin.left - effective_margin.right;
+        layout::paginate::move_overflow_footnotes_to_next_page(
+            &mut pages,
+            footnote_area_for_overflow,
         );
 
         // Step 6: Render PDF
@@ -791,19 +818,28 @@ impl HtmlConverter {
 
         let has_physical_decoration =
             page_bleed > 0.0 || page_marks_crop || page_marks_cross || page_orientation.rotates();
+        let has_footnote_decoration = footnote_decoration.max_height.is_some()
+            || footnote_decoration.padding_top > 0.0
+            || footnote_decoration.border_top_width > 0.0;
         let decoration = if self.header.is_some()
             || self.footer.is_some()
             || !margin_boxes.is_empty()
             || has_physical_decoration
+            || has_footnote_decoration
         {
             Some(render::pdf::PageDecoration {
                 header: self.header.clone(),
                 footer: self.footer.clone(),
                 margin_boxes,
+                margin_box_font_family: layout::engine::compute_root_font_family(
+                    &rules,
+                    effective_page_size,
+                ),
                 bleed: page_bleed,
                 marks_crop: page_marks_crop,
                 marks_cross: page_marks_cross,
                 page_orientation,
+                footnote_area: footnote_decoration,
             })
         } else {
             None

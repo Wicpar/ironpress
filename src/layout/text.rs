@@ -2415,12 +2415,8 @@ fn collect_text_runs_inner(
                                         .count() as i32
                                     + 1)
                                 .to_string();
-                                let call_text = footnote_pseudo_content(
-                                    rules,
-                                    "footnote-call",
-                                    &marker,
-                                )
-                                .unwrap_or_else(|| format!("{marker} "));
+                                let authored_call_text =
+                                    footnote_pseudo_content(rules, "footnote-call", &marker);
                                 let marker_prefix = footnote_pseudo_content(
                                     rules,
                                     "footnote-marker",
@@ -2444,7 +2440,14 @@ fn collect_text_runs_inner(
                                     &selector_ctx,
                                     "footnote-display",
                                 )
-                                .is_some_and(|value| value == "compact");
+                                .is_some_and(|value| value == "inline" || value == "compact");
+                                let call_text = authored_call_text.unwrap_or_else(|| {
+                                    if display_compact {
+                                        marker.clone()
+                                    } else {
+                                        format!("{marker} ")
+                                    }
+                                });
                                 push_styled_run(
                                     TextRun {
                                         text: call_text,

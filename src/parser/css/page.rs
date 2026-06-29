@@ -1,14 +1,26 @@
 use super::{
     CssValue, FontFaceRule, MarginBox, MarginBoxPosition, MarginContentToken, PageRule,
     PageSelector, extract_url_path,
-    model::{FontFaceSource, UnicodeRange},
+    model::{FontFaceSource, FootnoteAreaStyle, UnicodeRange},
     preprocess_media_queries,
 };
 
 /// Parse a CSS stylesheet and extract `@page` rules.
 pub fn parse_page_rules(css: &str) -> Vec<PageRule> {
     let preprocessed = preprocess_media_queries(css);
-    extract_page_rules(&preprocessed)
+    let mut rules = extract_page_rules(&preprocessed);
+    rules.extend(
+        extract_footnote_area_rules(&preprocessed)
+            .into_iter()
+            .map(|area| PageRule {
+                footnote_max_height: area.max_height,
+                footnote_padding_top: Some(area.padding_top),
+                footnote_border_top_width: Some(area.border_top_width),
+                footnote_border_top_color: area.border_top_color,
+                ..PageRule::default()
+            }),
+    );
+    rules
 }
 
 /// Parse a CSS stylesheet and extract `@font-face` rules.
@@ -366,6 +378,96 @@ pub(crate) fn extract_page_rules(css: &str) -> Vec<PageRule> {
     synthesize_first_page_spread_cascade(&mut page_rules);
 
     page_rules
+}
+
+pub(crate) fn extract_footnote_area_rules(css: &str) -> Vec<FootnoteAreaStyle> {
+    let mut rules = Vec::new();
+    let mut remaining = css;
+
+    while let Some(at_pos) = remaining.to_ascii_lowercase().find("@footnote") {
+        let Some(after_at) = remaining.get(at_pos + 9..) else {
+            break;
+        };
+        let Some(brace_pos) = after_at.find('{') else {
+            break;
+        };
+        let Some(after_brace) = after_at.get(brace_pos + 1..) else {
+            break;
+        };
+        let mut depth = 1usize;
+        let mut close_pos = None;
+        for (i, ch) in after_brace.char_indices() {
+            match ch {
+                '{' => depth += 1,
+                '}' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close_pos = Some(i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        let Some(close_pos) = close_pos else {
+            break;
+        };
+        rules.push(parse_footnote_area_declarations(&after_brace[..close_pos]));
+        remaining = &after_brace[close_pos + 1..];
+    }
+
+    rules
+}
+
+fn parse_footnote_area_declarations(decls: &str) -> FootnoteAreaStyle {
+    let mut style = FootnoteAreaStyle::default();
+    for declaration in decls.split(';') {
+        let Some((prop, val)) = declaration.split_once(':') else {
+            continue;
+        };
+        let prop = prop.trim().to_ascii_lowercase();
+        let val = val.trim();
+        match prop.as_str() {
+            "max-height" => {
+                style.max_height = parse_page_length(val);
+            }
+            "padding" => {
+                if let Some(top) = val.split_whitespace().next().and_then(parse_page_length) {
+                    style.padding_top = top;
+                }
+            }
+            "padding-top" => {
+                if let Some(top) = parse_page_length(val) {
+                    style.padding_top = top;
+                }
+            }
+            "border-top" => {
+                parse_footnote_border_top(val, &mut style);
+            }
+            "border-top-width" => {
+                if let Some(width) = parse_page_length(val) {
+                    style.border_top_width = width;
+                }
+            }
+            "border-top-color" => {
+                if let Some(CssValue::Color(color)) = super::parse_color(val) {
+                    style.border_top_color = Some(color);
+                }
+            }
+            _ => {}
+        }
+    }
+    style
+}
+
+fn parse_footnote_border_top(value: &str, style: &mut FootnoteAreaStyle) {
+    for token in value.split_whitespace() {
+        if let Some(width) = parse_page_length(token) {
+            style.border_top_width = width;
+        } else if let Some(CssValue::Color(color)) = super::parse_color(token) {
+            style.border_top_color = Some(color);
+        }
+    }
 }
 
 fn synthesize_first_page_spread_cascade(page_rules: &mut Vec<PageRule>) {

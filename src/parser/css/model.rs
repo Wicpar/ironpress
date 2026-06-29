@@ -465,6 +465,16 @@ pub struct MarginBox {
     pub content: Vec<MarginContentToken>,
 }
 
+/// Declarations from the GCPM `@footnote` area rule that affect pagination and
+/// painting of the footnote area.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FootnoteAreaStyle {
+    pub max_height: Option<f32>,
+    pub padding_top: f32,
+    pub border_top_width: f32,
+    pub border_top_color: Option<Color>,
+}
+
 /// A parsed `@page` rule with page size and margin overrides.
 #[derive(Debug, Clone, Default)]
 pub struct PageRule {
@@ -488,6 +498,14 @@ pub struct PageRule {
     pub page_counter_reset: Option<i32>,
     /// `counter-increment: page <n>` in the page context.
     pub page_counter_increment: Option<i32>,
+    /// `@footnote { max-height: ... }` from CSS GCPM.
+    pub footnote_max_height: Option<f32>,
+    /// `@footnote { padding-top: ... }` from CSS GCPM.
+    pub footnote_padding_top: Option<f32>,
+    /// `@footnote { border-top-width: ... }` from CSS GCPM.
+    pub footnote_border_top_width: Option<f32>,
+    /// `@footnote { border-top-color: ... }` from CSS GCPM.
+    pub footnote_border_top_color: Option<Color>,
     /// The raw declaration block of the `@page` rule (the text between `{` and
     /// `}`), retained verbatim so a CSS-aware parser can later extract the
     /// `@page` background (CSS Paged Media 3 §3.1 bleed-area background). Kept
