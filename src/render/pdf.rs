@@ -5020,7 +5020,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     let rx = x - pad_h;
                                     let rw2 = rw + pad_h * 2.0;
                                     let (ry, rh) =
-                                        inline_background_y_and_height(run, text_y, pad_v, custom_fonts);
+                                        flex_row_inline_background_y_and_height(run, text_y, pad_v);
                                     content.push_str(&format!("{br} {bgc} {bb} rg\n"));
                                     if run.border_radius > 0.0 {
                                         content.push_str(&rounded_rect_path(
@@ -7718,6 +7718,20 @@ fn inline_background_y_and_height(
     ) * run.font_size;
     let base_h = run.font_size + 2.0;
     let content_h = base_h.max(font_normal + 2.0);
+    let extra = content_h - base_h;
+    (text_y - 2.0 - pad_v - extra, content_h + pad_v * 2.0)
+}
+
+// FlexRow also carries mixed inline flow with atomic inline-level boxes
+// (`inline-table`, `inline-flex`, etc.). Inline backgrounds in that row should
+// use a font-based content area instead of inflating to the line box.
+fn flex_row_inline_background_y_and_height(
+    run: &TextRun,
+    text_y: f32,
+    pad_v: f32,
+) -> (f32, f32) {
+    let base_h = run.font_size + 2.0;
+    let content_h = (run.font_size * 1.2).max(base_h);
     let extra = content_h - base_h;
     (text_y - 2.0 - pad_v - extra, content_h + pad_v * 2.0)
 }
