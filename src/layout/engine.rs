@@ -2093,6 +2093,112 @@ fn filter_op_changes_geometry(op: &crate::style::computed::ColorFilterOp) -> boo
     )
 }
 
+fn resolve_filter_url_ops(style: &mut ComputedStyle, env: &LayoutEnv<'_>) -> bool {
+    let mut filter_linear_rgb = false;
+    if let Some(id) = style.filter_url_id.clone()
+        && let Some(filter_el) = env.filter_defs.get(&id)
+    {
+        let (ops, use_linear_rgb) = crate::parser::svg::filter_element_color_ops(filter_el);
+        if !ops.is_empty() {
+            filter_linear_rgb = use_linear_rgb;
+        }
+        style.color_filters.extend(ops);
+    } else if style.filter_url_id.is_some() {
+        style.blur_radius = 0.0;
+        style.color_filters.clear();
+        style.drop_shadow = None;
+        style.filter_url_id = None;
+    }
+    filter_linear_rgb
+}
+
+fn direct_flex_item_filter_ops(
+    flex_el: &ElementNode,
+    parent_style: &ComputedStyle,
+    ancestors: &[AncestorInfo],
+    env: &LayoutEnv<'_>,
+) -> Vec<Option<(Vec<crate::style::computed::ColorFilterOp>, bool)>> {
+    let child_elements: Vec<&ElementNode> = flex_el
+        .children
+        .iter()
+        .filter_map(|child| match child {
+            DomNode::Element(el) => Some(el),
+            _ => None,
+        })
+        .collect();
+    let child_count = child_elements.len();
+    let mut out = Vec::new();
+    for (idx, child_el) in child_elements.into_iter().enumerate() {
+        let classes = child_el.class_list();
+        let selector_ctx = SelectorContext {
+            ancestors: ancestors.to_vec(),
+            child_index: idx,
+            sibling_count: child_count,
+            preceding_siblings: Vec::new(),
+            following_siblings: Vec::new(),
+            is_empty: false,
+        };
+        let mut child_style = compute_style_with_context(
+            child_el.tag,
+            child_el.style_attr(),
+            parent_style,
+            env.rules,
+            child_el.tag_name(),
+            &classes,
+            child_el.id(),
+            &child_el.attributes,
+            &selector_ctx,
+        );
+        if child_style.display == Display::None || child_style.position == Position::Absolute {
+            continue;
+        }
+        let linear_rgb = resolve_filter_url_ops(&mut child_style, env);
+        if child_style.color_filters.is_empty()
+            && child_style.blur_radius <= 0.0
+            && child_style.drop_shadow.is_none()
+        {
+            out.push(None);
+        } else {
+            out.push(Some((child_style.color_filters.clone(), linear_rgb)));
+        }
+    }
+    out
+}
+
+fn apply_direct_flex_item_filters(
+    flex_el: &ElementNode,
+    parent_style: &ComputedStyle,
+    ancestors: &[AncestorInfo],
+    env: &LayoutEnv<'_>,
+    elements: &mut [LayoutElement],
+) {
+    let filters = direct_flex_item_filter_ops(flex_el, parent_style, ancestors, env);
+    if filters.iter().all(Option::is_none) {
+        return;
+    }
+    let mut next_filter = filters.into_iter();
+    for element in elements {
+        if let LayoutElement::FlexRow { cells, .. } = element {
+            for cell in cells {
+                let Some(filter) = next_filter.next() else {
+                    return;
+                };
+                let Some((ops, linear_rgb)) = filter else {
+                    continue;
+                };
+                if ops.iter().any(filter_op_changes_color) {
+                    apply_filter_color_ops_to_flex_cell(cell, &ops, linear_rgb);
+                }
+                for op in &ops {
+                    if let crate::style::computed::ColorFilterOp::Blur(radius) = *op {
+                        cell.background_blur_radius = cell.background_blur_radius.max(radius);
+                    }
+                }
+            }
+        }
+    }
+}
+
 fn apply_filter_offset_ops_to_elements(
     elements: &mut [LayoutElement],
     ops: &[crate::style::computed::ColorFilterOp],
@@ -2412,23 +2518,31 @@ fn apply_filter_color_ops_to_element(
                 shadow.color = filtered_color(shadow.color, ops, linear_rgb);
             }
             for cell in cells {
-                if let Some(color) = &mut cell.background_color {
-                    *color = filtered_rgba(*color, ops, linear_rgb);
-                }
-                apply_filter_color_ops_to_border(&mut cell.border, ops, linear_rgb);
-                for shadow in &mut cell.box_shadow {
-                    shadow.color = filtered_color(shadow.color, ops, linear_rgb);
-                }
-                for line in &mut cell.lines {
-                    for run in &mut line.runs {
-                        apply_filter_color_ops_to_run(run, ops, linear_rgb);
-                    }
-                }
-                apply_filter_color_ops_to_elements(&mut cell.nested_elements, ops, linear_rgb);
+                apply_filter_color_ops_to_flex_cell(cell, ops, linear_rgb);
             }
         }
         _ => {}
     }
+}
+
+fn apply_filter_color_ops_to_flex_cell(
+    cell: &mut FlexCell,
+    ops: &[crate::style::computed::ColorFilterOp],
+    linear_rgb: bool,
+) {
+    if let Some(color) = &mut cell.background_color {
+        *color = filtered_rgba(*color, ops, linear_rgb);
+    }
+    apply_filter_color_ops_to_border(&mut cell.border, ops, linear_rgb);
+    for shadow in &mut cell.box_shadow {
+        shadow.color = filtered_color(shadow.color, ops, linear_rgb);
+    }
+    for line in &mut cell.lines {
+        for run in &mut line.runs {
+            apply_filter_color_ops_to_run(run, ops, linear_rgb);
+        }
+    }
+    apply_filter_color_ops_to_elements(&mut cell.nested_elements, ops, linear_rgb);
 }
 
 fn apply_filter_color_ops_to_run(
@@ -2966,21 +3080,7 @@ pub(crate) fn flatten_element(
     // `linear_rgb` selects the color space for recoloring the box's paint: SVG
     // `<filter>`s default to linearRGB (color-interpolation-filters), while CSS
     // `filter` color *functions* operate in sRGB.
-    let mut filter_linear_rgb = false;
-    if let Some(id) = style.filter_url_id.clone()
-        && let Some(filter_el) = env.filter_defs.get(&id)
-    {
-        let (ops, use_linear_rgb) = crate::parser::svg::filter_element_color_ops(filter_el);
-        if !ops.is_empty() {
-            filter_linear_rgb = use_linear_rgb;
-        }
-        style.color_filters.extend(ops);
-    } else if style.filter_url_id.is_some() {
-        style.blur_radius = 0.0;
-        style.color_filters.clear();
-        style.drop_shadow = None;
-        style.filter_url_id = None;
-    }
+    let filter_linear_rgb = resolve_filter_url_ops(&mut style, env);
     let filter_ops = style.color_filters.clone();
     if filter_ops.iter().any(filter_op_changes_geometry) {
         let saved_ops = std::mem::take(&mut style.color_filters);
@@ -4679,6 +4779,7 @@ fn route_element(
         } else {
             el
         };
+        let flex_output_start = output.len();
         layout_flex_container(
             flex_el,
             style,
@@ -4689,6 +4790,13 @@ fn route_element(
             after_style.as_ref(),
             positioned_depth,
             env,
+        );
+        apply_direct_flex_item_filters(
+            flex_el,
+            style,
+            child_ancestors,
+            env,
+            &mut output[flex_output_start..],
         );
 
         if style.page_break_after {

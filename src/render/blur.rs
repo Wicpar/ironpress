@@ -659,6 +659,26 @@ pub(crate) fn raster_from_buffer(buf: image::RgbaImage, overflow_pt: f32) -> Opt
     Some(BlurredRaster { asset, overflow_pt })
 }
 
+/// Blur an already-painted border-box RGBA buffer at filter resolution, padding
+/// transparent pixels around it so the CSS filter can feather outside the box.
+pub(crate) fn blur_painted_buffer(
+    source: &image::RgbaImage,
+    blur_radius_pt: f32,
+    filter_dpi: f32,
+) -> Option<BlurredRaster> {
+    if source.width() == 0 || source.height() == 0 || blur_radius_pt <= 0.0 {
+        return None;
+    }
+    let s = filter_dpi_scale(filter_dpi);
+    let sigma = (blur_radius_pt / PT_PER_PX) * s;
+    let pad = pad_pixels(sigma);
+    let mut padded = image::RgbaImage::new(source.width() + 2 * pad, source.height() + 2 * pad);
+    image::imageops::replace(&mut padded, source, pad as i64, pad as i64);
+    let blurred = blur_premultiplied(&padded, sigma);
+    let overflow_pt = pad as f32 / s * PT_PER_PX;
+    raster_from_buffer(blurred, overflow_pt)
+}
+
 /// Build a `drop-shadow(dx dy blur color)` raster from an already-decoded source
 /// image: take the source alpha, blur it, tint it with the shadow colour, and
 /// composite the *original* image on top, offset within a padded buffer.

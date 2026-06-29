@@ -1347,6 +1347,582 @@ fn finish_transparency_group(
     content.push_str(&format!("/{} Do\nQ\n", form_ref.name));
 }
 
+fn bake_mask_into_blurred_raster(
+    blurred: &crate::render::blur::BlurredRaster,
+    source: &MaskSource,
+    mode: MaskMode,
+    box_w: f32,
+    box_h: f32,
+    metrics: BoxMetrics,
+    svg_defs: &crate::parser::svg::SvgDefs,
+) -> Option<crate::render::blur::BlurredRaster> {
+    if box_w <= 0.0 || box_h <= 0.0 {
+        return None;
+    }
+    let mut rgba = image::load_from_memory(&blurred.asset.data).ok()?.to_rgba8();
+    let (img_w, img_h) = (rgba.width(), rgba.height());
+    if img_w == 0 || img_h == 0 {
+        return None;
+    }
+    let image_w_pt = box_w + 2.0 * blurred.overflow_pt;
+    let image_h_pt = box_h + 2.0 * blurred.overflow_pt;
+    if image_w_pt <= 0.0 || image_h_pt <= 0.0 {
+        return None;
+    }
+    let off_x = ((blurred.overflow_pt / image_w_pt) * img_w as f32)
+        .round()
+        .clamp(0.0, img_w as f32) as u32;
+    let off_y = ((blurred.overflow_pt / image_h_pt) * img_h as f32)
+        .round()
+        .clamp(0.0, img_h as f32) as u32;
+    let mask_w = (((box_w / image_w_pt) * img_w as f32).round() as u32)
+        .min(img_w.saturating_sub(off_x))
+        .max(1);
+    let mask_h = (((box_h / image_h_pt) * img_h as f32).round() as u32)
+        .min(img_h.saturating_sub(off_y))
+        .max(1);
+    let scale_x = mask_w as f32 / (box_w / 0.75).max(1e-6);
+    let scale_y = mask_h as f32 / (box_h / 0.75).max(1e-6);
+    let coverage = match source {
+        MaskSource::Layers(layers) => {
+            rasterize_mask_layers(layers, mask_w, mask_h, box_w, box_h, metrics, svg_defs)?
+        }
+        MaskSource::Svg(bytes) => rasterize_svg_mask_coverage(bytes, mode, mask_w, mask_h)?,
+        MaskSource::BorderRing { width } => {
+            rasterize_mask_border_ring(mask_w, mask_h, box_w, box_h, *width)
+        }
+        MaskSource::Ref(id) => {
+            let mask = svg_defs.masks.get(id)?;
+            rasterize_svg_mask_ref_coverage(mask, mode, mask_w, mask_h, box_w / 0.75, box_h / 0.75)?
+        }
+        _ => rasterize_mask_coverage(source, mode, mask_w, mask_h, scale_x, scale_y),
+    };
+    if coverage.len() != (mask_w * mask_h) as usize {
+        return None;
+    }
+    for y in 0..img_h {
+        for x in 0..img_w {
+            let cov = if x >= off_x && y >= off_y && x < off_x + mask_w && y < off_y + mask_h {
+                coverage[((y - off_y) * mask_w + (x - off_x)) as usize] as u16
+            } else {
+                0
+            };
+            let px = rgba.get_pixel_mut(x, y);
+            px[3] = ((px[3] as u16 * cov + 127) / 255) as u8;
+        }
+    }
+    let mut encoded = Vec::new();
+    image::DynamicImage::ImageRgba8(rgba)
+        .write_to(
+            &mut std::io::Cursor::new(&mut encoded),
+            image::ImageFormat::Png,
+        )
+        .ok()?;
+    Some(crate::render::blur::BlurredRaster {
+        asset: crate::layout::engine::RasterImageAsset {
+            data: encoded,
+            source_width: img_w,
+            source_height: img_h,
+            format: ImageFormat::PngAlpha,
+            png_metadata: None,
+        },
+        overflow_pt: blurred.overflow_pt,
+    })
+}
+
+fn fill_rgba_rect(
+    img: &mut image::RgbaImage,
+    px_per_pt: f32,
+    x_pt: f32,
+    y_pt: f32,
+    w_pt: f32,
+    h_pt: f32,
+    color: (f32, f32, f32, f32),
+) {
+    if w_pt <= 0.0 || h_pt <= 0.0 || color.3 <= 0.0 {
+        return;
+    }
+    let x0 = (x_pt * px_per_pt).round().max(0.0) as u32;
+    let y0 = (y_pt * px_per_pt).round().max(0.0) as u32;
+    let x1 = ((x_pt + w_pt) * px_per_pt)
+        .round()
+        .clamp(0.0, img.width() as f32) as u32;
+    let y1 = ((y_pt + h_pt) * px_per_pt)
+        .round()
+        .clamp(0.0, img.height() as f32) as u32;
+    let src = image::Rgba([
+        (color.0 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.1 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.2 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.3 * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let dst = *img.get_pixel(x, y);
+            img.put_pixel(x, y, over_rgba(src, dst));
+        }
+    }
+}
+
+fn over_rgba(src: image::Rgba<u8>, dst: image::Rgba<u8>) -> image::Rgba<u8> {
+    let sa = src[3] as f32 / 255.0;
+    let da = dst[3] as f32 / 255.0;
+    let oa = sa + da * (1.0 - sa);
+    if oa <= 0.0 {
+        return image::Rgba([0, 0, 0, 0]);
+    }
+    let blend = |s: u8, d: u8| {
+        ((s as f32 * sa + d as f32 * da * (1.0 - sa)) / oa)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    image::Rgba([
+        blend(src[0], dst[0]),
+        blend(src[1], dst[1]),
+        blend(src[2], dst[2]),
+        (oa * 255.0).round() as u8,
+    ])
+}
+
+fn composite_text_mask(
+    img: &mut image::RgbaImage,
+    mask: &image::GrayImage,
+    dst_x: i32,
+    dst_y: i32,
+    color: (f32, f32, f32),
+) {
+    let (r, g, b) = (
+        (color.0 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.1 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.2 * 255.0).round().clamp(0.0, 255.0) as u8,
+    );
+    for y in 0..mask.height() {
+        for x in 0..mask.width() {
+            let a = ((mask.get_pixel(x, y)[0] as f32) * 6.0)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            if a == 0 {
+                continue;
+            }
+            let tx = dst_x + x as i32;
+            let ty = dst_y + y as i32;
+            if tx < 0 || ty < 0 || tx >= img.width() as i32 || ty >= img.height() as i32 {
+                continue;
+            }
+            let dst = *img.get_pixel(tx as u32, ty as u32);
+            img.put_pixel(tx as u32, ty as u32, over_rgba(image::Rgba([r, g, b, a]), dst));
+        }
+    }
+}
+
+fn dilate_alpha_mask(mask: &image::GrayImage, radius: u32) -> image::GrayImage {
+    if radius == 0 {
+        return mask.clone();
+    }
+    let mut out = image::GrayImage::new(mask.width(), mask.height());
+    for y in 0..mask.height() {
+        for x in 0..mask.width() {
+            let x0 = x.saturating_sub(radius);
+            let y0 = y.saturating_sub(radius);
+            let x1 = (x + radius).min(mask.width().saturating_sub(1));
+            let y1 = (y + radius).min(mask.height().saturating_sub(1));
+            let mut max_a = 0;
+            for yy in y0..=y1 {
+                for xx in x0..=x1 {
+                    max_a = max_a.max(mask.get_pixel(xx, yy)[0]);
+                }
+            }
+            out.put_pixel(x, y, image::Luma([max_a]));
+        }
+    }
+    out
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_simple_text_block(
+    img: &mut image::RgbaImage,
+    px_per_pt: f32,
+    x_pt: f32,
+    y_pt: f32,
+    width_pt: f32,
+    height_pt: f32,
+    background: Option<(f32, f32, f32, f32)>,
+    lines: &[TextLine],
+    padding_top: f32,
+    padding_bottom: f32,
+    padding_left: f32,
+    padding_right: f32,
+    border: &crate::layout::engine::LayoutBorder,
+    text_align: TextAlign,
+    letter_spacing: f32,
+    word_spacing: f32,
+    text_indent: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+    filter_dpi: f32,
+) -> Option<()> {
+    if width_pt <= 0.0
+        || height_pt <= 0.0
+        || border.has_visible()
+        || letter_spacing != 0.0
+        || word_spacing != 0.0
+    {
+        return None;
+    }
+    if let Some(bg) = background {
+        fill_rgba_rect(img, px_per_pt, x_pt, y_pt, width_pt, height_pt, bg);
+    }
+    let content_w = (width_pt
+        - border.left.width
+        - border.right.width
+        - padding_left
+        - padding_right)
+        .max(0.0);
+    let mut baseline_y = y_pt + border.top.width + padding_top;
+    for (line_idx, line) in lines.iter().enumerate() {
+        let metrics = line_box_metrics(line, custom_fonts);
+        baseline_y += metrics.half_leading + metrics.ascender;
+        let merged = merge_runs(&line.runs);
+        let line_width: f32 = merged
+            .iter()
+            .map(|run| {
+                if run.inline_box.is_some()
+                    || run.underline
+                    || run.line_through
+                    || run.overline
+                    || run.background_color.is_some()
+                    || !run.text_shadow.is_empty()
+                    || run.vertical_align != VerticalAlign::Baseline
+                {
+                    return f32::NAN;
+                }
+                estimate_run_width_with_fonts(run, custom_fonts)
+            })
+            .sum();
+        if !line_width.is_finite() {
+            return None;
+        }
+        let first_line_indent = if line_idx == 0 { text_indent } else { 0.0 };
+        let text_x = match text_align {
+            TextAlign::Right => {
+                x_pt + border.left.width
+                    + padding_left
+                    + first_line_indent
+                    + (content_w - first_line_indent - line_width).max(0.0)
+            }
+            TextAlign::Center => {
+                x_pt + border.left.width
+                    + padding_left
+                    + first_line_indent
+                    + (content_w - first_line_indent - line_width).max(0.0) / 2.0
+            }
+            _ => x_pt + border.left.width + padding_left + first_line_indent,
+        } + line.x_offset;
+        let mut run_x = text_x;
+        for run in &merged {
+            if run.text.is_empty() {
+                continue;
+            }
+            let (_, font) = crate::text::resolve_custom_font(
+                &run.font_family,
+                run.bold,
+                run.italic,
+                custom_fonts,
+            )?;
+            let shaped = crate::text::shape_text_run(run, custom_fonts)?;
+            let raster = crate::render::blur::rasterize_run_alpha(
+                &font.data,
+                font.units_per_em,
+                run.font_size,
+                &shaped.glyphs,
+                filter_dpi,
+            )?;
+            let mask = if matches!(run.font_family, FontFamily::Custom(_))
+                && crate::system_fonts::needs_faux_bold(
+                    custom_fonts,
+                    run.font_family.name(),
+                    run.bold,
+                    run.italic,
+                ) {
+                let stroke_px =
+                    (run.font_size * 0.028 * px_per_pt / 2.0).ceil().max(1.0) as u32;
+                dilate_alpha_mask(&raster.mask, stroke_px)
+            } else {
+                raster.mask
+            };
+            let dst_x = (run_x * px_per_pt - raster.origin_x_px).round() as i32;
+            let dst_y = (baseline_y * px_per_pt - raster.baseline_y_px).round() as i32;
+            composite_text_mask(img, &mask, dst_x, dst_y, run.color);
+            run_x += estimate_run_width_with_fonts(run, custom_fonts);
+        }
+        baseline_y += metrics.descender + metrics.half_leading;
+    }
+    let _ = padding_bottom;
+    Some(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn blurred_simple_text_block(
+    width_pt: f32,
+    height_pt: f32,
+    background: Option<(f32, f32, f32, f32)>,
+    lines: &[TextLine],
+    padding_top: f32,
+    padding_bottom: f32,
+    padding_left: f32,
+    padding_right: f32,
+    border: &crate::layout::engine::LayoutBorder,
+    text_align: TextAlign,
+    letter_spacing: f32,
+    word_spacing: f32,
+    text_indent: f32,
+    blur_radius_pt: f32,
+    filter_dpi: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+) -> Option<crate::render::blur::BlurredRaster> {
+    if blur_radius_pt <= 0.0 {
+        return None;
+    }
+    let px_per_pt = crate::render::blur::px_per_pt_at_filter_dpi(filter_dpi);
+    let px_w = (width_pt * px_per_pt).round().max(1.0) as u32;
+    let px_h = (height_pt * px_per_pt).round().max(1.0) as u32;
+    let mut img = image::RgbaImage::new(px_w, px_h);
+    paint_simple_text_block(
+        &mut img,
+        px_per_pt,
+        0.0,
+        0.0,
+        width_pt,
+        height_pt,
+        background,
+        lines,
+        padding_top,
+        padding_bottom,
+        padding_left,
+        padding_right,
+        border,
+        text_align,
+        letter_spacing,
+        word_spacing,
+        text_indent,
+        custom_fonts,
+        filter_dpi,
+    )?;
+    crate::render::blur::blur_painted_buffer(&img, blur_radius_pt * 0.75, filter_dpi)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn blurred_simple_container_group(
+    children: &[LayoutElement],
+    width_pt: f32,
+    height_pt: f32,
+    background: Option<(f32, f32, f32, f32)>,
+    border: &crate::layout::engine::LayoutBorder,
+    padding_left: f32,
+    padding_right: f32,
+    padding_top: f32,
+    _padding_bottom: f32,
+    blur_radius_pt: f32,
+    filter_dpi: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+) -> Option<crate::render::blur::BlurredRaster> {
+    if width_pt <= 0.0 || height_pt <= 0.0 || blur_radius_pt <= 0.0 || border.has_visible() {
+        return None;
+    }
+    let px_per_pt = crate::render::blur::px_per_pt_at_filter_dpi(filter_dpi);
+    let px_w = (width_pt * px_per_pt).round().max(1.0) as u32;
+    let px_h = (height_pt * px_per_pt).round().max(1.0) as u32;
+    let mut img = image::RgbaImage::new(px_w, px_h);
+    if let Some(bg) = background {
+        fill_rgba_rect(&mut img, px_per_pt, 0.0, 0.0, width_pt, height_pt, bg);
+    }
+
+    let content_w = (width_pt - padding_left - padding_right).max(0.0);
+    let mut cursor_y = padding_top;
+    let mut prev_margin_bottom = 0.0;
+    for child in children {
+        if let LayoutElement::Container {
+            children: nested,
+            background_color,
+            border: child_border,
+            padding_top: child_pt,
+            padding_bottom: child_pb,
+            padding_left: child_pl,
+            padding_right: child_pr,
+            margin_top,
+            margin_bottom,
+            block_width,
+            block_height,
+            opacity,
+            mix_blend_mode,
+            visible,
+            float,
+            position,
+            offset_top,
+            offset_left,
+            transform,
+            clip_path,
+            mask_image,
+            box_shadow,
+            background_gradient,
+            background_radial_gradient,
+            background_conic_gradient,
+            background_svg,
+            background_blur_radius,
+            outline_width,
+            border_radius,
+            border_radii,
+            border_radii_y,
+            ..
+        } = child
+        {
+            if !*visible
+                || !nested.is_empty()
+                || *position != Position::Static
+                || *float != Float::None
+                || *opacity < 1.0
+                || *mix_blend_mode != crate::style::computed::BlendMode::Normal
+                || transform.is_some()
+                || clip_path.is_some()
+                || mask_image.is_some()
+                || !box_shadow.is_empty()
+                || background_gradient.is_some()
+                || background_radial_gradient.is_some()
+                || background_conic_gradient.is_some()
+                || background_svg.is_some()
+                || *background_blur_radius > 0.0
+                || child_border.has_visible()
+                || *border_radius > 0.0
+                || border_radii.iter().any(|r| *r > 0.0)
+                || border_radii_y.iter().any(|r| *r > 0.0)
+                || *outline_width > 0.0
+            {
+                return None;
+            }
+            cursor_y += collapsed_margin_top_extra(*margin_top, prev_margin_bottom);
+            let child_w = block_width.unwrap_or(content_w);
+            let child_h = block_height.unwrap_or(child_pt + child_pb);
+            let child_x = padding_left + offset_left;
+            let child_y = cursor_y + offset_top;
+            if let Some(bg) = *background_color {
+                fill_rgba_rect(&mut img, px_per_pt, child_x, child_y, child_w, child_h, bg);
+            }
+            let _ = (child_pl, child_pr);
+            cursor_y += child_h + margin_bottom;
+            prev_margin_bottom = *margin_bottom;
+            continue;
+        }
+        let LayoutElement::TextBlock {
+            lines,
+            margin_top,
+            margin_bottom,
+            padding_top: child_pt,
+            padding_bottom: child_pb,
+            padding_left: child_pl,
+            padding_right: _child_pr,
+            border: child_border,
+            block_width,
+            block_height,
+            background_color,
+            background_gradient,
+            background_radial_gradient,
+            background_conic_gradient,
+            background_svg,
+            background_blur_radius,
+            text_align,
+            position,
+            float,
+            offset_left,
+            offset_top,
+            opacity,
+            mix_blend_mode,
+            transform,
+            clip_rect,
+            border_radius,
+            border_radii,
+            border_radii_y,
+            outline_width,
+            letter_spacing,
+            word_spacing,
+            ..
+        } = child
+        else {
+            return None;
+        };
+        if *position != Position::Static
+            || *float != Float::None
+            || *opacity < 1.0
+            || *mix_blend_mode != crate::style::computed::BlendMode::Normal
+            || transform.is_some()
+            || clip_rect.is_some()
+            || background_gradient.is_some()
+            || background_radial_gradient.is_some()
+            || background_conic_gradient.is_some()
+            || background_svg.is_some()
+            || *background_blur_radius > 0.0
+            || child_border.has_visible()
+            || *border_radius > 0.0
+            || border_radii.iter().any(|r| *r > 0.0)
+            || border_radii_y.iter().any(|r| *r > 0.0)
+            || *outline_width > 0.0
+            || *letter_spacing != 0.0
+            || *word_spacing != 0.0
+        {
+            return None;
+        }
+        cursor_y += collapsed_margin_top_extra(*margin_top, prev_margin_bottom);
+        let text_h: f32 = lines.iter().map(|line| line.height).sum();
+        let content_pad_box = child_pt + text_h + child_pb;
+        let child_h = block_height.map_or(content_pad_box, |h| content_pad_box.max(h));
+        let child_w = block_width.unwrap_or(content_w);
+        let child_x = padding_left + offset_left;
+        let child_y = cursor_y + offset_top;
+        if let Some(bg) = *background_color {
+            fill_rgba_rect(&mut img, px_per_pt, child_x, child_y, child_w, child_h, bg);
+        }
+        let mut baseline_y = child_y + child_pt;
+        for line in lines {
+            let metrics = line_box_metrics(line, custom_fonts);
+            baseline_y += metrics.half_leading + metrics.ascender;
+            let merged = merge_runs(&line.runs);
+            let line_width: f32 = merged
+                .iter()
+                .map(|run| estimate_run_width_with_fonts(run, custom_fonts))
+                .sum();
+            let text_x = match text_align {
+                TextAlign::Right => child_x + (child_w - line_width).max(0.0),
+                TextAlign::Center => child_x + (child_w - line_width).max(0.0) / 2.0,
+                _ => child_x,
+            } + child_pl
+                + line.x_offset;
+            let mut run_x = text_x;
+            for run in &merged {
+                let (_, font) = crate::text::resolve_custom_font(
+                    &run.font_family,
+                    run.bold,
+                    run.italic,
+                    custom_fonts,
+                )?;
+                let shaped = crate::text::shape_text_run(run, custom_fonts)?;
+                let raster = crate::render::blur::rasterize_run_alpha(
+                    &font.data,
+                    font.units_per_em,
+                    run.font_size,
+                    &shaped.glyphs,
+                    filter_dpi,
+                )?;
+                let dst_x = (run_x * px_per_pt - raster.origin_x_px).round() as i32;
+                let dst_y = (baseline_y * px_per_pt - raster.baseline_y_px).round() as i32;
+                composite_text_mask(&mut img, &raster.mask, dst_x, dst_y, run.color);
+                run_x += estimate_run_width_with_fonts(run, custom_fonts);
+            }
+            baseline_y += metrics.descender + metrics.half_leading;
+        }
+        cursor_y += child_h + margin_bottom;
+        prev_margin_bottom = *margin_bottom;
+    }
+    crate::render::blur::blur_painted_buffer(&img, blur_radius_pt, filter_dpi)
+}
+
 /// Stroke the CSS `border` frame of an image box. `(box_x, box_bottom)` is the
 /// bottom-left corner of the box in PDF (bottom-up) coordinates; `box_w`/`box_h`
 /// are the border-box dimensions. With `box-sizing: border-box` the frame is
@@ -2542,6 +3118,67 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             border,
                             *background_blur_radius,
                             pdf_writer.opts.filter_dpi,
+                        )
+                    {
+                        let img_obj_id = pdf_writer.add_image_object(
+                            &blurred.asset.data,
+                            blurred.asset.source_width,
+                            blurred.asset.source_height,
+                            blurred.asset.format,
+                            blurred.asset.png_metadata.as_ref(),
+                        );
+                        let img_name = format!("Im{img_obj_id}");
+                        let ov = blurred.overflow_pt;
+                        content.push_str(&format!(
+                            "q\n{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\n",
+                            w = render_width + 2.0 * ov,
+                            h = border_box_h + 2.0 * ov,
+                            ix = block_x - ov,
+                            iy = block_bottom - ov,
+                            name = img_name,
+                        ));
+                        page_images.push(ImageRef {
+                            name: img_name,
+                            obj_id: img_obj_id,
+                        });
+                        continue;
+                    }
+
+                    if *background_blur_radius > 0.0
+                        && !needs_transform
+                        && !needs_opacity
+                        && !lines.is_empty()
+                        && clip_rect.is_none()
+                        && matches!(
+                            writing_mode,
+                            crate::style::computed::WritingMode::HorizontalTb
+                        )
+                        && background_gradient.is_none()
+                        && background_radial_gradient.is_none()
+                        && background_conic_gradient.is_none()
+                        && background_svg.is_none()
+                        && *border_radius == 0.0
+                        && tb_radii.iter().all(|r| *r == 0.0)
+                        && tb_radii_y.iter().all(|r| *r == 0.0)
+                        && *outline_width == 0.0
+                        && *background_clip == BackgroundClip::Border
+                        && let Some(blurred) = blurred_simple_text_block(
+                            render_width,
+                            border_box_h,
+                            *background_color,
+                            lines,
+                            *padding_top,
+                            *padding_bottom,
+                            *padding_left,
+                            *padding_right,
+                            border,
+                            *text_align,
+                            *letter_spacing,
+                            *css_word_spacing,
+                            *text_indent,
+                            *background_blur_radius,
+                            pdf_writer.opts.filter_dpi,
+                            custom_fonts,
                         )
                     {
                         let img_obj_id = pdf_writer.add_image_object(
@@ -6214,6 +6851,149 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             content.push_str(&format!("/{gs_name} gs\n"));
                             c_mask_open = true;
                         }
+                    }
+
+                    if c_visible_self
+                        && *c_bg_blur > 0.0
+                        && !children.is_empty()
+                        && c_bg_gradient.is_none()
+                        && c_bg_radial.is_none()
+                        && c_bg_conic.is_none()
+                        && c_bg_svg.is_none()
+                        && *c_border_radius == 0.0
+                        && c_border_radii.iter().all(|r| *r == 0.0)
+                        && c_border_radii_y.iter().all(|r| *r == 0.0)
+                        && *c_outline_width == 0.0
+                        && !border.has_visible()
+                        && let Some(blurred) = blurred_simple_container_group(
+                            children,
+                            container_w,
+                            total_h,
+                            *background_color,
+                            border,
+                            *c_pl,
+                            *c_pr,
+                            *c_pt,
+                            *c_pb,
+                            *c_bg_blur,
+                            pdf_writer.opts.filter_dpi,
+                            custom_fonts,
+                        )
+                    {
+                        let img_obj_id = pdf_writer.add_image_object(
+                            &blurred.asset.data,
+                            blurred.asset.source_width,
+                            blurred.asset.source_height,
+                            blurred.asset.format,
+                            blurred.asset.png_metadata.as_ref(),
+                        );
+                        let img_name = format!("Im{img_obj_id}");
+                        let ov = blurred.overflow_pt;
+                        content.push_str(&format!(
+                            "q\n{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\n",
+                            w = container_w + 2.0 * ov,
+                            h = total_h + 2.0 * ov,
+                            ix = container_x - ov,
+                            iy = container_y_top - total_h - ov,
+                            name = img_name,
+                        ));
+                        page_images.push(ImageRef {
+                            name: img_name,
+                            obj_id: img_obj_id,
+                        });
+                        if c_mask_open {
+                            content.push_str("Q\n");
+                        }
+                        if c_needs_clip_path {
+                            content.push_str("Q\n");
+                        }
+                        if c_needs_transform {
+                            content.push_str("Q\n");
+                        }
+                        if let Some(group_start) = c_group_start {
+                            finish_transparency_group(
+                                &mut content,
+                                group_start,
+                                &mut pdf_writer,
+                                &mut page_images,
+                                &mut page_ext_gstates,
+                                *c_opacity,
+                                *c_mix_blend,
+                                container_x,
+                                container_y_top - total_h,
+                                container_w,
+                                total_h,
+                            );
+                        }
+                        continue;
+                    }
+
+                    if c_visible_self
+                        && *c_bg_blur > 0.0
+                        && children.is_empty()
+                        && c_bg_gradient.is_none()
+                        && c_bg_radial.is_none()
+                        && c_bg_conic.is_none()
+                        && c_bg_svg.is_none()
+                        && *c_border_radius == 0.0
+                        && c_border_radii.iter().all(|r| *r == 0.0)
+                        && c_border_radii_y.iter().all(|r| *r == 0.0)
+                        && *c_outline_width == 0.0
+                        && let Some(blurred) = crate::render::blur::blur_box(
+                            container_w,
+                            total_h,
+                            *background_color,
+                            border,
+                            *c_bg_blur,
+                            pdf_writer.opts.filter_dpi,
+                        )
+                    {
+                        let img_obj_id = pdf_writer.add_image_object(
+                            &blurred.asset.data,
+                            blurred.asset.source_width,
+                            blurred.asset.source_height,
+                            blurred.asset.format,
+                            blurred.asset.png_metadata.as_ref(),
+                        );
+                        let img_name = format!("Im{img_obj_id}");
+                        let ov = blurred.overflow_pt;
+                        content.push_str(&format!(
+                            "q\n{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\n",
+                            w = container_w + 2.0 * ov,
+                            h = total_h + 2.0 * ov,
+                            ix = container_x - ov,
+                            iy = container_y_top - total_h - ov,
+                            name = img_name,
+                        ));
+                        page_images.push(ImageRef {
+                            name: img_name,
+                            obj_id: img_obj_id,
+                        });
+                        if c_mask_open {
+                            content.push_str("Q\n");
+                        }
+                        if c_needs_clip_path {
+                            content.push_str("Q\n");
+                        }
+                        if c_needs_transform {
+                            content.push_str("Q\n");
+                        }
+                        if let Some(group_start) = c_group_start {
+                            finish_transparency_group(
+                                &mut content,
+                                group_start,
+                                &mut pdf_writer,
+                                &mut page_images,
+                                &mut page_ext_gstates,
+                                *c_opacity,
+                                *c_mix_blend,
+                                container_x,
+                                container_y_top - total_h,
+                                container_w,
+                                total_h,
+                            );
+                        }
+                        continue;
                     }
 
                     // Self-decoration (background / border / outline / shadow) is
@@ -10138,14 +10918,34 @@ fn render_container_children(
                         pdf_writer.opts.filter_dpi,
                     )
                 {
-                    let img_obj_id = pdf_writer.add_image_object(
-                        &blurred.asset.data,
-                        blurred.asset.source_width,
-                        blurred.asset.source_height,
-                        blurred.asset.format,
-                        blurred.asset.png_metadata.as_ref(),
-                    );
-                    let img_name = format!("Im{img_obj_id}");
+                    let mut blurred = blurred;
+                    let baked_mask = if let Some(src) = nk_mask_image {
+                        if let Some(masked) = bake_mask_into_blurred_raster(
+                            &blurred,
+                            src,
+                            *nk_mask_mode,
+                            nk_w,
+                            nk_total_h,
+                            BoxMetrics {
+                                border_left: border.left.width,
+                                border_right: border.right.width,
+                                border_top: border.top.width,
+                                border_bottom: border.bottom.width,
+                                padding_left: *padding_left,
+                                padding_right: *padding_right,
+                                padding_top: *padding_top,
+                                padding_bottom: *padding_bottom,
+                            },
+                            &pdf_writer.svg_defs,
+                        ) {
+                            blurred = masked;
+                            true
+                        } else {
+                            false
+                        }
+                    } else {
+                        false
+                    };
                     let ov = blurred.overflow_pt;
                     let mut close_count = 0;
                     if let Some(cp) = nk_clip_path {
@@ -10171,7 +10971,8 @@ fn render_container_children(
                             },
                         );
                     }
-                    if let Some(src) = nk_mask_image
+                    if !baked_mask
+                        && let Some(src) = nk_mask_image
                         && let Some(gs_name) = pdf_writer.add_mask_soft_mask(
                             src,
                             *nk_mask_mode,
@@ -10195,6 +10996,14 @@ fn render_container_children(
                         close_count += 1;
                         content.push_str(&format!("/{gs_name} gs\n"));
                     }
+                    let img_obj_id = pdf_writer.add_image_object(
+                        &blurred.asset.data,
+                        blurred.asset.source_width,
+                        blurred.asset.source_height,
+                        blurred.asset.format,
+                        blurred.asset.png_metadata.as_ref(),
+                    );
+                    let img_name = format!("Im{img_obj_id}");
                     content.push_str(&format!(
                         "q\n{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\n",
                         w = nk_w + 2.0 * ov,

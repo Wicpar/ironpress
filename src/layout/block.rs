@@ -689,6 +689,7 @@ pub(crate) fn layout_block_element(
     let early_has_visual = has_background_paint(style)
         || style.border.has_any()
         || style.border_radius > 0.0
+        || style.mask_image.is_some()
         || !style.box_shadow.is_empty()
         || style.opacity < 1.0
         || style.mix_blend_mode != crate::style::computed::BlendMode::Normal
@@ -992,6 +993,7 @@ pub(crate) fn layout_block_element(
         let parent_has_visual = has_background_paint(style)
             || style.border.has_any()
             || style.border_radius > 0.0
+            || style.mask_image.is_some()
             || !style.box_shadow.is_empty()
             || style.opacity < 1.0
             || style.mix_blend_mode != crate::style::computed::BlendMode::Normal
@@ -1952,6 +1954,7 @@ pub(crate) fn layout_block_element(
         let early_has_visual_for_wrapper = has_background_paint(style)
             || style.border.has_any()
             || style.border_radius > 0.0
+            || style.mask_image.is_some()
             || !style.box_shadow.is_empty()
             || style.opacity < 1.0
             || style.mix_blend_mode != crate::style::computed::BlendMode::Normal
@@ -2010,6 +2013,7 @@ pub(crate) fn layout_block_element(
     let has_visual = has_background_paint(style)
         || style.border.has_any()
         || style.border_radius > 0.0
+        || style.mask_image.is_some()
         || !style.box_shadow.is_empty()
         || style.opacity < 1.0
         || style.mix_blend_mode != crate::style::computed::BlendMode::Normal
