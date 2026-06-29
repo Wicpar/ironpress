@@ -37,6 +37,7 @@ use super::text::{
 const VERTICAL_LR_LINE_MARKER: f32 = -1_000_000.0;
 const VERTICAL_UPRIGHT_LINE_MARKER: f32 = -2_000_000.0;
 const MANUAL_SOFT_HYPHEN_BASELINE_MARKER: f32 = 1_000_000.0;
+const RUN_LETTER_SPACING_MARKER: f32 = -40_000.0;
 
 fn clear_first_backdropless_descendant_blend(elements: &mut [LayoutElement]) -> bool {
     for element in elements {
@@ -97,6 +98,25 @@ fn restyle_runs_for_first_line_wrap(
         run.italic = fl.font_style == crate::style::computed::FontStyle::Italic;
         run.font_family = family.clone();
         run.line_height_factor = line_height;
+        if fl.letter_spacing != 0.0 {
+            run.border_radius = RUN_LETTER_SPACING_MARKER - fl.letter_spacing;
+            run.disable_ligatures = true;
+        }
+    }
+}
+
+fn apply_first_line_letter_spacing(lines: &mut [TextLine], letter_spacing: f32) {
+    if letter_spacing == 0.0 {
+        return;
+    }
+    let Some(first) = lines.first_mut() else {
+        return;
+    };
+    for run in &mut first.runs {
+        if run.inline_box.is_none() {
+            run.border_radius = RUN_LETTER_SPACING_MARKER - letter_spacing;
+            run.disable_ligatures = true;
+        }
     }
 }
 
@@ -1556,6 +1576,18 @@ pub(crate) fn layout_block_element(
     let mut drop_cap: Option<crate::layout::helpers::DropCap> = None;
     if let Some(ref fl) = first_letter_style {
         let block_line_height = style.font_size * resolved_line_height_factor(style, env.fonts);
+        let initial_letter_style;
+        let fl = if fl.initial_letter > 1.0 {
+            initial_letter_style = {
+                let mut s = fl.clone();
+                s.float = Float::Left;
+                s.font_size = block_line_height * fl.initial_letter;
+                s
+            };
+            &initial_letter_style
+        } else {
+            fl
+        };
         drop_cap = crate::layout::helpers::apply_first_letter_style(
             &mut runs,
             fl,
@@ -1662,6 +1694,7 @@ pub(crate) fn layout_block_element(
         // the dynamically-determined first formatted line.
         if let Some(ref fl) = first_line_style {
             crate::layout::helpers::apply_first_line_style(&mut lines, fl, env.fonts);
+            apply_first_line_letter_spacing(&mut lines, fl.letter_spacing);
         }
 
         if matches!(

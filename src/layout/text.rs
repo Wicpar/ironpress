@@ -178,6 +178,7 @@ fn encode_text_decoration_metadata(style: &ComputedStyle, factor: f32) -> Option
     if style.text_decoration_style != TextDecorationStyle::Wavy
         && style.text_decoration_thickness.is_none()
         && style.text_underline_offset.is_none()
+        && !style.text_emphasis_mark
     {
         return None;
     }
@@ -188,10 +189,12 @@ fn encode_text_decoration_metadata(style: &ComputedStyle, factor: f32) -> Option
     let offset_q = (style.text_underline_offset.unwrap_or(0.0).clamp(0.0, 7.75) * 4.0).round()
         as u32;
     let wavy = u32::from(style.text_decoration_style == TextDecorationStyle::Wavy);
+    let emphasis = u32::from(style.text_emphasis_mark);
     let payload = (TEXT_DECORATION_NAN_MARKER << 19)
         | ((factor_q & 0x7f) << 12)
         | ((thickness_q & 0x1f) << 7)
         | ((offset_q & 0x1f) << 2)
+        | (emphasis << 1)
         | wavy;
     Some(f32::from_bits(0x7fc0_0000 | payload))
 }
@@ -209,9 +212,14 @@ fn decode_text_decoration_metadata(run: &mut TextRun) {
     let factor_q = (payload >> 12) & 0x7f;
     let thickness_q = (payload >> 7) & 0x1f;
     let offset_q = (payload >> 2) & 0x1f;
+    let emphasis = payload & 0x2 != 0;
     let wavy = payload & 0x1 != 0;
 
     run.line_height_factor = factor_q as f32 / 32.0;
+    if emphasis {
+        run.border_radius = -20_000.0;
+        return;
+    }
     if run.background_color.is_none() {
         if thickness_q > 0 {
             run.padding.1 = thickness_q as f32 / 4.0;
@@ -255,6 +263,35 @@ fn decoration_radius(style: &ComputedStyle, background: Option<(f32, f32, f32, f
     } else {
         0.0
     }
+}
+
+const RUN_LETTER_SPACING_MARKER: f32 = -40_000.0;
+
+fn encoded_run_letter_spacing(run: &TextRun) -> f32 {
+    if run.border_radius < -30_000.0 {
+        RUN_LETTER_SPACING_MARKER - run.border_radius
+    } else {
+        0.0
+    }
+}
+
+fn letter_spacing_extra_for_text(run: &TextRun, text: &str) -> f32 {
+    encoded_run_letter_spacing(run) * text.chars().count().saturating_sub(1) as f32
+}
+
+fn estimate_text_width_for_run(
+    text: &str,
+    run: &TextRun,
+    fonts: &HashMap<String, TtfFont>,
+) -> f32 {
+    estimate_word_width(
+        text,
+        run.font_size,
+        &run.font_family,
+        run.bold,
+        run.italic,
+        fonts,
+    ) + letter_spacing_extra_for_text(run, text)
 }
 
 fn ligatures_enabled_for_style(style: &ComputedStyle) -> bool {
@@ -1224,14 +1261,7 @@ pub(crate) fn wrap_text_runs(
                     bs_break_run_idx = 0;
                     // Re-place the rolled-back word at the start of the new line.
                     for r in rolled {
-                        current_width += estimate_word_width(
-                            &r.text,
-                            r.font_size,
-                            &r.font_family,
-                            r.bold,
-                            r.italic,
-                            fonts,
-                        );
+                        current_width += estimate_text_width_for_run(&r.text, &r, fonts);
                         line_height = line_height.max(run_line_height(&r));
                         current_runs.push(r);
                     }
@@ -1269,14 +1299,7 @@ pub(crate) fn wrap_text_runs(
             && !word.is_empty()
             && word.chars().all(|c| c == ' ' || c == '\t')
         {
-            let sp_width = estimate_word_width(
-                &word,
-                template.font_size,
-                &template.font_family,
-                template.bold,
-                template.italic,
-                fonts,
-            );
+            let sp_width = estimate_text_width_for_run(&word, &template, fonts);
             if current_width > 0.0 && current_width + sp_width > line_max_width(lines.len()) + 0.01
             {
                 // The spaces hang past the line edge: keep them on the current
@@ -1434,25 +1457,13 @@ pub(crate) fn wrap_text_runs(
         }
 
         let paint_word = strip_soft_hyphens(&word);
-        let word_width = estimate_word_width(
-            &paint_word,
-            template.font_size,
-            &template.font_family,
-            template.bold,
-            template.italic,
-            fonts,
-        );
-        let space_width = estimate_word_width(
-            " ",
-            template.font_size,
-            &template.font_family,
-            template.bold,
-            template.italic,
-            fonts,
-        );
+        let word_width = estimate_text_width_for_run(&paint_word, &template, fonts);
 
         let needed = if current_width > 0.0 && !preserve_spacing && !joins_prev {
-            space_width + word_width
+            let mut spaced = String::with_capacity(paint_word.len() + 1);
+            spaced.push(' ');
+            spaced.push_str(&paint_word);
+            estimate_text_width_for_run(&spaced, &template, fonts)
         } else {
             word_width
         };
@@ -1553,14 +1564,7 @@ pub(crate) fn wrap_text_runs(
                 // run's font so it matches the surrounding text metrics.
                 let prev_run = current_runs.last().unwrap_or(&template);
                 let space = " ".to_string();
-                let sw = estimate_word_width(
-                    &space,
-                    prev_run.font_size,
-                    &prev_run.font_family,
-                    prev_run.bold,
-                    prev_run.italic,
-                    fonts,
-                );
+                let sw = estimate_text_width_for_run(&space, prev_run, fonts);
                 current_width += sw;
                 current_runs.push(TextRun {
                     text: space,
@@ -1592,14 +1596,7 @@ pub(crate) fn wrap_text_runs(
         };
         let measure_text = strip_soft_hyphens(&text);
 
-        let w = estimate_word_width(
-            &measure_text,
-            template.font_size,
-            &template.font_family,
-            template.bold,
-            template.italic,
-            fonts,
-        );
+        let w = estimate_text_width_for_run(&measure_text, &template, fonts);
         current_width += w;
         line_height = line_height.max(run_line_height(&template));
 

@@ -4206,7 +4206,13 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             }
                             // text-decoration-color (falls back to currentColor).
                             let (dr, dg, db) = run.decoration_color.unwrap_or(run.color);
-                            let run_width = estimate_run_width_with_fonts(run, custom_fonts);
+                            let run_letter_spacing =
+                                effective_run_letter_spacing(*letter_spacing, run);
+                            let run_width = estimate_run_width_with_fonts(run, custom_fonts)
+                                + letter_spacing_extra(
+                                    run_letter_spacing,
+                                    run.text.chars().count(),
+                                );
                             // Inset decorations past leading/trailing whitespace.
                             let (deco_lead, deco_trail) = decoration_ws_insets(run, custom_fonts);
 
@@ -4448,9 +4454,11 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     blurred_line = false;
                                     break;
                                 }
+                                let run_letter_spacing =
+                                    effective_run_letter_spacing(*letter_spacing, run);
                                 lx += estimate_run_width_with_fonts(run, custom_fonts)
                                     + letter_spacing_extra(
-                                        *letter_spacing,
+                                        run_letter_spacing,
                                         run.text.chars().count(),
                                     );
                             }
@@ -8716,6 +8724,25 @@ fn letter_spacing_extra(letter_spacing: f32, glyph_count: usize) -> f32 {
     letter_spacing * glyph_count.saturating_sub(1) as f32
 }
 
+const RUN_LETTER_SPACING_MARKER: f32 = -40_000.0;
+
+fn encoded_run_letter_spacing(run: &TextRun) -> f32 {
+    if run.border_radius < -30_000.0 {
+        RUN_LETTER_SPACING_MARKER - run.border_radius
+    } else {
+        0.0
+    }
+}
+
+fn effective_run_letter_spacing(block_letter_spacing: f32, run: &TextRun) -> f32 {
+    let run_letter_spacing = encoded_run_letter_spacing(run);
+    if run_letter_spacing != 0.0 {
+        run_letter_spacing
+    } else {
+        block_letter_spacing
+    }
+}
+
 /// Resolve the PDF font resource name for a text run.
 ///
 /// Custom Type0 fonts are only safe when we also have shaped glyph output.
@@ -8848,7 +8875,15 @@ fn decoration_is_wavy(run: &TextRun) -> bool {
 }
 
 fn decoration_is_emphasis(run: &TextRun) -> bool {
-    run.background_color.is_none() && run.border_radius <= -20_000.0
+    run.border_radius <= -20_000.0 && run.border_radius > -30_000.0
+}
+
+fn text_emphasis_baseline_shift(run: &TextRun) -> f32 {
+    if decoration_is_emphasis(run) {
+        -run.font_size * 0.4
+    } else {
+        0.0
+    }
 }
 
 fn push_decoration_stroke(
@@ -8897,10 +8932,10 @@ fn push_text_emphasis_dots(
     custom_fonts: &HashMap<String, TtfFont>,
 ) {
     let (r, g, b) = color;
-    let (ascender_ratio, _) =
-        crate::fonts::font_metrics_ratios(&run.font_family, run.bold, run.italic, custom_fonts);
-    let cy = text_y + ascender_ratio * run.font_size + run.font_size * 0.16;
-    let radius = (run.font_size * 0.08).max(1.0);
+    let text_y = text_y + text_emphasis_baseline_shift(run);
+    let cy = text_y + run_glyph_top(run, custom_fonts) + run.font_size * 0.3;
+    let radius = (run.font_size * 0.073).max(1.0);
+    let center_adjust = run.font_size * 0.022;
     let mut cx = x;
     content.push_str(&format!("{r} {g} {b} rg\n"));
     for ch in run.text.chars() {
@@ -8914,7 +8949,7 @@ fn push_text_emphasis_dots(
             custom_fonts,
         );
         if !ch.is_whitespace() {
-            emit_ellipse_path(content, cx + adv / 2.0, cy, radius, radius);
+            emit_ellipse_path(content, cx + adv / 2.0 - center_adjust, cy, radius, radius);
             content.push_str("f\n");
         }
         cx += adv;
@@ -8996,6 +9031,11 @@ impl<'a> ShapedTextRender<'a> {
 
     const fn with_word_spacing(mut self, word_spacing: f32) -> Self {
         self.word_spacing = word_spacing;
+        self
+    }
+
+    const fn with_letter_spacing(mut self, letter_spacing: f32) -> Self {
+        self.letter_spacing = letter_spacing;
         self
     }
 
@@ -9085,7 +9125,8 @@ fn append_tj_shaped_text(content: &mut String, render: ShapedTextRender<'_>) {
     content.push('[');
 
     let mut first = true;
-    for glyph in &render.shaped.glyphs {
+    let last_idx = render.shaped.glyphs.len().saturating_sub(1);
+    for (idx, glyph) in render.shaped.glyphs.iter().enumerate() {
         if !first {
             content.push(' ');
         }
@@ -9104,7 +9145,13 @@ fn append_tj_shaped_text(content: &mut String, render: ShapedTextRender<'_>) {
         // inter-word spacing (CSS word-spacing + justify stretch) for space
         // clusters, so a single TJ number carries both.
         let kern_adjustment = -(advance_adjustment * 1000.0 / render.font_size.max(f32::EPSILON));
-        let tj_adjustment = kern_adjustment + render.space_tj_adjustment(glyph);
+        let letter_adjustment = if idx < last_idx {
+            -(render.letter_spacing * 1000.0 / render.font_size.max(f32::EPSILON))
+        } else {
+            0.0
+        };
+        let tj_adjustment =
+            kern_adjustment + render.space_tj_adjustment(glyph) + letter_adjustment;
         if tj_adjustment.abs() > 0.001 {
             content.push(' ');
             content.push_str(&format_pdf_number(tj_adjustment));
@@ -10544,8 +10591,10 @@ fn render_container_children(
                     let line_width: f32 = merged
                         .iter()
                         .map(|r| {
+                            let run_letter_spacing =
+                                effective_run_letter_spacing(*tb_letter_spacing, r);
                             estimate_run_width_with_fonts(r, custom_fonts)
-                                + letter_spacing_extra(*tb_letter_spacing, r.text.chars().count())
+                                + letter_spacing_extra(run_letter_spacing, r.text.chars().count())
                         })
                         .sum();
                     // CSS `text-indent` shifts only the first line's start. List
@@ -10633,8 +10682,10 @@ fn render_container_children(
                         if run.text.is_empty() {
                             continue;
                         }
+                        let run_letter_spacing =
+                            effective_run_letter_spacing(*tb_letter_spacing, run);
                         let run_width = estimate_run_width_with_fonts(run, custom_fonts)
-                            + letter_spacing_extra(*tb_letter_spacing, run.text.chars().count());
+                            + letter_spacing_extra(run_letter_spacing, run.text.chars().count());
                         // Per-run inline background (e.g. a `::first-letter`/
                         // `::first-line` `background-color`, or a highlighted
                         // inline span): paint the rectangle behind the glyphs
@@ -10705,8 +10756,16 @@ fn render_container_children(
                                 page_images,
                             )
                         };
-                        lx +=
-                            rw + letter_spacing_extra(*tb_letter_spacing, run.text.chars().count());
+                        let advance_letter_spacing = if encoded_run_letter_spacing(run) != 0.0 {
+                            0.0
+                        } else {
+                            *tb_letter_spacing
+                        };
+                        lx += rw
+                            + letter_spacing_extra(
+                                advance_letter_spacing,
+                                run.text.chars().count(),
+                            );
                     }
                     if *tb_letter_spacing != 0.0 {
                         content.push_str("0 Tc\n");
@@ -13256,13 +13315,20 @@ fn render_run_text_with_faux_bold(
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
 ) -> f32 {
-    let (r, g, b) = run.color;
+    let (mut r, mut g, mut b) = run.color;
+    if decoration_is_emphasis(run) {
+        r = (r - 0.008).max(0.0);
+        g = (g - 0.008).max(0.0);
+        b = (b - 0.008).max(0.0);
+    }
+    let letter_spacing = encoded_run_letter_spacing(run);
 
     // css2 §10.8.1: `vertical-align: super`/`sub` paint a text run with its
     // baseline raised/lowered by a fraction of the parent (line) font size. This
     // only moves the painted glyphs vertically; the horizontal advance (the
     // returned width) is unchanged, so callers position the next run normally.
-    let text_y = text_y + run_vertical_align_shift(run, parent_font_size);
+    let text_y =
+        text_y + run_vertical_align_shift(run, parent_font_size) + text_emphasis_baseline_shift(run);
 
     // CSS `text-shadow` (css-text-decor-3 §3): paint the glyphs again behind the
     // real text, once per shadow (back-to-front: the last listed shadow is
@@ -13338,7 +13404,8 @@ fn render_run_text_with_faux_bold(
                 if let Some((fallback_shaped, fallback_key, fallback_font)) =
                     crate::text::shape_with_unicode_fallback(&sub_run, custom_fonts)
                 {
-                    let w = fallback_shaped.width;
+                    let w = fallback_shaped.width
+                        + letter_spacing_extra(letter_spacing, sub_run.text.chars().count());
                     let font_name = sanitize_pdf_name(fallback_key);
                     content.push_str(&format!("{r} {g} {b} rg\n"));
                     content.push_str("BT\n");
@@ -13351,7 +13418,8 @@ fn render_run_text_with_faux_bold(
                         &fallback_shaped,
                         prepared_font,
                     )
-                    .with_word_spacing(word_spacing);
+                    .with_word_spacing(word_spacing)
+                    .with_letter_spacing(letter_spacing);
                     if render.has_complex_offsets() {
                         append_positioned_shaped_text(content, render);
                     } else {
@@ -13386,7 +13454,7 @@ fn render_run_text_with_faux_bold(
     let run_width = shaped.as_ref().map_or_else(
         || estimate_run_width_with_fonts(run, custom_fonts),
         |shaped| shaped.width,
-    );
+    ) + letter_spacing_extra(letter_spacing, run.text.chars().count());
     let custom_font =
         crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, custom_fonts);
     let font_name = resolve_font_name(run, custom_font, shaped.as_ref());
@@ -13438,6 +13506,7 @@ fn render_run_text_with_faux_bold(
             prepared_font,
         )
         .with_word_spacing(word_spacing)
+        .with_letter_spacing(letter_spacing)
         .with_shear(shear);
         if render.has_complex_offsets() {
             append_positioned_shaped_text(content, render);
@@ -13445,6 +13514,9 @@ fn render_run_text_with_faux_bold(
             append_tj_shaped_text(content, render);
         }
     } else {
+        if letter_spacing != 0.0 {
+            content.push_str(&format!("{letter_spacing} Tc\n"));
+        }
         let encoded = encode_pdf_text(&run.text);
         content.push_str(&format!(
             "{} {} Td\n",
@@ -13452,6 +13524,9 @@ fn render_run_text_with_faux_bold(
             format_pdf_number(text_y),
         ));
         content.push_str(&format!("({encoded}) Tj\n"));
+        if letter_spacing != 0.0 {
+            content.push_str("0 Tc\n");
+        }
     }
 
     // Restore the default fill-only render mode so the faux-bold stroke does not
@@ -13722,17 +13797,26 @@ fn render_line_text(
         // leaving the next run on the normal baseline.
         let mut cur_baseline = y;
         let mut first = true;
+        let mut used_run_letter_spacing = false;
         for run in &non_empty {
             let (r, g, b) = run.color;
             let font_name = resolve_font_name(run, None, None);
+            let letter_spacing = encoded_run_letter_spacing(run);
             content.push_str(&format!("{r} {g} {b} rg\n"));
             content.push_str(&format!("/{font_name} {} Tf\n", run.font_size));
+            if letter_spacing != 0.0 {
+                used_run_letter_spacing = true;
+                content.push_str(&format!("{letter_spacing} Tc\n"));
+            } else if used_run_letter_spacing {
+                content.push_str("0 Tc\n");
+            }
             // css2 §10.8: `vertical-align: super`/`sub` raise/lower a text run
             // off the line baseline by a fraction of its own font size. A floated
             // `::first-letter` drop cap is additionally lowered so its glyph top
             // sits on the line's text top (css-pseudo-4 §2.2).
             let target_baseline = y
                 + run_vertical_align_shift(run, parent_font_size)
+                + text_emphasis_baseline_shift(run)
                 + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
             if first {
                 content.push_str(&format!(
@@ -13753,6 +13837,9 @@ fn render_line_text(
             }
             let encoded = encode_pdf_text(&run.text);
             content.push_str(&format!("({encoded}) Tj\n"));
+        }
+        if used_run_letter_spacing {
+            content.push_str("0 Tc\n");
         }
         content.push_str("ET\n");
     } else {

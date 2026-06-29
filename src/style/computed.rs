@@ -1843,6 +1843,7 @@ pub struct ComputedStyle {
     pub font_kerning_enabled: bool,
     pub font_synthesis_weight: bool,
     pub font_synthesis_style: bool,
+    pub initial_letter: f32,
     pub text_emphasis_mark: bool,
     pub text_indent: f32,
     pub white_space: WhiteSpace,
@@ -2187,6 +2188,7 @@ impl Default for ComputedStyle {
             font_kerning_enabled: true,
             font_synthesis_weight: true,
             font_synthesis_style: true,
+            initial_letter: 0.0,
             text_emphasis_mark: false,
             text_indent: 0.0,
             white_space: WhiteSpace::Normal,
@@ -2451,6 +2453,7 @@ pub fn compute_style_with_context(
     style.outline_color = None;
     style.outline_offset = 0.0;
     style.box_sizing = BoxSizing::ContentBox;
+    style.initial_letter = 0.0;
     style.text_indent = 0.0;
     style.vertical_align = VerticalAlign::Baseline;
     style.text_overflow = TextOverflow::Clip;
@@ -2816,6 +2819,7 @@ pub fn compute_pseudo_element_style(
     style.outline_color = None;
     style.outline_offset = 0.0;
     style.box_sizing = BoxSizing::ContentBox;
+    style.initial_letter = 0.0;
     style.text_indent = 0.0;
     style.vertical_align = VerticalAlign::Baseline;
     style.text_overflow = TextOverflow::Clip;
@@ -2960,6 +2964,7 @@ fn reset_to_initial(style: &mut ComputedStyle, property: &str) {
         }
         "text-underline-offset" => style.text_underline_offset = default.text_underline_offset,
         "visibility" => style.visibility = default.visibility,
+        "initial-letter" => style.initial_letter = default.initial_letter,
         "letter-spacing" => style.letter_spacing = default.letter_spacing,
         "word-spacing" => style.word_spacing = default.word_spacing,
         "tab-size" => style.tab_size = default.tab_size,
@@ -3184,6 +3189,7 @@ fn restore_from_parent(style: &mut ComputedStyle, property: &str, parent: &Compu
         }
         "text-underline-offset" => style.text_underline_offset = parent.text_underline_offset,
         "visibility" => style.visibility = parent.visibility,
+        "initial-letter" => style.initial_letter = parent.initial_letter,
         "letter-spacing" => style.letter_spacing = parent.letter_spacing,
         "word-spacing" => style.word_spacing = parent.word_spacing,
         "tab-size" => style.tab_size = parent.tab_size,
@@ -5495,17 +5501,39 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
         style.font_synthesis_weight = !k.split_whitespace().any(|t| t == "none" || t == "style");
         style.font_synthesis_style = !k.split_whitespace().any(|t| t == "none" || t == "weight");
     }
-    if let Some(CssValue::Keyword(k)) = get_non_special(map, "text-emphasis") {
-        style.text_emphasis_mark = k.split_whitespace().any(|t| matches!(t, "dot" | "filled"));
-        if let Some(c) = color_in_text_emphasis_shorthand(k) {
-            style.text_decoration_color = Some(c);
+    if let Some(CssValue::Keyword(k)) = get_non_special(map, "initial-letter") {
+        let mut parts = k.split_whitespace();
+        style.initial_letter = match parts.next() {
+            Some("normal") | None => 0.0,
+            Some(size) => size.parse::<f32>().unwrap_or(0.0).max(0.0),
+        };
+    }
+    if let Some(CssValue::Number(v)) = get_non_special(map, "initial-letter") {
+        style.initial_letter = v.max(0.0);
+    }
+    for prop in ["text-emphasis", "-webkit-text-emphasis"] {
+        if let Some(CssValue::Keyword(k)) = get_non_special(map, prop) {
+            style.text_emphasis_mark = k.split_whitespace().any(|t| matches!(t, "dot" | "filled"));
+            if style.text_emphasis_mark {
+                style.text_decoration_overline = true;
+            }
+            if let Some(c) = color_in_text_emphasis_shorthand(k) {
+                style.text_decoration_color = Some(c);
+            }
         }
     }
-    if let Some(CssValue::Keyword(k)) = get_non_special(map, "text-emphasis-style") {
-        style.text_emphasis_mark = k.split_whitespace().any(|t| matches!(t, "dot" | "filled"));
+    for prop in ["text-emphasis-style", "-webkit-text-emphasis-style"] {
+        if let Some(CssValue::Keyword(k)) = get_non_special(map, prop) {
+            style.text_emphasis_mark = k.split_whitespace().any(|t| matches!(t, "dot" | "filled"));
+            if style.text_emphasis_mark {
+                style.text_decoration_overline = true;
+            }
+        }
     }
-    if let Some(CssValue::Color(c)) = get_non_special(map, "text-emphasis-color") {
-        style.text_decoration_color = Some(*c);
+    for prop in ["text-emphasis-color", "-webkit-text-emphasis-color"] {
+        if let Some(CssValue::Color(c)) = get_non_special(map, prop) {
+            style.text_decoration_color = Some(*c);
+        }
     }
 
     // Text-indent
