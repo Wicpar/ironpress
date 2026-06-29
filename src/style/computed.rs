@@ -17490,9 +17490,10 @@ mod tests {
         assert_eq!(
             parse_clip_path("circle(80px at 100px 100px)"),
             Some(ClipPath::Circle {
-                r: (60.0, false),
-                cx: (75.0, false),
-                cy: (75.0, false),
+                r: ClipRadius::Length((60.0, false).into()),
+                cx: (75.0, false).into(),
+                cy: (75.0, false).into(),
+                geometry_box: ShapeBox::Border,
             })
         );
         assert!(matches!(
@@ -17504,7 +17505,7 @@ mod tests {
             Some(ClipPath::Inset { .. })
         ));
         match parse_clip_path("polygon(50% 0%, 100% 50%, 0% 50%)") {
-            Some(ClipPath::Polygon(pts)) => assert_eq!(pts.len(), 3),
+            Some(ClipPath::Polygon { points, .. }) => assert_eq!(points.len(), 3),
             other => panic!("expected polygon, got {other:?}"),
         }
         assert_eq!(parse_clip_path("none"), None);

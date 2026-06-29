@@ -18023,6 +18023,7 @@ mod tests {
                     margin_top: 0.0,
                     margin_bottom: 0.0,
                     background_color: None,
+                    mix_blend_mode: crate::style::computed::BlendMode::Normal,
                     border: Default::default(),
                 },
             )],
@@ -18074,6 +18075,7 @@ mod tests {
                     margin_top: 0.0,
                     margin_bottom: 0.0,
                     background_color: None,
+                    mix_blend_mode: crate::style::computed::BlendMode::Normal,
                     border: Default::default(),
                 },
             )],
@@ -19782,6 +19784,8 @@ mod tests {
             repeating: false,
             layer_box: crate::style::computed::GradientLayerBox::default(),
         };
+        let mut pdf_writer = PdfWriter::new();
+        let mut page_images = Vec::new();
         render_radial_gradient(
             &mut content,
             &gradient,
@@ -19791,6 +19795,8 @@ mod tests {
             1.0,
             &mut shadings,
             &mut counter,
+            &mut pdf_writer,
+            &mut page_images,
         );
         assert!(!content.is_empty());
         assert!(content.contains("/SH0 sh"));

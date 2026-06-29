@@ -54,15 +54,9 @@ fn blur_premultiplied(img: &image::RgbaImage, sigma: f32) -> image::RgbaImage {
     let mut blurred = image::imageops::blur(&pre, sigma);
     for px in blurred.pixels_mut() {
         let a = px[3] as u32;
-        if a == 0 {
-            px[0] = 0;
-            px[1] = 0;
-            px[2] = 0;
-        } else {
-            px[0] = ((px[0] as u32 * 255 / a).min(255)) as u8;
-            px[1] = ((px[1] as u32 * 255 / a).min(255)) as u8;
-            px[2] = ((px[2] as u32 * 255 / a).min(255)) as u8;
-        }
+        px[0] = ((px[0] as u32 * 255).checked_div(a).unwrap_or(0).min(255)) as u8;
+        px[1] = ((px[1] as u32 * 255).checked_div(a).unwrap_or(0).min(255)) as u8;
+        px[2] = ((px[2] as u32 * 255).checked_div(a).unwrap_or(0).min(255)) as u8;
     }
     blurred
 }

@@ -7775,66 +7775,66 @@ mod tests {
     // --- list-style-type tests ---
     #[test]
     fn format_list_marker_disc() {
-        assert_eq!(format_list_marker(ListStyleType::Disc, 1), "\u{2022} ");
+        assert_eq!(format_list_marker(&ListStyleType::Disc, 1), "\u{2022} ");
     }
 
     #[test]
     fn format_list_marker_circle() {
-        assert_eq!(format_list_marker(ListStyleType::Circle, 1), "\u{25E6} ");
+        assert_eq!(format_list_marker(&ListStyleType::Circle, 1), "\u{25E6} ");
     }
 
     #[test]
     fn format_list_marker_square() {
-        assert_eq!(format_list_marker(ListStyleType::Square, 1), "\u{25AA} ");
+        assert_eq!(format_list_marker(&ListStyleType::Square, 1), "\u{25AA} ");
     }
 
     #[test]
     fn format_list_marker_decimal() {
-        assert_eq!(format_list_marker(ListStyleType::Decimal, 3), "3. ");
+        assert_eq!(format_list_marker(&ListStyleType::Decimal, 3), "3. ");
     }
 
     #[test]
     fn format_list_marker_decimal_leading_zero() {
         assert_eq!(
-            format_list_marker(ListStyleType::DecimalLeadingZero, 3),
+            format_list_marker(&ListStyleType::DecimalLeadingZero, 3),
             "03. "
         );
         assert_eq!(
-            format_list_marker(ListStyleType::DecimalLeadingZero, 12),
+            format_list_marker(&ListStyleType::DecimalLeadingZero, 12),
             "12. "
         );
     }
 
     #[test]
     fn format_list_marker_lower_alpha() {
-        assert_eq!(format_list_marker(ListStyleType::LowerAlpha, 1), "a. ");
-        assert_eq!(format_list_marker(ListStyleType::LowerAlpha, 3), "c. ");
-        assert_eq!(format_list_marker(ListStyleType::LowerAlpha, 27), "aa. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerAlpha, 1), "a. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerAlpha, 3), "c. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerAlpha, 27), "aa. ");
     }
 
     #[test]
     fn format_list_marker_upper_alpha() {
-        assert_eq!(format_list_marker(ListStyleType::UpperAlpha, 1), "A. ");
-        assert_eq!(format_list_marker(ListStyleType::UpperAlpha, 26), "Z. ");
+        assert_eq!(format_list_marker(&ListStyleType::UpperAlpha, 1), "A. ");
+        assert_eq!(format_list_marker(&ListStyleType::UpperAlpha, 26), "Z. ");
     }
 
     #[test]
     fn format_list_marker_lower_roman() {
-        assert_eq!(format_list_marker(ListStyleType::LowerRoman, 1), "i. ");
-        assert_eq!(format_list_marker(ListStyleType::LowerRoman, 4), "iv. ");
-        assert_eq!(format_list_marker(ListStyleType::LowerRoman, 9), "ix. ");
-        assert_eq!(format_list_marker(ListStyleType::LowerRoman, 14), "xiv. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerRoman, 1), "i. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerRoman, 4), "iv. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerRoman, 9), "ix. ");
+        assert_eq!(format_list_marker(&ListStyleType::LowerRoman, 14), "xiv. ");
     }
 
     #[test]
     fn format_list_marker_upper_roman() {
-        assert_eq!(format_list_marker(ListStyleType::UpperRoman, 1), "I. ");
-        assert_eq!(format_list_marker(ListStyleType::UpperRoman, 4), "IV. ");
+        assert_eq!(format_list_marker(&ListStyleType::UpperRoman, 1), "I. ");
+        assert_eq!(format_list_marker(&ListStyleType::UpperRoman, 4), "IV. ");
     }
 
     #[test]
     fn format_list_marker_none() {
-        assert_eq!(format_list_marker(ListStyleType::None, 1), "");
+        assert_eq!(format_list_marker(&ListStyleType::None, 1), "");
     }
 
     // --- Counter state tests ---
@@ -12603,16 +12603,16 @@ line 3</pre>
         use crate::style::computed::ListStyleType;
 
         assert_eq!(
-            format_list_marker(ListStyleType::UpperRoman, 2024),
+            format_list_marker(&ListStyleType::UpperRoman, 2024),
             "MMXXIV. "
         );
         assert_eq!(
-            format_list_marker(ListStyleType::LowerRoman, 999),
+            format_list_marker(&ListStyleType::LowerRoman, 999),
             "cmxcix. "
         );
-        assert_eq!(format_list_marker(ListStyleType::UpperRoman, 49), "XLIX. ");
+        assert_eq!(format_list_marker(&ListStyleType::UpperRoman, 49), "XLIX. ");
         assert_eq!(
-            format_list_marker(ListStyleType::LowerRoman, 444),
+            format_list_marker(&ListStyleType::LowerRoman, 444),
             "cdxliv. "
         );
     }
