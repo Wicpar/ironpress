@@ -4,8 +4,8 @@ use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
     AlignItems, BackgroundClip, BackgroundOrigin, BackgroundPosition, BackgroundRepeat,
     BackgroundSize, BorderCollapse, BorderSides, BoxShadow, Clear, ComputedStyle, ConicGradient,
-    Display, Float, FontFamily, FontStyle, FontWeight, LinearGradient, ListStylePosition,
-    ListStyleType, Overflow, Position, RadialGradient, TARGET_PLACEHOLDER_END,
+    ContentItem, Display, Float, FontFamily, FontStyle, FontWeight, LinearGradient,
+    ListStylePosition, ListStyleType, Overflow, Position, RadialGradient, TARGET_PLACEHOLDER_END,
     TARGET_PLACEHOLDER_START, TextAlign, Transform, TransformBox, TransformOrigin, VerticalAlign,
     Visibility, WritingMode, compute_pseudo_element_style, compute_style_with_context,
 };
@@ -31,8 +31,6 @@ use super::text::{
     push_text_run_with_fallback, resolve_style_font_family, resolved_line_height_factor,
     wrap_text_runs,
 };
-#[cfg(test)]
-use crate::style::computed::ContentItem;
 
 /// A single border side for layout rendering.
 #[derive(Debug, Clone, Copy)]
@@ -1781,6 +1779,59 @@ fn collect_dom_targets(nodes: &[DomNode], out: &mut HashMap<String, String>) {
             collect_dom_targets(&el.children, out);
         }
     }
+}
+
+fn content_items_include_target_text(items: &[ContentItem]) -> bool {
+    items.iter().any(|item| {
+        matches!(
+            item,
+            ContentItem::String(text)
+                if text.contains(&format!("{TARGET_PLACEHOLDER_START}text|"))
+        )
+    })
+}
+
+fn resolve_target_text_placeholders_in_runs(
+    runs: &mut [TextRun],
+    id_defs: &HashMap<String, ElementNode>,
+) {
+    for run in runs {
+        if run.text.contains(TARGET_PLACEHOLDER_START) {
+            run.text = resolve_target_text_placeholders_in_text(&run.text, id_defs);
+        }
+    }
+}
+
+fn resolve_target_text_placeholders_in_text(
+    text: &str,
+    id_defs: &HashMap<String, ElementNode>,
+) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(TARGET_PLACEHOLDER_START) {
+        out.push_str(&rest[..start]);
+        let payload_start = start + TARGET_PLACEHOLDER_START.len();
+        let Some(end_rel) = rest[payload_start..].find(TARGET_PLACEHOLDER_END) else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let marker_end = payload_start + end_rel + TARGET_PLACEHOLDER_END.len();
+        let payload = &rest[payload_start..payload_start + end_rel];
+        if let Some(id) = payload
+            .strip_prefix("text|")
+            .and_then(|target| target.strip_prefix('#'))
+            && let Some(el) = id_defs.get(id)
+        {
+            let mut target_text = String::new();
+            collect_plain_text(&el.children, &mut target_text);
+            out.push_str(&collapse_whitespace(&target_text));
+        } else {
+            out.push_str(&rest[start..marker_end]);
+        }
+        rest = &rest[marker_end..];
+    }
+    out.push_str(rest);
+    out
 }
 
 fn page_contains_text(page: &Page, needle: &str) -> bool {
@@ -4957,17 +5008,129 @@ fn route_element(
             return;
         }
     } else {
-        // Inline element — process children with this style context
-        flatten_nodes(
-            &el.children,
-            style,
-            &layout_ctx,
-            output,
-            None,
-            child_ancestors,
-            positioned_depth,
-            env,
-        );
+        let has_inline_target_text = before_style.as_ref().is_some_and(|ps| {
+            !pseudo_is_block_like(ps) && content_items_include_target_text(&ps.content)
+        }) || after_style.as_ref().is_some_and(|ps| {
+            !pseudo_is_block_like(ps) && content_items_include_target_text(&ps.content)
+        });
+        if has_inline_target_text {
+            let mut runs = Vec::new();
+            append_pseudo_inline_run(
+                &mut runs,
+                before_style.as_ref(),
+                el,
+                env.fonts,
+                env.counter_state,
+            );
+            let link_url = if el.tag == HtmlTag::A {
+                el.attributes.get("href").map(String::as_str)
+            } else {
+                None
+            };
+            collect_text_runs(
+                &el.children,
+                style,
+                &mut runs,
+                link_url,
+                env.rules,
+                env.fonts,
+                child_ancestors,
+                env.counter_state,
+            );
+            append_pseudo_inline_run(
+                &mut runs,
+                after_style.as_ref(),
+                el,
+                env.fonts,
+                env.counter_state,
+            );
+            resolve_target_text_placeholders_in_runs(&mut runs, env.filter_defs);
+            let lines = wrap_text_runs(
+                runs,
+                TextWrapOptions::new(
+                    layout_ctx.available_width(),
+                    style.font_size,
+                    resolved_line_height_factor(style, env.fonts),
+                    style.overflow_wrap,
+                )
+                .with_rtl(style.direction_rtl)
+                .with_bidi_override(style.bidi_override),
+                env.fonts,
+            );
+            if !lines.is_empty() {
+                output.push(LayoutElement::TextBlock {
+                    box_decoration_break: crate::style::computed::BoxDecorationBreak::Slice,
+                    orphans: style.orphans,
+                    widows: style.widows,
+                    lines,
+                    margin_top: 0.0,
+                    margin_bottom: 0.0,
+                    text_align: style.text_align,
+                    writing_mode: style.writing_mode,
+                    background_color: None,
+                    padding_top: 0.0,
+                    padding_bottom: 0.0,
+                    padding_left: 0.0,
+                    padding_right: 0.0,
+                    border: LayoutBorder::default(),
+                    block_width: None,
+                    block_height: None,
+                    opacity: 1.0,
+                    mix_blend_mode: crate::style::computed::BlendMode::Normal,
+                    background_blend_mode: crate::style::computed::BlendMode::Normal,
+                    float: Float::None,
+                    clear: Clear::None,
+                    position: Position::Static,
+                    offset_top: 0.0,
+                    offset_left: 0.0,
+                    offset_bottom: 0.0,
+                    offset_right: 0.0,
+                    containing_block: None,
+                    box_shadow: Vec::new(),
+                    visible: true,
+                    clip_rect: None,
+                    transform: None,
+                    transform_origin: crate::style::computed::TransformOrigin::default(),
+                    border_radius: 0.0,
+                    border_radii: [0.0; 4],
+                    border_radii_y: [0.0; 4],
+                    outline_offset: 0.0,
+                    outline_width: 0.0,
+                    outline_color: None,
+                    text_indent: 0.0,
+                    letter_spacing: 0.0,
+                    word_spacing: 0.0,
+                    vertical_align: VerticalAlign::Baseline,
+                    background_gradient: None,
+                    background_radial_gradient: None,
+                    background_conic_gradient: None,
+                    background_svg: None,
+                    background_blur_radius: 0.0,
+                    background_size: BackgroundSize::Auto,
+                    background_position: BackgroundPosition::default(),
+                    background_repeat: BackgroundRepeat::Repeat,
+                    background_origin: BackgroundOrigin::Padding,
+                    background_clip: BackgroundClip::Border,
+                    z_index: 0,
+                    repeat_on_each_page: false,
+                    positioned_depth: 0,
+                    heading_level: None,
+                    clip_children_count: 0,
+                });
+            }
+        } else {
+            // Inline element — process children with this style context
+            flatten_nodes(
+                &el.children,
+                style,
+                &layout_ctx,
+                output,
+                None,
+                child_ancestors,
+                positioned_depth,
+                env,
+            );
+        }
     }
 
     if style.page_break_after {

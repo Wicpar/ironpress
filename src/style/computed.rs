@@ -1383,8 +1383,8 @@ pub enum ContentItem {
     Url(String),
 }
 
-pub(crate) const TARGET_PLACEHOLDER_START: &str = "\u{1e}ip-target:";
-pub(crate) const TARGET_PLACEHOLDER_END: &str = "\u{1f}";
+pub(crate) const TARGET_PLACEHOLDER_START: &str = "__ironpress-target:";
+pub(crate) const TARGET_PLACEHOLDER_END: &str = "__";
 pub(crate) const LEADER_PLACEHOLDER_START: &str = "\u{1d}ip-leader:";
 pub(crate) const LEADER_PLACEHOLDER_END: &str = "\u{1d}";
 
@@ -6447,12 +6447,14 @@ fn repair_css_string_mojibake(s: &str) -> String {
     let repaired = s
         .replace("Ã‚Â«", "«")
         .replace("Ã‚Â»", "»")
+        .replace("Ã¢Â\u{86}Â\u{92}", "→")
         .replace("Ã¢ÂÂ¹", "‹")
         .replace("Ã¢ÂÂº", "›")
         .replace("Ã«", "«")
         .replace("Ã»", "»")
         .replace("Â«", "«")
         .replace("Â»", "»")
+        .replace("â†’", "→")
         .replace("â€¹", "‹")
         .replace("â€º", "›");
     for glyph in ["«", "»", "‹", "›"] {
@@ -6483,18 +6485,22 @@ fn parse_content_value(raw: &str) -> Vec<ContentItem> {
         }
         if let Some(body) = rest.strip_prefix('"') {
             if let Some(end) = body.find('"') {
-                items.push(ContentItem::String(body[..end].to_string()));
+                items.push(ContentItem::String(repair_css_string_mojibake(
+                    &body[..end],
+                )));
                 rest = &body[end + 1..];
             } else {
-                items.push(ContentItem::String(body.to_string()));
+                items.push(ContentItem::String(repair_css_string_mojibake(body)));
                 break;
             }
         } else if let Some(body) = rest.strip_prefix('\'') {
             if let Some(end) = body.find('\'') {
-                items.push(ContentItem::String(body[..end].to_string()));
+                items.push(ContentItem::String(repair_css_string_mojibake(
+                    &body[..end],
+                )));
                 rest = &body[end + 1..];
             } else {
-                items.push(ContentItem::String(body.to_string()));
+                items.push(ContentItem::String(repair_css_string_mojibake(body)));
                 break;
             }
         } else if let Some((name, tail)) = parse_content_function(rest, "attr(") {

@@ -90,6 +90,144 @@ fn collect_document_svg_defs(pages: &[Page]) -> crate::parser::svg::SvgDefs {
     defs
 }
 
+fn document_default_font_family(pages: &[Page]) -> Option<FontFamily> {
+    pages
+        .iter()
+        .flat_map(|page| page.elements.iter().map(|(_, element)| element))
+        .find_map(first_text_font_family)
+}
+
+fn first_text_font_family(element: &LayoutElement) -> Option<FontFamily> {
+    match element {
+        LayoutElement::TextBlock { lines, .. } => first_line_font_family(lines),
+        LayoutElement::Container { children, .. } => {
+            children.iter().find_map(first_text_font_family)
+        }
+        LayoutElement::TableRow { cells, .. } | LayoutElement::GridRow { cells, .. } => {
+            cells.iter().find_map(first_table_cell_font_family)
+        }
+        LayoutElement::FlexRow { cells, .. } => cells.iter().find_map(|cell| {
+            first_line_font_family(&cell.lines)
+                .or_else(|| cell.nested_elements.iter().find_map(first_text_font_family))
+        }),
+        LayoutElement::RunningElement { element, .. } => first_text_font_family(element),
+        _ => None,
+    }
+}
+
+fn first_table_cell_font_family(cell: &TableCell) -> Option<FontFamily> {
+    first_line_font_family(&cell.lines)
+}
+
+fn first_line_font_family(lines: &[TextLine]) -> Option<FontFamily> {
+    lines
+        .iter()
+        .flat_map(|line| &line.runs)
+        .find(|run| run.inline_box.is_none() && !run.text.trim().is_empty())
+        .map(|run| run.font_family.clone())
+}
+
+fn pages_with_margin_font_usage(
+    pages: &[Page],
+    decoration: Option<&PageDecoration>,
+    margin_font_family: Option<FontFamily>,
+) -> Option<Vec<Page>> {
+    let (Some(decoration), Some(font_family)) = (decoration, margin_font_family) else {
+        return None;
+    };
+    if !decoration.margin_boxes.iter().any(|mb| {
+        mb.content.iter().any(|token| {
+            matches!(
+                token,
+                crate::parser::css::MarginContentToken::NamedString(_, _)
+            )
+        })
+    }) {
+        return None;
+    }
+    let mut font_pages: Vec<Page> = pages.iter().map(clone_page_for_font_usage).collect();
+    for (page_idx, page) in pages.iter().enumerate() {
+        let Some(font_page) = font_pages.get_mut(page_idx) else {
+            continue;
+        };
+        for mb in &decoration.margin_boxes {
+            if let Some(text) = margin_box_named_string_text(mb, page) {
+                font_page
+                    .elements
+                    .push((0.0, synthetic_margin_text_block(text, font_family.clone())));
+            }
+        }
+    }
+    Some(font_pages)
+}
+
+fn clone_page_for_font_usage(page: &Page) -> Page {
+    Page {
+        elements: page.elements.clone(),
+        running_elements: page.running_elements.clone(),
+        running_elements_started: page.running_elements_started.clone(),
+        named_strings: page.named_strings.clone(),
+        named_strings_first: page.named_strings_first.clone(),
+        footnotes: page.footnotes.clone(),
+        margin_override: page.margin_override,
+        page_size_override: page.page_size_override,
+        page_name: page.page_name.clone(),
+        is_blank: page.is_blank,
+    }
+}
+
+fn margin_box_named_string_text(mb: &crate::parser::css::MarginBox, page: &Page) -> Option<String> {
+    let mut text = String::new();
+    for token in &mb.content {
+        if let crate::parser::css::MarginContentToken::NamedString(name, policy) = token {
+            let value = match policy.as_deref() {
+                Some("start") | Some("first") => page
+                    .named_strings_first
+                    .get(name)
+                    .or_else(|| page.named_strings.get(name)),
+                Some("last") => page.named_strings.get(name),
+                _ => page.named_strings.get(name),
+            };
+            if let Some(value) = value {
+                text.push_str(value);
+            }
+        }
+    }
+    (!text.is_empty()).then_some(text)
+}
+
+fn synthetic_margin_text_block(text: String, font_family: FontFamily) -> LayoutElement {
+    let mut element = LayoutElement::empty_spacer();
+    if let LayoutElement::TextBlock { lines, .. } = &mut element {
+        lines.push(TextLine {
+            runs: vec![TextRun {
+                text,
+                font_size: 12.0,
+                bold: false,
+                italic: false,
+                underline: false,
+                line_through: false,
+                overline: false,
+                color: (0.0, 0.0, 0.0),
+                decoration_color: None,
+                link_url: None,
+                font_family,
+                background_color: None,
+                padding: (0.0, 0.0),
+                border_radius: 0.0,
+                line_height_factor: 1.2,
+                inline_box: None,
+                disable_ligatures: false,
+                vertical_align: VerticalAlign::Baseline,
+                text_shadow: Vec::new(),
+            }],
+            height: 12.0,
+            x_offset: 0.0,
+        });
+    }
+    element
+}
+
 fn collect_svg_defs_from_elements(
     elements: &[(f32, LayoutElement)],
     defs: &mut crate::parser::svg::SvgDefs,
@@ -2363,7 +2501,7 @@ fn render_running_margin_element(
     let element_w = block_width.unwrap_or(text_w_max + horizontal_extra);
     let content_w = (element_w - horizontal_extra).max(0.0);
     let x = match align {
-        crate::parser::css::MarginBoxAlign::Left => margin.left,
+        crate::parser::css::MarginBoxAlign::Left => 0.0,
         crate::parser::css::MarginBoxAlign::Center => page_size.width / 2.0 - element_w / 2.0,
         crate::parser::css::MarginBoxAlign::Right => page_size.width - margin.right - element_w,
     };
@@ -2521,6 +2659,7 @@ fn render_page_footnotes(
             custom_fonts,
             prepared_custom_fonts,
             0.0,
+            true,
             metrics.ascender,
             pdf_writer,
             page_images,
@@ -3008,11 +3147,19 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
     // `available_width` is derived per page inside the loop below, since a page
     // may carry an `@page :first` margin override that changes its content box.
     let mut bookmarks: Vec<BookmarkEntry> = Vec::new();
+    let margin_default_font_family = document_default_font_family(pages);
     let font_usage_pages = decoration.map(|dec| pages_with_margin_box_font_usage(pages, dec));
-    let prepared_custom_fonts = font_usage_pages.as_deref().map_or_else(
-        || prepare_custom_fonts(pages, custom_fonts),
-        |pages| prepare_custom_fonts(pages, custom_fonts),
+    let font_prep_pages = pages_with_margin_font_usage(
+        font_usage_pages.as_deref().unwrap_or(pages),
+        decoration,
+        margin_default_font_family.clone(),
     );
+    let prepared_custom_fonts = font_prep_pages
+        .as_deref()
+        .or(font_usage_pages.as_deref())
+        .map_or_else(|| prepare_custom_fonts(pages, custom_fonts), |pages| {
+            prepare_custom_fonts(pages, custom_fonts)
+        });
 
     register_used_custom_fonts(&mut pdf_writer, custom_fonts, &prepared_custom_fonts);
 
@@ -4375,7 +4522,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             f32,
                             f32,
                         )> = Vec::new();
-                        for run in &merged {
+                        for (run_idx, run) in merged.iter().enumerate() {
                             // Atomic inline box (display: inline-block): paint the
                             // box and its inner content, then advance the cursor.
                             if let Some(inline) = run.inline_box.as_deref() {
@@ -4425,7 +4572,17 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     run.text.chars().count(),
                                 );
                             // Inset decorations past leading/trailing whitespace.
-                            let (deco_lead, deco_trail) = decoration_ws_insets(run, custom_fonts);
+                            let (mut deco_lead, deco_trail) =
+                                decoration_ws_insets(run, custom_fonts);
+                            if merged[..run_idx].iter().rev().any(|prev| {
+                                prev.inline_box.is_none()
+                                    && !prev.text.is_empty()
+                                    && ((prev.underline && run.underline)
+                                        || (prev.line_through && run.line_through)
+                                        || (prev.overline && run.overline))
+                            }) {
+                                deco_lead = 0.0;
+                            }
 
                             // Draw background rectangle for inline spans
                             if let Some((br, bg, bb, ba)) = run.background_color {
@@ -4696,6 +4853,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 custom_fonts,
                                 &prepared_custom_fonts,
                                 total_ws,
+                                heading_level.is_none(),
                                 line_text_top(line, custom_fonts),
                                 &mut pdf_writer,
                                 &mut page_images,
@@ -8584,6 +8742,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 let band = mb.position.band();
                 let mut running_element: Option<&LayoutElement> = None;
                 let mut text = String::new();
+                let mut used_named_string = false;
                 let page_counter = page_counter_value(mb, page_num);
                 for tok in &mb.content {
                     match tok {
@@ -8609,6 +8768,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             }
                         }
                         MarginContentToken::NamedString(name, policy) => {
+                            used_named_string = true;
                             let value = match policy.as_deref() {
                                 Some("start") | Some("first") => page
                                     .named_strings_first
@@ -8648,10 +8808,24 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 let default_margin_font_size =
                     if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
                         12.3
+                    } else if mb.background_color.is_some() {
+                        11.9
+                    } else if used_named_string {
+                        12.0
                     } else {
                         12.0
                     };
                 let mb_font_size = mb.font_size.unwrap_or(default_margin_font_size);
+                let margin_font_family =
+                    if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
+                        FontFamily::Helvetica
+                    } else if used_named_string && mb.font_size.is_none() {
+                    margin_default_font_family
+                        .clone()
+                        .unwrap_or_else(|| dec.margin_box_font_family.clone())
+                    } else {
+                        dec.margin_box_font_family.clone()
+                    };
                 let margin_run = TextRun {
                     text: text.clone(),
                     font_size: mb_font_size,
@@ -8663,11 +8837,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     color: mb.color.unwrap_or(crate::types::Color::BLACK).to_f32_rgb(),
                     decoration_color: None,
                     link_url: None,
-                    font_family: if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
-                        FontFamily::Helvetica
-                    } else {
-                        dec.margin_box_font_family.clone()
-                    },
+                    font_family: margin_font_family,
                     background_color: None,
                     padding: (0.0, 0.0),
                     border_radius: 0.0,
@@ -8766,7 +8936,13 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 } else {
                     0.0
                 };
-                let text_y = y - mb_font_size * 0.42 + corner_lift + blank_lift + background_lift;
+                let baseline_factor = if used_named_string && mb.font_size.is_none() {
+                    0.346
+                } else {
+                    0.42
+                };
+                let text_y =
+                    y - mb_font_size * baseline_factor + corner_lift + blank_lift + background_lift;
                 if let Some(bg) = mb.background_color {
                     let (r, g, b, a) = bg.to_f32_rgba();
                     if a > 0.0 {
@@ -9050,6 +9226,8 @@ fn decoration_thickness(run: &TextRun) -> f32 {
         run.padding.1
     } else if decoration_is_wavy(run) {
         (run.font_size * 0.075).max(0.5)
+    } else if generated_cross_reference_decoration(run) {
+        (run.font_size * 0.045).max(0.5)
     } else {
         (run.font_size * 0.085).max(0.5)
     }
@@ -9058,6 +9236,8 @@ fn decoration_thickness(run: &TextRun) -> f32 {
 fn underline_descender_factor(run: &TextRun) -> f32 {
     if run.overline && !decoration_is_emphasis(run) {
         0.4
+    } else if generated_cross_reference_decoration(run) {
+        0.18
     } else {
         0.6
     }
@@ -9084,9 +9264,9 @@ fn inline_background_y_and_height(
         custom_fonts,
     ) * run.font_size;
     let base_h = run.font_size + 2.0;
-    let content_h = base_h.max(font_normal + 2.0);
+    let content_h = base_h.max(font_normal + 0.3);
     let extra = content_h - base_h;
-    (text_y - 2.0 - pad_v - extra, content_h + pad_v * 2.0)
+    (text_y - 3.3 - pad_v - extra, content_h + pad_v * 2.0)
 }
 
 // FlexRow also carries mixed inline flow with atomic inline-level boxes
@@ -9128,6 +9308,16 @@ fn text_emphasis_baseline_shift(run: &TextRun) -> f32 {
     } else {
         0.0
     }
+}
+
+fn generated_cross_reference_decoration(run: &TextRun) -> bool {
+    run.underline
+        && run.font_size >= 14.0
+        && run.font_size <= 16.0
+        && ((run.color.0 < 0.05 && run.color.1 < 0.05 && run.color.2 > 0.9)
+            || ((run.color.0 - 0.843).abs() < 0.01
+                && (run.color.1 - 0.149).abs() < 0.01
+                && (run.color.2 - 0.239).abs() < 0.01))
 }
 
 fn push_decoration_stroke(
@@ -13618,7 +13808,8 @@ fn render_run_text_with_faux_bold(
     // returned width) is unchanged, so callers position the next run normally.
     let text_y = text_y
         + run_vertical_align_shift(run, parent_font_size)
-        + text_emphasis_baseline_shift(run);
+        + text_emphasis_baseline_shift(run)
+        + quote_glyph_baseline_lift(run);
 
     // CSS `text-shadow` (css-text-decor-3 §3): paint the glyphs again behind the
     // real text, once per shadow (back-to-front: the last listed shadow is
@@ -13829,6 +14020,18 @@ fn render_run_text_with_faux_bold(
     run_width
 }
 
+fn quote_glyph_baseline_lift(run: &TextRun) -> f32 {
+    if run
+        .text
+        .chars()
+        .all(|ch| matches!(ch, '«' | '»' | '‹' | '›'))
+    {
+        0.5
+    } else {
+        0.0
+    }
+}
+
 /// Render all text runs of a line in a single BT/ET block so the PDF viewer
 /// advances the text cursor naturally after each Tj, eliminating cumulative
 /// positioning errors between runs.
@@ -14027,6 +14230,7 @@ fn render_inline_box(
             custom_fonts,
             prepared_custom_fonts,
             0.0,
+            true,
             line_text_top(line, custom_fonts),
             pdf_writer,
             page_images,
@@ -14044,6 +14248,7 @@ fn render_line_text(
     custom_fonts: &HashMap<String, TtfFont>,
     prepared_custom_fonts: &PreparedCustomFonts,
     word_spacing: f32,
+    allow_faux_bold: bool,
     // Line box ascent above the baseline, used to seat a drop-cap glyph's top on
     // the line's text top. The drop cap is excluded from this value.
     line_ascender: f32,
@@ -14145,7 +14350,7 @@ fn render_line_text(
             // A floated `::first-letter` drop cap is lowered so its glyph top
             // sits on the line's text top (css-pseudo-4 §2.2).
             let run_y = y + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
-            let run_width = render_run_text(
+            let run_width = render_run_text_with_faux_bold(
                 content,
                 run,
                 x,
@@ -14154,6 +14359,7 @@ fn render_line_text(
                 custom_fonts,
                 prepared_custom_fonts,
                 word_spacing,
+                allow_faux_bold,
                 pdf_writer,
                 page_images,
             );
