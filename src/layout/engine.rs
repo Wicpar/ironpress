@@ -4,10 +4,11 @@ use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
     AlignItems, BackgroundClip, BackgroundOrigin, BackgroundPosition, BackgroundRepeat,
     BackgroundSize, BorderCollapse, BorderSides, BoxShadow, Clear, ComputedStyle, ConicGradient,
-    ContentItem, Display, Float, FontFamily, FontStyle, FontWeight, LinearGradient,
-    ListStylePosition, ListStyleType, Overflow, Position, RadialGradient, TARGET_PLACEHOLDER_END,
-    TARGET_PLACEHOLDER_START, TextAlign, Transform, TransformBox, TransformOrigin, VerticalAlign,
-    Visibility, WritingMode, compute_pseudo_element_style, compute_style_with_context,
+    ContentItem, CounterStyle, CounterStyleSystem, Display, Float, FontFamily, FontStyle,
+    FontWeight, LinearGradient, ListStylePosition, ListStyleType, Overflow, Position,
+    RadialGradient, TARGET_PLACEHOLDER_END, TARGET_PLACEHOLDER_START, TextAlign, Transform,
+    TransformBox, TransformOrigin, VerticalAlign, Visibility, WritingMode,
+    compute_pseudo_element_style, compute_style_with_context,
 };
 use crate::types::{Margin, PageSize};
 use std::cell::Cell;
@@ -31,7 +32,6 @@ use super::text::{
     push_text_run_with_fallback, resolve_style_font_family, resolved_line_height_factor,
     wrap_text_runs,
 };
-
 /// A single border side for layout rendering.
 #[derive(Debug, Clone, Copy)]
 pub struct LayoutBorderSide {
@@ -210,12 +210,138 @@ impl CounterState {
             .get(name)
             .map(|s| {
                 s.iter()
-                    .map(|v| super::helpers::format_counter_value(style, *v))
+                    .map(|v| format_counter_value_for_layout(style, *v))
                     .collect::<Vec<_>>()
                     .join(sep)
             })
-            .unwrap_or_else(|| super::helpers::format_counter_value(style, 0))
+            .unwrap_or_else(|| format_counter_value_for_layout(style, 0))
     }
+}
+
+fn format_list_marker_for_layout(list_style_type: &ListStyleType, index: i32) -> String {
+    match list_style_type {
+        ListStyleType::Disc => "\u{2022} ".to_string(),
+        ListStyleType::Circle => "\u{25E6} ".to_string(),
+        ListStyleType::Square => "\u{25AA} ".to_string(),
+        ListStyleType::Decimal => format!("{index}. "),
+        ListStyleType::DecimalLeadingZero => {
+            if index < 0 {
+                format!("-{:02}. ", (index as i64).abs())
+            } else {
+                format!("{index:02}. ")
+            }
+        }
+        ListStyleType::LowerAlpha => format_positive_marker(index, to_alpha_lower),
+        ListStyleType::UpperAlpha => format_positive_marker(index, to_alpha_upper),
+        ListStyleType::LowerRoman => format_positive_marker(index, to_roman_lower),
+        ListStyleType::UpperRoman => format_positive_marker(index, to_roman_upper),
+        ListStyleType::CjkDecimal if index > 0 => {
+            super::helpers::format_list_marker(list_style_type, index as usize)
+        }
+        ListStyleType::CjkDecimal => format!("{index}、"),
+        ListStyleType::String(marker) => marker.clone(),
+        ListStyleType::CounterStyle(style) => format_custom_counter_for_layout(style, index, true),
+        ListStyleType::Custom(_) => format!("{index}. "),
+        ListStyleType::None => String::new(),
+    }
+}
+
+fn format_positive_marker(index: i32, formatter: fn(usize) -> String) -> String {
+    if index <= 0 {
+        format!("{index}. ")
+    } else {
+        format!("{}. ", formatter(index as usize))
+    }
+}
+
+fn format_counter_value_for_layout(style: &ListStyleType, value: i32) -> String {
+    if value <= 0 && !matches!(style, ListStyleType::CounterStyle(_)) {
+        return value.to_string();
+    }
+    let n = value as usize;
+    match style {
+        ListStyleType::DecimalLeadingZero => format!("{n:02}"),
+        ListStyleType::LowerAlpha => to_alpha_lower(n),
+        ListStyleType::UpperAlpha => to_alpha_upper(n),
+        ListStyleType::LowerRoman => to_roman_lower(n),
+        ListStyleType::UpperRoman => to_roman_upper(n),
+        ListStyleType::CjkDecimal => super::helpers::format_counter_value(style, value),
+        ListStyleType::CounterStyle(custom) => {
+            format_custom_counter_for_layout(custom, value, false)
+        }
+        _ => value.to_string(),
+    }
+}
+
+fn format_custom_counter_for_layout(
+    style: &CounterStyle,
+    value: i32,
+    include_affixes: bool,
+) -> String {
+    let negative = value < 0;
+    let abs_value = (value as i64).unsigned_abs() as usize;
+    let mut representation = match style.system {
+        CounterStyleSystem::Cyclic if !style.symbols.is_empty() => {
+            let idx = if abs_value == 0 {
+                0
+            } else {
+                (abs_value - 1) % style.symbols.len()
+            };
+            style.symbols[idx].clone()
+        }
+        CounterStyleSystem::Cyclic => abs_value.to_string(),
+        CounterStyleSystem::ExtendsDecimal => abs_value.to_string(),
+    };
+    if let Some((width, pad_symbol)) = &style.pad {
+        while representation.chars().count() < *width {
+            representation.insert_str(0, pad_symbol);
+        }
+    }
+    if negative {
+        representation = format!("{}{}{}", style.negative.0, representation, style.negative.1);
+    }
+    if include_affixes {
+        format!("{}{}{}", style.prefix, representation, style.suffix)
+    } else {
+        representation
+    }
+}
+
+fn resolve_content_for_layout(
+    items: &[ContentItem],
+    attributes: &HashMap<String, String>,
+    counter_state: &CounterState,
+) -> String {
+    if !items.iter().any(|item| {
+        matches!(
+            item,
+            ContentItem::Counter(_, ListStyleType::CounterStyle(_))
+                | ContentItem::Counters(_, _, ListStyleType::CounterStyle(_))
+        )
+    }) {
+        return super::helpers::resolve_content(items, attributes, counter_state);
+    }
+
+    let mut result = String::new();
+    for item in items {
+        match item {
+            ContentItem::Counter(name, style) => {
+                result.push_str(&format_counter_value_for_layout(
+                    style,
+                    counter_state.get(name),
+                ));
+            }
+            ContentItem::Counters(name, sep, style) => {
+                result.push_str(&counter_state.get_all_styled(name, sep, style));
+            }
+            _ => result.push_str(&super::helpers::resolve_content(
+                std::slice::from_ref(item),
+                attributes,
+                counter_state,
+            )),
+        }
+    }
+    result
 }
 
 /// Context for rendering list items.
@@ -4033,7 +4159,8 @@ pub(crate) fn flatten_element(
         let has_custom_before = li_before.as_ref().is_some_and(|s| !s.content.is_empty());
         if has_custom_before {
             let ps = li_before.as_ref().unwrap();
-            let content_text = resolve_content(&ps.content, &el.attributes, env.counter_state);
+            let content_text =
+                resolve_content_for_layout(&ps.content, &el.attributes, env.counter_state);
             if !content_text.is_empty() {
                 push_text_run_with_fallback(
                     TextRun {
@@ -4087,13 +4214,13 @@ pub(crate) fn flatten_element(
                         ListStyleType::Custom(_) | ListStyleType::CounterStyle(_)
                     ) =>
                 {
-                    format_list_marker(
+                    format_list_marker_for_layout(
                         &style.list_style_type,
-                        env.counter_state.get("list-item").max(0) as usize,
+                        env.counter_state.get("list-item"),
                     )
                 }
                 Some(ListContext::Unordered { .. }) => {
-                    format_list_marker(&style.list_style_type, 0)
+                    format_list_marker_for_layout(&style.list_style_type, 0)
                 }
                 // The <ol> UA default (`list-style-type: decimal`, set in
                 // `default_style`) is inherited by the <li>, so `style
@@ -4108,9 +4235,9 @@ pub(crate) fn flatten_element(
                     } else {
                         marker_value
                     };
-                    format_list_marker(&style.list_style_type, marker_value.max(0) as usize)
+                    format_list_marker_for_layout(&style.list_style_type, marker_value)
                 }
-                None => format_list_marker(&style.list_style_type, 0),
+                None => format_list_marker_for_layout(&style.list_style_type, 0),
             }
         };
         // The <li> content is indented by the list's accumulated start padding
@@ -4136,6 +4263,7 @@ pub(crate) fn flatten_element(
         // pushes the text (no hang).
         let has_marker = !marker.is_empty() || image_marker.is_some();
         let marker_run_start = runs.len();
+        let mut marker_suffix_gap = 0.0f32;
         if let Some(inline) = image_marker {
             // The image marker is an atomic inline box (empty text + advance), so
             // it occupies the marker slot the same way the glyph marker would and
@@ -4187,10 +4315,41 @@ pub(crate) fn flatten_element(
             );
             let marker_text = match marker_pseudo.as_ref() {
                 Some(ps) if !ps.content.is_empty() => {
-                    resolve_content(&ps.content, &el.attributes, env.counter_state)
+                    resolve_content_for_layout(&ps.content, &el.attributes, env.counter_state)
                 }
                 _ => marker,
             };
+            let marker_font_family = resolve_style_font_family(marker_style, env.fonts);
+            let marker_bold = marker_style.font_weight == FontWeight::Bold;
+            let marker_italic = marker_style.font_style == FontStyle::Italic;
+            let marker_line_height_factor = crate::fonts::normal_line_height_factor(
+                &marker_font_family,
+                marker_bold,
+                marker_italic,
+                env.fonts,
+            );
+            if style.list_style_position == ListStylePosition::Outside
+                && marker_text.chars().last().is_some_and(char::is_whitespace)
+                && marker_style.font_size > style.font_size
+            {
+                let marker_space = estimate_word_width(
+                    " ",
+                    marker_style.font_size,
+                    &marker_font_family,
+                    marker_bold,
+                    marker_italic,
+                    env.fonts,
+                );
+                let item_space = estimate_word_width(
+                    " ",
+                    style.font_size,
+                    &resolve_style_font_family(&style, env.fonts),
+                    style.font_weight == FontWeight::Bold,
+                    style.font_style == FontStyle::Italic,
+                    env.fonts,
+                );
+                marker_suffix_gap = (marker_space - item_space).max(0.0);
+            }
             // Default `disc`/`square` bullets are GEOMETRIC shapes in Chrome, not
             // font glyphs (whose ink box is oversized and mis-seated). Render them
             // as a filled inline-box sized from the font, sizing its trailing gap
@@ -4204,9 +4363,9 @@ pub(crate) fn flatten_element(
                 let symbol_advance = estimate_word_width(
                     &marker_text,
                     marker_style.font_size,
-                    &resolve_style_font_family(marker_style, env.fonts),
-                    marker_style.font_weight == FontWeight::Bold,
-                    marker_style.font_style == FontStyle::Italic,
+                    &marker_font_family,
+                    marker_bold,
+                    marker_italic,
                     env.fonts,
                 );
                 build_list_bullet_marker(
@@ -4242,11 +4401,11 @@ pub(crate) fn flatten_element(
                     decoration_color: None,
                     color: marker_style.color.to_f32_rgb(),
                     link_url: None,
-                    font_family: resolve_style_font_family(marker_style, env.fonts),
+                    font_family: marker_font_family.clone(),
                     background_color: None,
                     padding: (0.0, 0.0),
                     border_radius: 0.0,
-                    line_height_factor: resolved_line_height_factor(marker_style, env.fonts),
+                    line_height_factor: marker_line_height_factor,
                     inline_box: Some(Box::new(bullet)),
                     disable_ligatures: false,
                     vertical_align: VerticalAlign::Baseline,
@@ -4257,19 +4416,19 @@ pub(crate) fn flatten_element(
                     TextRun {
                         text: marker_text,
                         font_size: marker_style.font_size,
-                        bold: marker_style.font_weight == FontWeight::Bold,
-                        italic: marker_style.font_style == FontStyle::Italic,
+                        bold: marker_bold,
+                        italic: marker_italic,
                         underline: false,
                         line_through: false,
                         overline: false,
                         decoration_color: None,
                         color: marker_style.color.to_f32_rgb(),
                         link_url: None,
-                        font_family: resolve_style_font_family(marker_style, env.fonts),
+                        font_family: marker_font_family,
                         background_color: None,
                         padding: (0.0, 0.0),
                         border_radius: 0.0,
-                        line_height_factor: resolved_line_height_factor(marker_style, env.fonts),
+                        line_height_factor: marker_line_height_factor,
                         inline_box: None,
                         disable_ligatures: false,
                         vertical_align: VerticalAlign::Baseline,
@@ -4285,6 +4444,45 @@ pub(crate) fn flatten_element(
         } else {
             0.0
         };
+        if marker_suffix_gap > 0.0 {
+            runs.push(TextRun {
+                text: String::new(),
+                font_size: style.font_size,
+                bold: false,
+                italic: false,
+                underline: false,
+                line_through: false,
+                overline: false,
+                decoration_color: None,
+                color: style.color.to_f32_rgb(),
+                link_url: None,
+                font_family: resolve_style_font_family(&style, env.fonts),
+                background_color: None,
+                padding: (0.0, 0.0),
+                border_radius: 0.0,
+                line_height_factor: resolved_line_height_factor(&style, env.fonts),
+                inline_box: Some(Box::new(InlineBox {
+                    width: marker_suffix_gap,
+                    height: 0.0,
+                    margin_left: 0.0,
+                    margin_right: 0.0,
+                    background_color: None,
+                    border: LayoutBorder::default(),
+                    border_radius: 0.0,
+                    padding_top: 0.0,
+                    padding_left: 0.0,
+                    vertical_align: VerticalAlign::Baseline,
+                    baseline_ascent: Some(0.0),
+                    lines: Vec::new(),
+                    image: None,
+                    rel_offset_x: 0.0,
+                    rel_offset_y: 0.0,
+                })),
+                disable_ligatures: false,
+                vertical_align: VerticalAlign::Baseline,
+                text_shadow: Vec::new(),
+            });
+        }
 
         let runs_before_inline = runs.len();
         collect_text_runs(
