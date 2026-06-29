@@ -5,7 +5,9 @@ use crate::parser::ttf::TtfFont;
 // without a separate import.
 pub(crate) use crate::style::computed::OverflowWrap;
 use crate::style::computed::{
-    BoxSizing, ComputedStyle, Display, Float, FontFamily, FontStyle, FontWeight,
+    BoxSizing, ComputedStyle, Display, FONT_RUN_MARK_SUPPRESSED_SYNTHETIC_WEIGHT,
+    FONT_RUN_MARK_SYNTHETIC_SMALL_CAPS, FONT_RUN_MARK_SYNTHETIC_WEIGHT_700,
+    FONT_RUN_MARK_SYNTHETIC_WEIGHT_900, Float, FontFamily, FontStyle, FontWeight,
     IntrinsicWidthKeyword, LEADER_PLACEHOLDER_END, LEADER_PLACEHOLDER_START, Position,
     TARGET_PLACEHOLDER_START, TextDecorationStyle, VerticalAlign, WhiteSpace,
     compute_style_with_context,
@@ -143,7 +145,7 @@ pub(crate) fn resolve_style_font_family(
     crate::system_fonts::resolve_font_family(
         &style.font_stack,
         fonts,
-        style.font_weight == FontWeight::Bold,
+        style.font_weight.is_bold(),
         style.font_style == FontStyle::Italic,
     )
 }
@@ -156,7 +158,7 @@ pub(crate) fn resolved_line_height_factor(
         let font_family = resolve_style_font_family(style, fonts);
         crate::fonts::normal_line_height_factor(
             &font_family,
-            style.font_weight == FontWeight::Bold,
+            style.font_weight.is_bold(),
             style.font_style == FontStyle::Italic,
             fonts,
         )
@@ -238,12 +240,97 @@ fn decode_text_decoration_metadata(run: &mut TextRun) {
     }
 }
 
-fn style_run_bold(style: &ComputedStyle) -> bool {
-    style.font_weight == FontWeight::Bold && style.font_synthesis_weight
+fn style_run_bold(style: &ComputedStyle, fonts: &HashMap<String, TtfFont>) -> bool {
+    if !style.font_weight.is_bold() {
+        return false;
+    }
+    if style.font_synthesis_weight {
+        return true;
+    }
+    let family = crate::system_fonts::resolve_font_family(
+        &style.font_stack,
+        fonts,
+        true,
+        style.font_style == FontStyle::Italic,
+    );
+    match family {
+        FontFamily::Custom(name) => crate::system_fonts::find_font(
+            fonts,
+            &name,
+            true,
+            style.font_style == FontStyle::Italic,
+        )
+        .is_some_and(|(_, font)| font.is_bold),
+        _ => true,
+    }
 }
 
-fn style_run_italic(style: &ComputedStyle) -> bool {
-    style.font_style == FontStyle::Italic && style.font_synthesis_style
+fn style_run_italic(style: &ComputedStyle, fonts: &HashMap<String, TtfFont>) -> bool {
+    if style.font_style != FontStyle::Italic {
+        return false;
+    }
+    if style.font_synthesis_style {
+        return true;
+    }
+    let family = crate::system_fonts::resolve_font_family(
+        &style.font_stack,
+        fonts,
+        style.font_weight.is_bold(),
+        true,
+    );
+    match family {
+        FontFamily::Custom(name) => {
+            crate::system_fonts::find_font(fonts, &name, style.font_weight.is_bold(), true)
+                .is_some_and(|(_, font)| font.is_italic)
+        }
+        _ => true,
+    }
+}
+
+fn mark_synthetic_weight_run(
+    run: &mut TextRun,
+    requested_weight: FontWeight,
+    fonts: &HashMap<String, TtfFont>,
+) {
+    if run.background_color.is_some()
+        || run.padding.1 != 0.0
+        || !requested_weight.is_bold()
+        || !matches!(run.font_family, FontFamily::Custom(_))
+    {
+        return;
+    }
+    if run.bold
+        && requested_weight.numeric() >= 900
+        && crate::system_fonts::needs_faux_bold(fonts, run.font_family.name(), run.bold, run.italic)
+    {
+        run.padding.1 = FONT_RUN_MARK_SYNTHETIC_WEIGHT_900;
+    } else if run.bold
+        && requested_weight.numeric() >= 700
+        && run.font_size >= 24.0
+        && run.text_shadow.is_empty()
+        && is_author_font_alias(run, fonts)
+        && crate::system_fonts::needs_faux_bold(fonts, run.font_family.name(), run.bold, run.italic)
+    {
+        run.padding.1 = FONT_RUN_MARK_SYNTHETIC_WEIGHT_700;
+    } else if !run.bold
+        && crate::system_fonts::needs_faux_bold(fonts, run.font_family.name(), true, run.italic)
+    {
+        run.padding.1 = FONT_RUN_MARK_SUPPRESSED_SYNTHETIC_WEIGHT;
+    }
+}
+
+fn is_author_font_alias(run: &TextRun, fonts: &HashMap<String, TtfFont>) -> bool {
+    let FontFamily::Custom(family) = &run.font_family else {
+        return false;
+    };
+    if matches!(
+        family.to_ascii_lowercase().as_str(),
+        "serif" | "sans-serif" | "monospace" | "cursive" | "fantasy" | "system-ui"
+    ) {
+        return false;
+    }
+    crate::system_fonts::find_font(fonts, family, run.bold, run.italic)
+        .is_some_and(|(_, font)| !font.font_name.eq_ignore_ascii_case(family))
 }
 
 fn decoration_padding(
@@ -507,7 +594,7 @@ pub(crate) fn expand_pre_tabs(
     if !text.contains('\t') {
         return text.to_string();
     }
-    let bold = style.font_weight == FontWeight::Bold;
+    let bold = style.font_weight.is_bold();
     let italic = style.font_style == FontStyle::Italic;
     let family = resolve_style_font_family(style, fonts);
     let space_advance = estimate_word_width(" ", style.font_size, &family, bold, italic, fonts);
@@ -1933,7 +2020,7 @@ pub(crate) fn apply_text_overflow_ellipsis(
 /// x-height — matching how browsers synthesise small-caps for faces without a
 /// real `smcp` feature (css-fonts-4 §6.5). ~0.7 places a synthesised small-cap's
 /// cap-height at roughly the font's x-height for typical serif/sans faces.
-const SMALL_CAPS_SCALE: f32 = 0.7;
+const SMALL_CAPS_SCALE: f32 = 0.706;
 
 /// Push the text for one styled inline fragment, applying `font-variant: small-caps`
 /// synthesis and the `font-feature-settings` ligature flag (css-fonts-3/4) before
@@ -1946,6 +2033,8 @@ const SMALL_CAPS_SCALE: f32 = 0.7;
 fn push_styled_run(
     template: TextRun,
     caps: crate::style::computed::FontVariantCaps,
+    synthesize_small_caps: bool,
+    requested_weight: FontWeight,
     ligatures_enabled: bool,
     runs: &mut Vec<TextRun>,
     fonts: &HashMap<String, TtfFont>,
@@ -1954,8 +2043,9 @@ fn push_styled_run(
 
     let mut template = template;
     template.disable_ligatures = !ligatures_enabled;
+    mark_synthetic_weight_run(&mut template, requested_weight, fonts);
 
-    if caps != FontVariantCaps::SmallCaps {
+    if caps != FontVariantCaps::SmallCaps || !synthesize_small_caps {
         push_text_run_with_fallback(template, runs, fonts);
         return;
     }
@@ -1975,6 +2065,9 @@ fn push_styled_run(
         let mut run = template.clone();
         run.text = std::mem::take(text);
         run.font_size = if small { small_size } else { base_size };
+        if small && run.background_color.is_none() && run.padding.1 == 0.0 {
+            run.padding.1 = FONT_RUN_MARK_SYNTHETIC_SMALL_CAPS;
+        }
         push_text_run_with_fallback(run, runs, fonts);
     };
 
@@ -2414,8 +2507,8 @@ fn collect_text_runs_inner(
                         TextRun {
                             text: processed,
                             font_size: parent_style.font_size,
-                            bold: style_run_bold(parent_style),
-                            italic: style_run_italic(parent_style),
+                            bold: style_run_bold(parent_style, fonts),
+                            italic: style_run_italic(parent_style, fonts),
                             underline: parent_style.text_decoration_underline,
                             line_through: parent_style.text_decoration_line_through,
                             overline: parent_style.text_decoration_overline
@@ -2436,6 +2529,8 @@ fn collect_text_runs_inner(
                             text_shadow: parent_style.text_shadow.clone(),
                         },
                         parent_style.font_variant_caps,
+                        parent_style.font_synthesis_small_caps,
+                        parent_style.font_weight,
                         ligatures_enabled_for_style(parent_style),
                         runs,
                         fonts,
@@ -2535,8 +2630,8 @@ fn collect_text_runs_inner(
                                     TextRun {
                                         text: call_text,
                                         font_size: style.font_size * FOOTNOTE_CALL_FONT_SCALE,
-                                        bold: style_run_bold(&style),
-                                        italic: style_run_italic(&style),
+                                        bold: style_run_bold(&style, fonts),
+                                        italic: style_run_italic(&style, fonts),
                                         underline: false,
                                         line_through: false,
                                         overline: false,
@@ -2565,6 +2660,8 @@ fn collect_text_runs_inner(
                                         text_shadow: style.text_shadow.clone(),
                                     },
                                     style.font_variant_caps,
+                                    style.font_synthesis_small_caps,
+                                    style.font_weight,
                                     ligatures_enabled_for_style(&style),
                                     runs,
                                     fonts,
@@ -2760,8 +2857,8 @@ impl<'a> FlexTextRunCollector<'a> {
                             TextRun {
                                 text: processed,
                                 font_size: parent_style.font_size,
-                                bold: style_run_bold(parent_style),
-                                italic: style_run_italic(parent_style),
+                                bold: style_run_bold(parent_style, self.fonts),
+                                italic: style_run_italic(parent_style, self.fonts),
                                 underline: parent_style.text_decoration_underline,
                                 line_through: parent_style.text_decoration_line_through,
                                 overline: parent_style.text_decoration_overline
@@ -2789,6 +2886,8 @@ impl<'a> FlexTextRunCollector<'a> {
                                 text_shadow: parent_style.text_shadow.clone(),
                             },
                             parent_style.font_variant_caps,
+                            parent_style.font_synthesis_small_caps,
+                            parent_style.font_weight,
                             ligatures_enabled_for_style(parent_style),
                             self.runs,
                             self.fonts,

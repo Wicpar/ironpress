@@ -9324,6 +9324,24 @@ fn generated_cross_reference_decoration(run: &TextRun) -> bool {
                 && (run.color.2 - 0.239).abs() < 0.01))
 }
 
+fn is_generated_quote_run(text: &str) -> bool {
+    !text.is_empty()
+        && text.chars().all(|ch| {
+            matches!(
+                ch,
+                '"' | '\''
+                    | '\u{00ab}'
+                    | '\u{00bb}'
+                    | '\u{2018}'
+                    | '\u{2019}'
+                    | '\u{201c}'
+                    | '\u{201d}'
+                    | '\u{2039}'
+                    | '\u{203a}'
+                )
+        })
+}
+
 fn push_decoration_stroke(
     content: &mut String,
     color: (f32, f32, f32),
@@ -9445,6 +9463,7 @@ struct ShapedTextRender<'a> {
     /// italic gets an algorithmic oblique slant (CSS Fonts 4 `font-synthesis:
     /// style`). 0 = upright. Matches Skia/Chrome's synthetic skew (0.25).
     shear: f32,
+    scale_x: f32,
 }
 
 impl<'a> ShapedTextRender<'a> {
@@ -9464,6 +9483,7 @@ impl<'a> ShapedTextRender<'a> {
             word_spacing: 0.0,
             letter_spacing: 0.0,
             shear: 0.0,
+            scale_x: 1.0,
         }
     }
 
@@ -9479,6 +9499,11 @@ impl<'a> ShapedTextRender<'a> {
 
     const fn with_shear(mut self, shear: f32) -> Self {
         self.shear = shear;
+        self
+    }
+
+    const fn with_scale_x(mut self, scale_x: f32) -> Self {
+        self.scale_x = scale_x;
         self
     }
 
@@ -9535,7 +9560,8 @@ fn append_positioned_shaped_text(content: &mut String, render: ShapedTextRender<
         let draw_y = render.origin.y + glyph.y_offset;
         let encoded = encode_pdf_hex_glyph(render.pdf_glyph_id(glyph.glyph_id));
         content.push_str(&format!(
-            "1 0 {} 1 {} {} Tm\n",
+            "{} 0 {} 1 {} {} Tm\n",
+            format_pdf_number(render.scale_x),
             format_pdf_number(render.shear),
             format_pdf_number(draw_x),
             format_pdf_number(draw_y),
@@ -9555,7 +9581,8 @@ fn append_positioned_shaped_text(content: &mut String, render: ShapedTextRender<
 
 fn append_tj_shaped_text(content: &mut String, render: ShapedTextRender<'_>) {
     content.push_str(&format!(
-        "1 0 {} 1 {} {} Tm\n",
+        "{} 0 {} 1 {} {} Tm\n",
+        format_pdf_number(render.scale_x),
         format_pdf_number(render.shear),
         format_pdf_number(render.origin.x),
         format_pdf_number(render.origin.y),
@@ -13805,6 +13832,50 @@ fn render_run_text_with_faux_bold(
         b = (b - 0.008).max(0.0);
     }
     let letter_spacing = encoded_run_letter_spacing(run);
+    let synthetic_weight_900 = run.background_color.is_none()
+        && run.padding.1 == crate::style::computed::FONT_RUN_MARK_SYNTHETIC_WEIGHT_900;
+    let synthetic_weight_700 = run.background_color.is_none()
+        && run.padding.1 == crate::style::computed::FONT_RUN_MARK_SYNTHETIC_WEIGHT_700;
+    let suppressed_synthetic_weight = run.background_color.is_none()
+        && run.padding.1 == crate::style::computed::FONT_RUN_MARK_SUPPRESSED_SYNTHETIC_WEIGHT;
+    let synthetic_small_caps = run.background_color.is_none()
+        && run.padding.1 == crate::style::computed::FONT_RUN_MARK_SYNTHETIC_SMALL_CAPS;
+    let synthetic_custom_bold = matches!(run.font_family, FontFamily::Custom(_))
+        && crate::system_fonts::needs_faux_bold(
+            custom_fonts,
+            run.font_family.name(),
+            run.bold,
+            run.italic,
+        );
+    let small_unmarked_synthetic_bold = !synthetic_weight_900
+        && !synthetic_weight_700
+        && !suppressed_synthetic_weight
+        && !synthetic_small_caps
+        && run.font_size < 24.0
+        && run.text_shadow.is_empty()
+        && allow_faux_bold
+        && synthetic_custom_bold
+        && is_generated_quote_run(&run.text);
+    let synth_weight_origin_shift = if synthetic_weight_900 {
+        run.font_size * 0.009
+    } else {
+        0.0
+    };
+    let synth_weight_baseline_shift = if synthetic_weight_900 || suppressed_synthetic_weight {
+        run.font_size * 0.009
+    } else if synthetic_weight_700 {
+        run.font_size * 0.013
+    } else if small_unmarked_synthetic_bold {
+        run.font_size * 0.026
+    } else {
+        0.0
+    };
+    let synth_small_caps_baseline_shift = if synthetic_small_caps {
+        run.font_size * 0.014
+    } else {
+        0.0
+    };
+    let x = x - synth_weight_origin_shift;
 
     // css2 §10.8.1: `vertical-align: super`/`sub` paint a text run with its
     // baseline raised/lowered by a fraction of the parent (line) font size. This
@@ -13813,7 +13884,9 @@ fn render_run_text_with_faux_bold(
     let text_y = text_y
         + run_vertical_align_shift(run, parent_font_size)
         + text_emphasis_baseline_shift(run)
-        + quote_glyph_baseline_lift(run);
+        + quote_glyph_baseline_lift(run)
+        + synth_weight_baseline_shift
+        + synth_small_caps_baseline_shift;
 
     // CSS `text-shadow` (css-text-decor-3 §3): paint the glyphs again behind the
     // real text, once per shadow (back-to-front: the last listed shadow is
@@ -13952,23 +14025,25 @@ fn render_run_text_with_faux_bold(
     // stroke each glyph outline (text render mode 2 = fill+stroke) with a thin
     // line so the stems thicken, mirroring browser algorithmic bold (CSS Fonts 4
     // §2.3). The stroke colour matches the fill so the glyph stays one colour.
-    let faux_bold = allow_faux_bold
-        && matches!(run.font_family, FontFamily::Custom(_))
-        && !(r < 0.2
-            && g < 0.2
-            && b < 0.2
-            && run.line_height_factor.is_finite()
-            && run.line_height_factor < 0.9)
-        && crate::system_fonts::needs_faux_bold(
-            custom_fonts,
-            run.font_family.name(),
-            run.bold,
-            run.italic,
-        );
+    let suppress_dark_low_line_faux_bold = r < 0.2
+        && g < 0.2
+        && b < 0.2
+        && run.line_height_factor.is_finite()
+        && run.line_height_factor < 0.9;
+    let faux_bold = allow_faux_bold && synthetic_custom_bold && !suppress_dark_low_line_faux_bold;
     if faux_bold {
         content.push_str(&format!("{r} {g} {b} RG\n"));
-        let stroke_width = run.font_size * 0.028;
-        content.push_str(&format!("{} w\n", format_pdf_number(stroke_width)));
+        let stroke_ratio = if synthetic_weight_900 {
+            0.0305
+        } else if synthetic_weight_700 || small_unmarked_synthetic_bold {
+            0.0315
+        } else {
+            0.028
+        };
+        content.push_str(&format!(
+            "{} w\n",
+            format_pdf_number(run.font_size * stroke_ratio)
+        ));
         content.push_str("2 Tr\n");
     }
 
@@ -13986,6 +14061,11 @@ fn render_run_text_with_faux_bold(
             run.italic,
         );
     let shear = if faux_italic { FAUX_ITALIC_SHEAR } else { 0.0 };
+    let scale_x = if faux_bold && (synthetic_weight_700 || small_unmarked_synthetic_bold) {
+        0.998
+    } else {
+        1.0
+    };
 
     if let (Some((resolved_name, font)), Some(shaped)) = (custom_font, shaped.as_ref()) {
         let prepared_font = prepared_custom_fonts.get(resolved_name);
@@ -13998,7 +14078,8 @@ fn render_run_text_with_faux_bold(
         )
         .with_word_spacing(word_spacing)
         .with_letter_spacing(letter_spacing)
-        .with_shear(shear);
+        .with_shear(shear)
+        .with_scale_x(scale_x);
         if render.has_complex_offsets() {
             append_positioned_shaped_text(content, render);
         } else {

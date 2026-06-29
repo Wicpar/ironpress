@@ -353,8 +353,55 @@ pub enum TextAlign {
 pub enum FontWeight {
     #[default]
     Normal,
+    Number(u16),
     Bold,
 }
+
+impl FontWeight {
+    pub(crate) fn numeric(self) -> u16 {
+        match self {
+            FontWeight::Normal => 400,
+            FontWeight::Number(weight) => weight,
+            FontWeight::Bold => 700,
+        }
+    }
+
+    pub(crate) fn from_number(weight: u16) -> Self {
+        match weight {
+            400 => FontWeight::Normal,
+            700 => FontWeight::Bold,
+            weight => FontWeight::Number(weight.clamp(1, 1000)),
+        }
+    }
+
+    pub(crate) fn is_bold(self) -> bool {
+        self.numeric() >= 700
+    }
+
+    fn bolder(self) -> Self {
+        match self.numeric() {
+            0..=99 => FontWeight::Normal,
+            100..=349 => FontWeight::Normal,
+            350..=549 => FontWeight::Bold,
+            550..=899 => FontWeight::from_number(900),
+            _ => self,
+        }
+    }
+
+    fn lighter(self) -> Self {
+        match self.numeric() {
+            0..=99 => self,
+            100..=549 => FontWeight::from_number(100),
+            550..=749 => FontWeight::Normal,
+            _ => FontWeight::Bold,
+        }
+    }
+}
+
+pub(crate) const FONT_RUN_MARK_SYNTHETIC_WEIGHT_900: f32 = -91_001.0;
+pub(crate) const FONT_RUN_MARK_SUPPRESSED_SYNTHETIC_WEIGHT: f32 = -91_002.0;
+pub(crate) const FONT_RUN_MARK_SYNTHETIC_SMALL_CAPS: f32 = -91_003.0;
+pub(crate) const FONT_RUN_MARK_SYNTHETIC_WEIGHT_700: f32 = -91_004.0;
 
 /// Font style.
 #[derive(Debug, Clone, Copy, PartialEq, Default)]
@@ -1845,6 +1892,7 @@ pub struct ComputedStyle {
     pub font_kerning_enabled: bool,
     pub font_synthesis_weight: bool,
     pub font_synthesis_style: bool,
+    pub font_synthesis_small_caps: bool,
     pub initial_letter: f32,
     pub text_emphasis_mark: bool,
     pub text_indent: f32,
@@ -2191,6 +2239,7 @@ impl Default for ComputedStyle {
             font_kerning_enabled: true,
             font_synthesis_weight: true,
             font_synthesis_style: true,
+            font_synthesis_small_caps: true,
             initial_letter: 0.0,
             text_emphasis_mark: false,
             text_indent: 0.0,
@@ -2949,6 +2998,11 @@ fn reset_to_initial(style: &mut ComputedStyle, property: &str) {
         "font-size" => style.font_size = default.font_size,
         "font-weight" => style.font_weight = default.font_weight,
         "font-style" => style.font_style = default.font_style,
+        "font-synthesis" => {
+            style.font_synthesis_weight = default.font_synthesis_weight;
+            style.font_synthesis_style = default.font_synthesis_style;
+            style.font_synthesis_small_caps = default.font_synthesis_small_caps;
+        }
         "font-family" => {
             style.font_family = default.font_family;
             style.font_stack = default.font_stack;
@@ -3175,6 +3229,11 @@ fn restore_from_parent(style: &mut ComputedStyle, property: &str, parent: &Compu
         "font-size" => style.font_size = parent.font_size,
         "font-weight" => style.font_weight = parent.font_weight,
         "font-style" => style.font_style = parent.font_style,
+        "font-synthesis" => {
+            style.font_synthesis_weight = parent.font_synthesis_weight;
+            style.font_synthesis_style = parent.font_synthesis_style;
+            style.font_synthesis_small_caps = parent.font_synthesis_small_caps;
+        }
         "font-family" => {
             style.font_family = parent.font_family.clone();
             style.font_stack = parent.font_stack.clone();
@@ -3465,6 +3524,7 @@ fn apply_font_shorthand(
         return;
     };
 
+    let inherited_font_weight = style.font_weight;
     style.font_style = FontStyle::Normal;
     style.font_weight = FontWeight::Normal;
     style.line_height = f32::NAN;
@@ -3474,10 +3534,10 @@ fn apply_font_shorthand(
         let lower = token.to_ascii_lowercase();
         match lower.as_str() {
             "italic" | "oblique" => style.font_style = FontStyle::Italic,
-            "bold" | "bolder" | "600" | "700" | "800" | "900" => {
-                style.font_weight = FontWeight::Bold
-            }
-            "normal" | "lighter" | "100" | "200" | "300" | "400" | "500" => {}
+            "bolder" => style.font_weight = inherited_font_weight.bolder(),
+            "lighter" => style.font_weight = inherited_font_weight.lighter(),
+            "bold" | "normal" => apply_font_weight(style, &lower),
+            value if value.parse::<u16>().is_ok() => apply_font_weight(style, value),
             _ => {}
         }
     }
@@ -3500,6 +3560,21 @@ fn apply_font_shorthand(
         style.font_stack = parse_font_stack(&family);
         style.font_family = style.font_stack.primary();
     }
+}
+
+fn apply_font_weight(style: &mut ComputedStyle, value: &str) {
+    let lower = value.trim().to_ascii_lowercase();
+    style.font_weight = match lower.as_str() {
+        "normal" => FontWeight::Normal,
+        "bold" => FontWeight::Bold,
+        "bolder" => style.font_weight.bolder(),
+        "lighter" => style.font_weight.lighter(),
+        _ => lower
+            .parse::<u16>()
+            .ok()
+            .map(FontWeight::from_number)
+            .unwrap_or(FontWeight::Normal),
+    };
 }
 
 fn apply_font_size_token(
@@ -3676,11 +3751,7 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
     }
 
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "font-weight") {
-        style.font_weight = if matches!(k.as_str(), "bold" | "bolder" | "700" | "800" | "900") {
-            FontWeight::Bold
-        } else {
-            FontWeight::Normal
-        };
+        apply_font_weight(style, k);
     }
 
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "font-style") {
@@ -5509,8 +5580,22 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
         style.font_kerning_enabled = k != "none";
     }
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "font-synthesis") {
-        style.font_synthesis_weight = !k.split_whitespace().any(|t| t == "none" || t == "style");
-        style.font_synthesis_style = !k.split_whitespace().any(|t| t == "none" || t == "weight");
+        let lower = k.to_ascii_lowercase();
+        let mut tokens = lower.split_whitespace().peekable();
+        if tokens.peek().is_some() {
+            style.font_synthesis_weight = false;
+            style.font_synthesis_style = false;
+            style.font_synthesis_small_caps = false;
+            for token in tokens {
+                match token {
+                    "none" => break,
+                    "weight" => style.font_synthesis_weight = true,
+                    "style" => style.font_synthesis_style = true,
+                    "small-caps" => style.font_synthesis_small_caps = true,
+                    _ => {}
+                }
+            }
+        }
     }
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "initial-letter") {
         let mut parts = k.split_whitespace();
