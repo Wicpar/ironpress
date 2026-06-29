@@ -2147,7 +2147,14 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
             Vec::new()
         };
 
+        let fixed_textblock_flow_adjustments = fixed_textblock_flow_adjustments(&page.elements);
         for (elem_idx, (y_pos, element)) in page.elements.iter().enumerate() {
+            let adjusted_y_pos = if element_uses_flow_y_adjustment(element) {
+                *y_pos - fixed_textblock_flow_adjustments[elem_idx]
+            } else {
+                *y_pos
+            };
+            let y_pos = &adjusted_y_pos;
             // Close clip context when all clipped children have been rendered
             if clip_remaining > 0 {
                 clip_remaining -= 1;
@@ -9108,15 +9115,10 @@ fn render_container_children(
                 // against `block_height` (the old `max(content+border, bh)`)
                 // rendered a border-box-sized child short by its border.
                 let content_pad_box = padding_top + text_h + padding_bottom;
-                // A definite `block_height` is a hard size when the box clips
-                // (`overflow: hidden`/`scroll`): overflowing text is clipped to it
-                // rather than growing the box. Without a clip the height is a floor
-                // (min-height / auto) and grows to fit content.
-                let pad_box_h = if tb_clip_rect.is_some() {
-                    block_height.unwrap_or(content_pad_box)
-                } else {
-                    block_height.map_or(content_pad_box, |h| content_pad_box.max(h))
-                };
+                // A provided `block_height` is the used padding-box height. Tall
+                // inline content may overflow it, but it must not enlarge a box
+                // with a definite CSS `height`.
+                let pad_box_h = block_height.unwrap_or(content_pad_box);
                 let child_h = pad_box_h + border.vertical_width();
 
                 let render_w = tb_block_width.unwrap_or(width);
@@ -13034,25 +13036,62 @@ fn line_text_content(line: &TextLine) -> String {
     line.runs.iter().map(|r| r.text.as_str()).collect()
 }
 
+fn fixed_textblock_flow_adjustments(elements: &[(f32, LayoutElement)]) -> Vec<f32> {
+    let mut adjustment = 0.0;
+    elements
+        .iter()
+        .map(|(_, element)| {
+            let current = adjustment;
+            adjustment += fixed_textblock_flow_overage(element);
+            current
+        })
+        .collect()
+}
+
+fn element_uses_flow_y_adjustment(element: &LayoutElement) -> bool {
+    !matches!(
+        element,
+        LayoutElement::TextBlock {
+            position: Position::Absolute,
+            ..
+        }
+    )
+}
+
+fn fixed_textblock_flow_overage(element: &LayoutElement) -> f32 {
+    let LayoutElement::TextBlock {
+        lines,
+        padding_top,
+        padding_bottom,
+        block_height: Some(block_height),
+        position,
+        float,
+        clip_rect,
+        ..
+    } = element
+    else {
+        return 0.0;
+    };
+    if *position == Position::Absolute || *float != Float::None || clip_rect.is_some() {
+        return 0.0;
+    }
+    let text_height: f32 = lines.iter().map(|l| l.height).sum();
+    let content_h = padding_top + text_height + padding_bottom;
+    (content_h - block_height).max(0.0)
+}
+
 fn text_block_total_height(
     lines: &[TextLine],
     padding_top: f32,
     padding_bottom: f32,
     block_height: Option<f32>,
-    clips: bool,
+    _clips: bool,
 ) -> f32 {
     let text_height: f32 = lines.iter().map(|l| l.height).sum();
     let content_h = padding_top + text_height + padding_bottom;
-    // When the box clips (`overflow: hidden`/`scroll`), a definite `block_height`
-    // is a hard size: overflowing text is clipped to it rather than growing the
-    // box. Otherwise `block_height` acts as a floor (min-height / auto) and the
-    // box still grows to fit content. Mirrors `estimate_element_height` in
-    // paginate so the painted box matches the flow advance.
-    if clips {
-        block_height.unwrap_or(content_h)
-    } else {
-        block_height.map_or(content_h, |h| content_h.max(h))
-    }
+    // A provided `block_height` is the used padding-box height. Inline content
+    // can overflow that box, but the box itself does not grow.
+    block_height.unwrap_or(content_h)
 }
 
 /// Merge consecutive text runs that share the same visual properties (font,

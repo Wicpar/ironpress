@@ -159,12 +159,14 @@ pub(crate) fn resolved_line_height_factor(
             style.font_style == FontStyle::Italic,
             fonts,
         )
+    } else if style.line_height_absolute.is_some() {
+        style.line_height.max(0.0)
     } else {
         // The renderer uses factors below 0.9 as an internal marker for floated
-        // `::first-letter` drop caps. Ordinary inline text can otherwise reach
-        // that range when an absolute line-height is inherited by a larger font
-        // size. Keep normal collected text out of the sentinel range; the drop
-        // cap helper writes its reduced factor explicitly after collection.
+        // `::first-letter` drop caps. Preserve absolute line-height values above
+        // (they are inherited as fixed lengths), but keep unitless collected text
+        // out of the sentinel range; the drop-cap helper writes its reduced
+        // factor explicitly after collection.
         style.line_height.max(0.9)
     };
     encode_text_decoration_metadata(style, factor).unwrap_or(factor)
@@ -290,14 +292,26 @@ pub(crate) fn line_primary_font_size(runs: &[crate::layout::engine::TextRun]) ->
         .fold(0.0f32, f32::max)
 }
 
-fn run_glyph_top_floor(run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
-    if let Some(ch) = run.text.chars().find(|c| !c.is_whitespace())
-        && let FontFamily::Custom(name) = &run.font_family
+fn run_glyph_box_floor(run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
+    if let FontFamily::Custom(name) = &run.font_family
         && let Some((_, ttf)) =
             crate::system_fonts::find_font(fonts, name, run.bold, run.italic)
-        && let Some(ratio) = ttf.glyph_top_ratio(ch)
+        && let Ok(face) = rustybuzz::ttf_parser::Face::parse(&ttf.data, 0)
     {
-        return ratio * run.font_size;
+        let mut y_min = i16::MAX;
+        let mut y_max = i16::MIN;
+        for ch in run.text.chars().filter(|c| !c.is_whitespace()) {
+            if let Some(glyph) = face.glyph_index(ch)
+                && let Some(bbox) = face.glyph_bounding_box(glyph)
+            {
+                y_min = y_min.min(bbox.y_min);
+                y_max = y_max.max(bbox.y_max);
+            }
+        }
+        if y_min <= y_max && ttf.units_per_em > 0 {
+            return (f32::from(y_max) - f32::from(y_min)).max(0.0) / f32::from(ttf.units_per_em)
+                * run.font_size;
+        }
     }
     let (asc_r, _) =
         crate::fonts::font_metrics_ratios(&run.font_family, run.bold, run.italic, fonts);
@@ -912,7 +926,7 @@ pub(crate) fn wrap_text_runs(
                 if is_drop_cap_marker_run(run) {
                     return base;
                 }
-                return base.max(run_glyph_top_floor(run, fonts));
+                return base.max(run_glyph_box_floor(run, fonts));
             }
         };
         let (asc_r, desc_r) =
