@@ -645,6 +645,7 @@ pub(crate) fn parse_property_value(property: &str, val: &str) -> Option<CssValue
             | "background-position"
             | "background-origin"
             | "background-clip"
+            | "-webkit-background-clip"
             | "background-attachment"
             | "border-image"
             | "background-image"

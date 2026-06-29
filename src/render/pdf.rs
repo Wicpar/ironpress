@@ -17,10 +17,10 @@ use crate::render::shading::{
 use crate::render::svg_geometry::SvgViewportBox;
 use crate::style::computed::{
     AlignItems, AlignSelf, BackgroundAttachment, BackgroundClip, BackgroundOrigin,
-    BackgroundPosition, BackgroundRepeat, BackgroundSize, BorderCollapse, BorderStyle, Clear,
-    ConicGradient, Float, FontFamily, LengthPercent, LinearGradient, MaskComposite, MaskLayer,
-    MaskLayerSource, MaskMode, MaskSource, Overflow, Position, RadialExtent, RadialGradient,
-    RadialShape, ShapeBox, TextAlign, VerticalAlign,
+    BackgroundPosition, BackgroundRepeat, BackgroundSize, BorderBevelKind, BorderCollapse,
+    BorderStyle, Clear, ConicGradient, Float, FontFamily, LengthPercent, LinearGradient,
+    MaskComposite, MaskLayer, MaskLayerSource, MaskMode, MaskSource, Overflow, Position,
+    RadialExtent, RadialGradient, RadialShape, ShapeBox, TextAlign, VerticalAlign,
 };
 use crate::types::{Margin, PageSize};
 use std::collections::HashMap;
@@ -285,6 +285,9 @@ fn begin_border_alpha(
     counter: &mut usize,
     alpha: f32,
 ) -> bool {
+    if border_bevel_kind_from_alpha(alpha).is_some() {
+        return false;
+    }
     if alpha < 1.0 {
         let gs_name = format!("GSbd{counter}");
         *counter += 1;
@@ -314,6 +317,49 @@ enum TableCellBorderEdge {
 
 fn darken_border_color((r, g, b): (f32, f32, f32)) -> (f32, f32, f32) {
     (r * 0.65, g * 0.65, b * 0.65)
+}
+
+fn bevel_light_color((r, g, b): (f32, f32, f32)) -> (f32, f32, f32) {
+    (r, g, b)
+}
+
+fn bevel_dark_color((r, g, b): (f32, f32, f32)) -> (f32, f32, f32) {
+    (r * 0.385, g * 0.385, b * 0.385)
+}
+
+fn border_bevel_kind_from_alpha(alpha: f32) -> Option<BorderBevelKind> {
+    let byte = (alpha * 255.0).round() as i32;
+    match byte {
+        251 => Some(BorderBevelKind::Groove),
+        252 => Some(BorderBevelKind::Ridge),
+        253 => Some(BorderBevelKind::Inset),
+        254 => Some(BorderBevelKind::Outset),
+        _ => None,
+    }
+}
+
+fn border_side_bevel_kind(side: &crate::layout::engine::LayoutBorderSide) -> Option<BorderBevelKind> {
+    border_bevel_kind_from_alpha(side.alpha)
+}
+
+fn bevel_edge_color(
+    kind: BorderBevelKind,
+    edge: TableCellBorderEdge,
+    inner_band: bool,
+    base: (f32, f32, f32),
+) -> (f32, f32, f32) {
+    let high_edge = matches!(edge, TableCellBorderEdge::Top | TableCellBorderEdge::Left);
+    let light_on_high_edge = match kind {
+        BorderBevelKind::Outset => true,
+        BorderBevelKind::Inset => false,
+        BorderBevelKind::Ridge => !inner_band,
+        BorderBevelKind::Groove => inner_band,
+    };
+    if high_edge == light_on_high_edge {
+        bevel_light_color(base)
+    } else {
+        bevel_dark_color(base)
+    }
 }
 
 fn table_cell_border_side_for_paint(
@@ -682,6 +728,19 @@ fn paint_uniform_border(
     if bw <= 0.0 || side.style == crate::style::computed::BorderStyle::None {
         return;
     }
+    if border_side_bevel_kind(side).is_some() && !radii_any(radii) && !radii_any(radii_y) {
+        paint_3d_uniform_border(
+            content,
+            x,
+            y,
+            w,
+            h,
+            side,
+            page_ext_gstates,
+            bg_alpha_counter,
+        );
+        return;
+    }
     let (r, g, b) = side.color;
     let a = begin_border_alpha(content, page_ext_gstates, bg_alpha_counter, side.alpha);
     content.push_str(&format!("{r} {g} {b} RG\n{r} {g} {b} rg\n"));
@@ -715,13 +774,106 @@ fn paint_uniform_border(
             paint_dotted_border_circles(content, x, y, w, h, bw);
         }
     } else {
-        content.push_str(&dash_pattern_for_style(side.style, bw));
+        if side.style == crate::style::computed::BorderStyle::Dashed
+            && (radii_any(radii) || radii_any(radii_y))
+        {
+            let dash = (bw * 1.85).max(1.0);
+            let gap = (bw * 1.15).max(1.0);
+            content.push_str(&format!("[{dash} {gap}] 0 d\n"));
+        } else {
+            content.push_str(&dash_pattern_for_style(side.style, bw));
+        }
         content.push_str(&format!("{bw} w\n"));
         content.push_str(&border_inset_path(x, y, w, h, radii, radii_y, bw / 2.0));
         content.push_str("S\n");
         content.push_str(reset_dash_pattern(side.style));
     }
     end_border_alpha(content, a);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_3d_uniform_border(
+    content: &mut String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    side: &crate::layout::engine::LayoutBorderSide,
+    page_ext_gstates: &mut Vec<(String, f32)>,
+    bg_alpha_counter: &mut usize,
+) {
+    let bw = side.width;
+    if bw <= 0.0 || w <= 0.0 || h <= 0.0 {
+        return;
+    }
+    let alpha = begin_border_alpha(content, page_ext_gstates, bg_alpha_counter, side.alpha);
+    let base = side.color;
+    let Some(kind) = border_side_bevel_kind(side) else {
+        end_border_alpha(content, alpha);
+        return;
+    };
+    if matches!(kind, BorderBevelKind::Groove | BorderBevelKind::Ridge) {
+        let half = bw / 2.0;
+        paint_3d_border_band(content, x, y, w, h, kind, base, false, 0.0, half);
+        paint_3d_border_band(content, x, y, w, h, kind, base, true, half, bw);
+    } else {
+        paint_3d_border_band(content, x, y, w, h, kind, base, false, 0.0, bw);
+    }
+    end_border_alpha(content, alpha);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_3d_border_band(
+    content: &mut String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    kind: BorderBevelKind,
+    base: (f32, f32, f32),
+    inner_band: bool,
+    outer_inset: f32,
+    inner_inset: f32,
+) {
+    if inner_inset <= outer_inset {
+        return;
+    }
+    let ol = x + outer_inset;
+    let or_ = x + w - outer_inset;
+    let ob = y + outer_inset;
+    let ot = y + h - outer_inset;
+    let il = x + inner_inset;
+    let ir = x + w - inner_inset;
+    let ib = y + inner_inset;
+    let it = y + h - inner_inset;
+    if ol >= or_ || ob >= ot || il >= ir || ib >= it {
+        return;
+    }
+    let mut fill = |edge: TableCellBorderEdge, pts: [(f32, f32); 4]| {
+        let (r, g, b) = bevel_edge_color(kind, edge, inner_band, base);
+        content.push_str(&format!("{r} {g} {b} rg\n"));
+        content.push_str(&format!("{} {} m\n", pts[0].0, pts[0].1));
+        for p in &pts[1..] {
+            content.push_str(&format!("{} {} l\n", p.0, p.1));
+        }
+        content.push_str("h\nf\n");
+    };
+    fill(
+        TableCellBorderEdge::Top,
+        [(ol, ot), (or_, ot), (ir, it), (il, it)],
+    );
+    fill(
+        TableCellBorderEdge::Right,
+        [(or_, ot), (or_, ob), (ir, ib), (ir, it)],
+    );
+    fill(
+        TableCellBorderEdge::Bottom,
+        [(or_, ob), (ol, ob), (il, ib), (ir, ib)],
+    );
+    fill(
+        TableCellBorderEdge::Left,
+        [(ol, ob), (ol, ot), (il, it), (il, ib)],
+    );
 }
 
 fn paint_dashed_border_rects(content: &mut String, x: f32, y: f32, w: f32, h: f32, bw: f32) {
@@ -1226,7 +1378,7 @@ fn draw_image_border(
         && border.top.style == border.bottom.style
         && border.top.style == border.left.style;
     if uniform {
-        if border.top.style != BorderStyle::Solid {
+        if border.top.style != BorderStyle::Solid || border_side_bevel_kind(&border.top).is_some() {
             paint_uniform_border(
                 content,
                 box_x,
@@ -2450,7 +2602,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         *padding_bottom,
                     );
                     let tb_needs_clip = *background_clip != BackgroundClip::Border;
-                    let tb_gradient_clip = *background_clip != BackgroundClip::Text;
+                    let tb_text_clip_background = *background_clip == BackgroundClip::Text;
+                    let tb_gradient_clip = !tb_text_clip_background;
                     let tb_layer_box = background_layer_box(
                         *background_size,
                         *background_position,
@@ -2556,7 +2709,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 &mut pdf_writer,
                                 &mut page_images,
                             );
-                        } else if gradient.layer_box.attachment
+                        } else if !tb_text_clip_background
+                            && gradient.layer_box.attachment
                             != Some(BackgroundAttachment::Local)
                         {
                             if tb_bg_blended {
@@ -2610,7 +2764,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     // Draw radial gradient if specified
                     if let Some(gradient) = background_radial_gradient {
                         let gradient = radial_with_background_layer(gradient, tb_layer_box);
-                        if gradient.layer_box.attachment != Some(BackgroundAttachment::Local) {
+                        if !tb_text_clip_background
+                            && gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                        {
                             if tb_bg_blended {
                             content.push_str("q\n");
                             begin_blend_mode(&mut content, &mut page_ext_gstates, tb_bg_blend_mode);
@@ -2656,7 +2812,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     // Draw conic gradient if specified
                     if let Some(gradient) = background_conic_gradient {
                         let gradient = conic_with_background_layer(gradient, tb_layer_box);
-                        if gradient.layer_box.attachment != Some(BackgroundAttachment::Local) {
+                        if !tb_text_clip_background
+                            && gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                        {
                             if tb_bg_blended {
                             content.push_str("q\n");
                             begin_blend_mode(&mut content, &mut page_ext_gstates, tb_bg_blend_mode);
@@ -2793,7 +2951,11 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             && border.top.style == border.bottom.style
                             && border.top.style == border.left.style;
                         if uniform
-                            && border_needs_special_paint(border.top.style, *tb_radii, *tb_radii_y)
+                            && (border_needs_special_paint(
+                                border.top.style,
+                                *tb_radii,
+                                *tb_radii_y,
+                            ) || border_side_bevel_kind(&border.top).is_some())
                         {
                             // Shared painter handles solid/dashed/dotted/double and
                             // both uniform and per-corner rounded borders.
@@ -2886,94 +3048,59 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             let x2 = block_x + render_width;
                             let y_top = block_y - border.top.width / 2.0;
                             let y_bottom = block_bottom + border.bottom.width / 2.0;
-                            let x_left = block_x + border.left.width / 2.0;
                             let x_right = block_x + render_width - border.right.width / 2.0;
                             // Top border
                             if border.top.paints() {
-                                let (r, g, b) = border.top.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.top,
+                                    x1,
+                                    y_top,
+                                    x2,
+                                    y_top,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.top.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.top.style,
-                                    border.top.width,
-                                ));
-                                content
-                                    .push_str(&format!("{r} {g} {b} RG\n{} w\n", border.top.width));
-                                content.push_str(&format!("{x1} {y_top} m {x2} {y_top} l S\n"));
-                                content.push_str(reset_dash_pattern(border.top.style));
-                                end_border_alpha(&mut content, a);
                             }
                             // Right border
                             if border.right.paints() {
-                                let (r, g, b) = border.right.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.right,
+                                    x_right,
+                                    y_top,
+                                    x_right,
+                                    y_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.right.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.right.style,
-                                    border.right.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n",
-                                    border.right.width
-                                ));
-                                content.push_str(&format!(
-                                    "{x_right} {y_top} m {x_right} {y_bottom} l S\n"
-                                ));
-                                content.push_str(reset_dash_pattern(border.right.style));
-                                end_border_alpha(&mut content, a);
                             }
                             // Bottom border
                             if border.bottom.paints() {
-                                let (r, g, b) = border.bottom.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.bottom,
+                                    x1,
+                                    y_bottom,
+                                    x2,
+                                    y_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.bottom.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.bottom.style,
-                                    border.bottom.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n",
-                                    border.bottom.width
-                                ));
-                                content
-                                    .push_str(&format!("{x1} {y_bottom} m {x2} {y_bottom} l S\n"));
-                                content.push_str(reset_dash_pattern(border.bottom.style));
-                                end_border_alpha(&mut content, a);
                             }
                             // Left border
                             if border.left.paints() {
-                                let (r, g, b) = border.left.color;
-                                let a = begin_border_alpha(
+                                let x_left = block_x + border.left.width / 2.0;
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.left,
+                                    x_left,
+                                    y_top,
+                                    x_left,
+                                    y_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.left.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.left.style,
-                                    border.left.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n",
-                                    border.left.width
-                                ));
-                                content.push_str(&format!(
-                                    "{x_left} {y_top} m {x_left} {y_bottom} l S\n"
-                                ));
-                                content.push_str(reset_dash_pattern(border.left.style));
-                                end_border_alpha(&mut content, a);
                             }
                         }
                     }
@@ -3192,6 +3319,159 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         // spaces between words stay in a single PDF text
                         // string, preventing viewers from dropping them.
                         let merged = merge_runs(&line.runs);
+                        let mut text_clip_line_painted = false;
+                        if tb_text_clip_background {
+                            if let Some(gradient) = background_gradient {
+                                let gradient = linear_with_background_layer(gradient, tb_layer_box);
+                                if gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                                    && !gradient.layer_box.border_image
+                                {
+                                    content.push_str("q\n");
+                                    if push_line_text_clip(
+                                        &mut content,
+                                        &merged,
+                                        text_x,
+                                        text_y,
+                                        custom_fonts,
+                                        &prepared_custom_fonts,
+                                        total_ws,
+                                        line_text_top(line, custom_fonts),
+                                    ) {
+                                        if tb_bg_blended {
+                                            content.push_str("q\n");
+                                            begin_blend_mode(
+                                                &mut content,
+                                                &mut page_ext_gstates,
+                                                tb_bg_blend_mode,
+                                            );
+                                        }
+                                        let (grad_x, grad_y, grad_w, grad_h) =
+                                            if gradient.layer_box.attachment
+                                                == Some(BackgroundAttachment::Fixed)
+                                            {
+                                                (0.0, 0.0, page_size.width, page_size.height)
+                                            } else {
+                                                (tb_ref_x, tb_ref_y, tb_ref_w, tb_ref_h)
+                                            };
+                                        render_linear_gradient(
+                                            &mut content,
+                                            &gradient,
+                                            grad_x,
+                                            grad_y,
+                                            grad_w,
+                                            grad_h,
+                                            &mut page_shadings,
+                                            &mut shading_counter,
+                                            &mut pdf_writer,
+                                            &mut page_images,
+                                        );
+                                        if tb_bg_blended {
+                                            content.push_str("Q\n");
+                                        }
+                                        text_clip_line_painted = true;
+                                    }
+                                    content.push_str("Q\n");
+                                }
+                            } else if let Some(gradient) = background_radial_gradient {
+                                let gradient = radial_with_background_layer(gradient, tb_layer_box);
+                                if gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                                {
+                                    content.push_str("q\n");
+                                    if push_line_text_clip(
+                                        &mut content,
+                                        &merged,
+                                        text_x,
+                                        text_y,
+                                        custom_fonts,
+                                        &prepared_custom_fonts,
+                                        total_ws,
+                                        line_text_top(line, custom_fonts),
+                                    ) {
+                                        if tb_bg_blended {
+                                            content.push_str("q\n");
+                                            begin_blend_mode(
+                                                &mut content,
+                                                &mut page_ext_gstates,
+                                                tb_bg_blend_mode,
+                                            );
+                                        }
+                                        let (grad_x, grad_y, grad_w, grad_h) =
+                                            if gradient.layer_box.attachment
+                                                == Some(BackgroundAttachment::Fixed)
+                                            {
+                                                (0.0, 0.0, page_size.width, page_size.height)
+                                            } else {
+                                                (tb_ref_x, tb_ref_y, tb_ref_w, tb_ref_h)
+                                            };
+                                        render_radial_gradient(
+                                            &mut content,
+                                            &gradient,
+                                            grad_x,
+                                            grad_y,
+                                            grad_w,
+                                            grad_h,
+                                            &mut page_shadings,
+                                            &mut shading_counter,
+                                            &mut pdf_writer,
+                                            &mut page_images,
+                                        );
+                                        if tb_bg_blended {
+                                            content.push_str("Q\n");
+                                        }
+                                        text_clip_line_painted = true;
+                                    }
+                                    content.push_str("Q\n");
+                                }
+                            } else if let Some(gradient) = background_conic_gradient {
+                                let gradient = conic_with_background_layer(gradient, tb_layer_box);
+                                if gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                                {
+                                    content.push_str("q\n");
+                                    if push_line_text_clip(
+                                        &mut content,
+                                        &merged,
+                                        text_x,
+                                        text_y,
+                                        custom_fonts,
+                                        &prepared_custom_fonts,
+                                        total_ws,
+                                        line_text_top(line, custom_fonts),
+                                    ) {
+                                        if tb_bg_blended {
+                                            content.push_str("q\n");
+                                            begin_blend_mode(
+                                                &mut content,
+                                                &mut page_ext_gstates,
+                                                tb_bg_blend_mode,
+                                            );
+                                        }
+                                        let (grad_x, grad_y, grad_w, grad_h) =
+                                            if gradient.layer_box.attachment
+                                                == Some(BackgroundAttachment::Fixed)
+                                            {
+                                                (0.0, 0.0, page_size.width, page_size.height)
+                                            } else {
+                                                (tb_ref_x, tb_ref_y, tb_ref_w, tb_ref_h)
+                                            };
+                                        render_conic_gradient(
+                                            &mut content,
+                                            &gradient,
+                                            grad_x,
+                                            grad_y,
+                                            grad_w,
+                                            grad_h,
+                                            &mut pdf_writer,
+                                            &mut page_images,
+                                        );
+                                        if tb_bg_blended {
+                                            content.push_str("Q\n");
+                                        }
+                                        text_clip_line_painted = true;
+                                    }
+                                    content.push_str("Q\n");
+                                }
+                            }
+                        }
 
                         // Phase 1: Draw backgrounds, decorations, and link
                         // annotations at estimated positions (visual-only).
@@ -3514,7 +3794,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     );
                             }
                         }
-                        if !blurred_line {
+                        if !blurred_line && !text_clip_line_painted {
                             render_line_text(
                                 &mut content,
                                 &merged,
@@ -4265,7 +4545,26 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             && border.top.style == border.right.style
                             && border.top.style == border.bottom.style
                             && border.top.style == border.left.style;
-                        if uniform && *border_radius > 0.0 {
+                        if uniform
+                            && (border_needs_special_paint(
+                                border.top.style,
+                                [*border_radius; 4],
+                                [*border_radius; 4],
+                            ) || border_side_bevel_kind(&border.top).is_some())
+                        {
+                            paint_uniform_border(
+                                &mut content,
+                                bx,
+                                by,
+                                *container_width,
+                                full_height,
+                                [*border_radius; 4],
+                                [*border_radius; 4],
+                                &border.top,
+                                &mut page_ext_gstates,
+                                &mut bg_alpha_counter,
+                            );
+                        } else if uniform && *border_radius > 0.0 {
                             let (r, g, b) = border.top.color;
                             let a = begin_border_alpha(
                                 &mut content,
@@ -4335,80 +4634,52 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 by + border.left.width.max(border.right.width) / 2.0
                             };
                             if border.top.width > 0.0 {
-                                let (r, g, b) = border.top.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.top,
+                                    x1,
+                                    y_top,
+                                    x2,
+                                    y_top,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.top.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.top.style,
-                                    border.top.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x2} {y_top} l S\n",
-                                    border.top.width
-                                ));
-                                content.push_str(reset_dash_pattern(border.top.style));
-                                end_border_alpha(&mut content, a);
                             }
                             if border.right.width > 0.0 {
-                                let (r, g, b) = border.right.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.right,
+                                    x2,
+                                    y_side_top,
+                                    x2,
+                                    y_side_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.right.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.right.style,
-                                    border.right.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n{x2} {y_side_top} m {x2} {y_side_bottom} l S\n",
-                                    border.right.width
-                                ));
-                                content.push_str(reset_dash_pattern(border.right.style));
-                                end_border_alpha(&mut content, a);
                             }
                             if border.bottom.width > 0.0 {
-                                let (r, g, b) = border.bottom.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.bottom,
+                                    x1,
+                                    y_bottom,
+                                    x2,
+                                    y_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.bottom.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.bottom.style,
-                                    border.bottom.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n{x1} {y_bottom} m {x2} {y_bottom} l S\n",
-                                    border.bottom.width
-                                ));
-                                content.push_str(reset_dash_pattern(border.bottom.style));
-                                end_border_alpha(&mut content, a);
                             }
                             if border.left.width > 0.0 {
-                                let (r, g, b) = border.left.color;
-                                let a = begin_border_alpha(
+                                paint_table_cell_border_line(
                                     &mut content,
+                                    &border.left,
+                                    x1,
+                                    y_side_top,
+                                    x1,
+                                    y_side_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
-                                    border.left.alpha,
                                 );
-                                content.push_str(&dash_pattern_for_style(
-                                    border.left.style,
-                                    border.left.width,
-                                ));
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{} w\n{x1} {y_side_top} m {x1} {y_side_bottom} l S\n",
-                                    border.left.width
-                                ));
-                                content.push_str(reset_dash_pattern(border.left.style));
-                                end_border_alpha(&mut content, a);
                             }
                         }
                     }
@@ -4701,94 +4972,104 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
 
                         // Draw cell borders
                         if cell.border.has_any() {
-                            if cell.border_radius > 0.0 {
-                                let bw = cell.border.top.width;
-                                let (r, g, b) = cell.border.top.color;
-                                let a = begin_border_alpha(
+                            let box_left = cell_x;
+                            let box_right = cell_x + cell.width;
+                            let box_top = text_area_top - cell_y_shift;
+                            let box_bottom = text_area_top - cell_y_shift - cell_render_h;
+                            let uniform = cell.border.has_visible()
+                                && cell.border.top.width == cell.border.right.width
+                                && cell.border.top.width == cell.border.bottom.width
+                                && cell.border.top.width == cell.border.left.width
+                                && cell.border.top.color == cell.border.right.color
+                                && cell.border.top.color == cell.border.bottom.color
+                                && cell.border.top.color == cell.border.left.color
+                                && cell.border.top.alpha == cell.border.right.alpha
+                                && cell.border.top.alpha == cell.border.bottom.alpha
+                                && cell.border.top.alpha == cell.border.left.alpha
+                                && cell.border.top.style == cell.border.right.style
+                                && cell.border.top.style == cell.border.bottom.style
+                                && cell.border.top.style == cell.border.left.style;
+                            if uniform
+                                && (cell.border_radius > 0.0
+                                    || border_needs_special_paint(
+                                        cell.border.top.style,
+                                        [cell.border_radius; 4],
+                                        [cell.border_radius; 4],
+                                    )
+                                    || border_side_bevel_kind(&cell.border.top).is_some())
+                            {
+                                paint_uniform_border(
                                     &mut content,
-                                    &mut page_ext_gstates,
-                                    &mut bg_alpha_counter,
-                                    cell.border.top.alpha,
-                                );
-                                content.push_str(&format!("{r} {g} {b} RG\n{bw} w\n"));
-                                content.push_str(&rounded_rect_path(
-                                    cell_x,
-                                    text_area_top - cell_y_shift - cell_render_h,
+                                    box_left,
+                                    box_bottom,
                                     cell.width,
                                     cell_render_h,
-                                    cell.border_radius,
-                                ));
-                                content.push_str("S\n");
-                                end_border_alpha(&mut content, a);
+                                    [cell.border_radius; 4],
+                                    [cell.border_radius; 4],
+                                    &cell.border.top,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                );
+                            } else if cell.border_radius <= 0.0 && border_needs_miter_fill(&cell.border) {
+                                paint_miter_border(
+                                    &mut content,
+                                    box_left,
+                                    box_bottom,
+                                    cell.width,
+                                    cell_render_h,
+                                    &cell.border,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                );
                             } else {
                                 // Stroke INSIDE the cell's border box: center each
                                 // side's stroke half its width in from the edge so
                                 // the painted frame sits within the declared
                                 // border-box width (matches block / image borders).
-                                let box_left = cell_x;
-                                let box_right = cell_x + cell.width;
-                                let box_top = text_area_top - cell_y_shift;
-                                let box_bottom = text_area_top - cell_y_shift - cell_render_h;
                                 let bx1 = box_left + cell.border.left.width / 2.0;
                                 let bx2 = box_right - cell.border.right.width / 2.0;
                                 let by1 = box_top - cell.border.top.width / 2.0;
                                 let by2 = box_bottom + cell.border.bottom.width / 2.0;
-                                if cell.border.top.width > 0.0 {
-                                    let (r, g, b) = cell.border.top.color;
-                                    let a = begin_border_alpha(
-                                        &mut content,
-                                        &mut page_ext_gstates,
-                                        &mut bg_alpha_counter,
-                                        cell.border.top.alpha,
-                                    );
-                                    content.push_str(&format!(
-                                        "{r} {g} {b} RG\n{} w\n{bx1} {by1} m {bx2} {by1} l S\n",
-                                        cell.border.top.width
-                                    ));
-                                    end_border_alpha(&mut content, a);
-                                }
-                                if cell.border.right.width > 0.0 {
-                                    let (r, g, b) = cell.border.right.color;
-                                    let a = begin_border_alpha(
-                                        &mut content,
-                                        &mut page_ext_gstates,
-                                        &mut bg_alpha_counter,
-                                        cell.border.right.alpha,
-                                    );
-                                    content.push_str(&format!(
-                                        "{r} {g} {b} RG\n{} w\n{bx2} {by1} m {bx2} {by2} l S\n",
-                                        cell.border.right.width
-                                    ));
-                                    end_border_alpha(&mut content, a);
-                                }
-                                if cell.border.bottom.width > 0.0 {
-                                    let (r, g, b) = cell.border.bottom.color;
-                                    let a = begin_border_alpha(
-                                        &mut content,
-                                        &mut page_ext_gstates,
-                                        &mut bg_alpha_counter,
-                                        cell.border.bottom.alpha,
-                                    );
-                                    content.push_str(&format!(
-                                        "{r} {g} {b} RG\n{} w\n{bx1} {by2} m {bx2} {by2} l S\n",
-                                        cell.border.bottom.width
-                                    ));
-                                    end_border_alpha(&mut content, a);
-                                }
-                                if cell.border.left.width > 0.0 {
-                                    let (r, g, b) = cell.border.left.color;
-                                    let a = begin_border_alpha(
-                                        &mut content,
-                                        &mut page_ext_gstates,
-                                        &mut bg_alpha_counter,
-                                        cell.border.left.alpha,
-                                    );
-                                    content.push_str(&format!(
-                                        "{r} {g} {b} RG\n{} w\n{bx1} {by1} m {bx1} {by2} l S\n",
-                                        cell.border.left.width
-                                    ));
-                                    end_border_alpha(&mut content, a);
-                                }
+                                paint_table_cell_border_line(
+                                    &mut content,
+                                    &cell.border.top,
+                                    bx1,
+                                    by1,
+                                    bx2,
+                                    by1,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                );
+                                paint_table_cell_border_line(
+                                    &mut content,
+                                    &cell.border.right,
+                                    bx2,
+                                    by1,
+                                    bx2,
+                                    by2,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                );
+                                paint_table_cell_border_line(
+                                    &mut content,
+                                    &cell.border.bottom,
+                                    bx1,
+                                    by2,
+                                    bx2,
+                                    by2,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                );
+                                paint_table_cell_border_line(
+                                    &mut content,
+                                    &cell.border.left,
+                                    bx1,
+                                    by1,
+                                    bx1,
+                                    by2,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                );
                                 let uniform_solid = cell.border.top.width > 0.0
                                     && cell.border.top.width == cell.border.right.width
                                     && cell.border.top.width == cell.border.bottom.width
@@ -6342,11 +6623,11 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 && border.top.style == border.bottom.style
                                 && border.top.style == border.left.style;
                             if c_uniform
-                                && border_needs_special_paint(
+                                && (border_needs_special_paint(
                                     border.top.style,
                                     *c_border_radii,
                                     *c_border_radii_y,
-                                )
+                                ) || border_side_bevel_kind(&border.top).is_some())
                             {
                                 paint_uniform_border(
                                     &mut content,
@@ -10311,7 +10592,8 @@ fn render_container_children(
                                 *cont_radii,
                                 *cont_radii_y,
                             ) || radii_any(*cont_radii)
-                                || radii_any(*cont_radii_y))
+                                || radii_any(*cont_radii_y)
+                                || border_side_bevel_kind(&border.top).is_some())
                         {
                             // Uniform border with any corner radius (or a non-solid
                             // style) takes the shared painter so the stroke follows
@@ -10955,7 +11237,26 @@ fn render_container_children(
                         && border.top.style == border.right.style
                         && border.top.style == border.bottom.style
                         && border.top.style == border.left.style;
-                    if uniform && *flex_border_radius > 0.0 {
+                    if uniform
+                        && (border_needs_special_paint(
+                            border.top.style,
+                            [*flex_border_radius; 4],
+                            [*flex_border_radius; 4],
+                        ) || border_side_bevel_kind(&border.top).is_some())
+                    {
+                        paint_uniform_border(
+                            content,
+                            bx,
+                            by,
+                            flex_w,
+                            row_h,
+                            [*flex_border_radius; 4],
+                            [*flex_border_radius; 4],
+                            &border.top,
+                            page_ext_gstates,
+                            bg_alpha_counter,
+                        );
+                    } else if uniform && *flex_border_radius > 0.0 {
                         let (r, g, b) = border.top.color;
                         let a = begin_border_alpha(
                             content,
@@ -11005,80 +11306,52 @@ fn render_container_children(
                         let y_top = y - border.top.width / 2.0;
                         let y_bottom = by + border.bottom.width / 2.0;
                         if border.top.width > 0.0 {
-                            let (r, g, b) = border.top.color;
-                            let a = begin_border_alpha(
+                            paint_table_cell_border_line(
                                 content,
+                                &border.top,
+                                x1,
+                                y_top,
+                                x2,
+                                y_top,
                                 page_ext_gstates,
                                 bg_alpha_counter,
-                                border.top.alpha,
                             );
-                            content.push_str(&dash_pattern_for_style(
-                                border.top.style,
-                                border.top.width,
-                            ));
-                            content.push_str(&format!(
-                                "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x2} {y_top} l S\n",
-                                border.top.width
-                            ));
-                            content.push_str(reset_dash_pattern(border.top.style));
-                            end_border_alpha(content, a);
                         }
                         if border.right.width > 0.0 {
-                            let (r, g, b) = border.right.color;
-                            let a = begin_border_alpha(
+                            paint_table_cell_border_line(
                                 content,
+                                &border.right,
+                                x2,
+                                y_top,
+                                x2,
+                                y_bottom,
                                 page_ext_gstates,
                                 bg_alpha_counter,
-                                border.right.alpha,
                             );
-                            content.push_str(&dash_pattern_for_style(
-                                border.right.style,
-                                border.right.width,
-                            ));
-                            content.push_str(&format!(
-                                "{r} {g} {b} RG\n{} w\n{x2} {y_top} m {x2} {y_bottom} l S\n",
-                                border.right.width
-                            ));
-                            content.push_str(reset_dash_pattern(border.right.style));
-                            end_border_alpha(content, a);
                         }
                         if border.bottom.width > 0.0 {
-                            let (r, g, b) = border.bottom.color;
-                            let a = begin_border_alpha(
+                            paint_table_cell_border_line(
                                 content,
+                                &border.bottom,
+                                x1,
+                                y_bottom,
+                                x2,
+                                y_bottom,
                                 page_ext_gstates,
                                 bg_alpha_counter,
-                                border.bottom.alpha,
                             );
-                            content.push_str(&dash_pattern_for_style(
-                                border.bottom.style,
-                                border.bottom.width,
-                            ));
-                            content.push_str(&format!(
-                                "{r} {g} {b} RG\n{} w\n{x1} {y_bottom} m {x2} {y_bottom} l S\n",
-                                border.bottom.width
-                            ));
-                            content.push_str(reset_dash_pattern(border.bottom.style));
-                            end_border_alpha(content, a);
                         }
                         if border.left.width > 0.0 {
-                            let (r, g, b) = border.left.color;
-                            let a = begin_border_alpha(
+                            paint_table_cell_border_line(
                                 content,
+                                &border.left,
+                                x1,
+                                y_top,
+                                x1,
+                                y_bottom,
                                 page_ext_gstates,
                                 bg_alpha_counter,
-                                border.left.alpha,
                             );
-                            content.push_str(&dash_pattern_for_style(
-                                border.left.style,
-                                border.left.width,
-                            ));
-                            content.push_str(&format!(
-                                "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x1} {y_bottom} l S\n",
-                                border.left.width
-                            ));
-                            content.push_str(reset_dash_pattern(border.left.style));
-                            end_border_alpha(content, a);
                         }
                     }
                 }
@@ -11243,99 +11516,96 @@ fn render_container_children(
                     }
                     // Draw cell border
                     if cell.border.has_any() {
-                        if cell.border_radius > 0.0 {
-                            // Rounded border — use uniform stroke with rounded rect
-                            let bw = cell.border.top.width;
-                            let (r, g, b) = cell.border.top.color;
-                            let a = begin_border_alpha(
+                        let uniform = cell.border.has_visible()
+                            && cell.border.top.width == cell.border.right.width
+                            && cell.border.top.width == cell.border.bottom.width
+                            && cell.border.top.width == cell.border.left.width
+                            && cell.border.top.color == cell.border.right.color
+                            && cell.border.top.color == cell.border.bottom.color
+                            && cell.border.top.color == cell.border.left.color
+                            && cell.border.top.alpha == cell.border.right.alpha
+                            && cell.border.top.alpha == cell.border.bottom.alpha
+                            && cell.border.top.alpha == cell.border.left.alpha
+                            && cell.border.top.style == cell.border.right.style
+                            && cell.border.top.style == cell.border.bottom.style
+                            && cell.border.top.style == cell.border.left.style;
+                        if uniform
+                            && (cell.border_radius > 0.0
+                                || border_needs_special_paint(
+                                    cell.border.top.style,
+                                    [cell.border_radius; 4],
+                                    [cell.border_radius; 4],
+                                )
+                                || border_side_bevel_kind(&cell.border.top).is_some())
+                        {
+                            paint_uniform_border(
                                 content,
-                                page_ext_gstates,
-                                bg_alpha_counter,
-                                cell.border.top.alpha,
-                            );
-                            content.push_str(&format!("{r} {g} {b} RG\n{bw} w\n"));
-                            content.push_str(&rounded_rect_path(
                                 cell_x,
                                 cell_bottom,
                                 cell_w,
                                 cell_h,
-                                cell.border_radius,
-                            ));
-                            content.push_str("S\n");
-                            end_border_alpha(content, a);
+                                [cell.border_radius; 4],
+                                [cell.border_radius; 4],
+                                &cell.border.top,
+                                page_ext_gstates,
+                                bg_alpha_counter,
+                            );
+                        } else if cell.border_radius <= 0.0 && border_needs_miter_fill(&cell.border) {
+                            paint_miter_border(
+                                content,
+                                cell_x,
+                                cell_bottom,
+                                cell_w,
+                                cell_h,
+                                &cell.border,
+                                page_ext_gstates,
+                                bg_alpha_counter,
+                            );
                         } else {
                             let bx1 = cell_x;
                             let bx2 = cell_x + cell_w;
                             let by1 = cell_top;
                             let by2 = cell_bottom;
-                            if cell.border.left.width > 0.0 {
-                                let (r, g, b) = cell.border.left.color;
-                                let a = begin_border_alpha(
-                                    content,
-                                    page_ext_gstates,
-                                    bg_alpha_counter,
-                                    cell.border.left.alpha,
-                                );
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{bw} w\n{x} {y1} m {x} {y2} l\nS\n",
-                                    bw = cell.border.left.width,
-                                    x = bx1 + cell.border.left.width * 0.5,
-                                    y1 = by1,
-                                    y2 = by2
-                                ));
-                                end_border_alpha(content, a);
-                            }
-                            if cell.border.right.width > 0.0 {
-                                let (r, g, b) = cell.border.right.color;
-                                let a = begin_border_alpha(
-                                    content,
-                                    page_ext_gstates,
-                                    bg_alpha_counter,
-                                    cell.border.right.alpha,
-                                );
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{bw} w\n{x} {y1} m {x} {y2} l\nS\n",
-                                    bw = cell.border.right.width,
-                                    x = bx2 - cell.border.right.width * 0.5,
-                                    y1 = by1,
-                                    y2 = by2
-                                ));
-                                end_border_alpha(content, a);
-                            }
-                            if cell.border.top.width > 0.0 {
-                                let (r, g, b) = cell.border.top.color;
-                                let a = begin_border_alpha(
-                                    content,
-                                    page_ext_gstates,
-                                    bg_alpha_counter,
-                                    cell.border.top.alpha,
-                                );
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{bw} w\n{x1} {y} m {x2} {y} l\nS\n",
-                                    bw = cell.border.top.width,
-                                    x1 = bx1,
-                                    x2 = bx2,
-                                    y = by1 - cell.border.top.width * 0.5
-                                ));
-                                end_border_alpha(content, a);
-                            }
-                            if cell.border.bottom.width > 0.0 {
-                                let (r, g, b) = cell.border.bottom.color;
-                                let a = begin_border_alpha(
-                                    content,
-                                    page_ext_gstates,
-                                    bg_alpha_counter,
-                                    cell.border.bottom.alpha,
-                                );
-                                content.push_str(&format!(
-                                    "{r} {g} {b} RG\n{bw} w\n{x1} {y} m {x2} {y} l\nS\n",
-                                    bw = cell.border.bottom.width,
-                                    x1 = bx1,
-                                    x2 = bx2,
-                                    y = by2 + cell.border.bottom.width * 0.5
-                                ));
-                                end_border_alpha(content, a);
-                            }
+                            paint_table_cell_border_line(
+                                content,
+                                &cell.border.left,
+                                bx1 + cell.border.left.width * 0.5,
+                                by1,
+                                bx1 + cell.border.left.width * 0.5,
+                                by2,
+                                page_ext_gstates,
+                                bg_alpha_counter,
+                            );
+                            paint_table_cell_border_line(
+                                content,
+                                &cell.border.right,
+                                bx2 - cell.border.right.width * 0.5,
+                                by1,
+                                bx2 - cell.border.right.width * 0.5,
+                                by2,
+                                page_ext_gstates,
+                                bg_alpha_counter,
+                            );
+                            paint_table_cell_border_line(
+                                content,
+                                &cell.border.top,
+                                bx1,
+                                by1 - cell.border.top.width * 0.5,
+                                bx2,
+                                by1 - cell.border.top.width * 0.5,
+                                page_ext_gstates,
+                                bg_alpha_counter,
+                            );
+                            paint_table_cell_border_line(
+                                content,
+                                &cell.border.bottom,
+                                bx1,
+                                by2 + cell.border.bottom.width * 0.5,
+                                bx2,
+                                by2 + cell.border.bottom.width * 0.5,
+                                page_ext_gstates,
+                                bg_alpha_counter,
+                            );
                         } // else (non-rounded cell border)
                     }
                     // Draw cell text. Seat it relative to the cell's *content
@@ -12682,6 +12952,150 @@ fn render_line_text(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn push_line_text_clip(
+    content: &mut String,
+    runs: &[TextRun],
+    start_x: f32,
+    y: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+    prepared_custom_fonts: &PreparedCustomFonts,
+    word_spacing: f32,
+    line_ascender: f32,
+) -> bool {
+    let non_empty: Vec<&TextRun> = runs
+        .iter()
+        .filter(|r| !r.text.is_empty() || r.inline_box.is_some())
+        .collect();
+    if non_empty.is_empty() {
+        return false;
+    }
+
+    let parent_font_size = crate::layout::text::line_primary_font_size(runs);
+    let has_inline_box = non_empty.iter().any(|r| r.inline_box.is_some());
+    let all_standard = !has_inline_box
+        && non_empty.iter().all(|run| {
+            crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, custom_fonts)
+                .is_none()
+                && crate::text::shape_with_unicode_fallback(run, custom_fonts).is_none()
+        });
+
+    content.push_str("BT\n7 Tr\n");
+    if all_standard {
+        let mut cur_baseline = y;
+        let mut first = true;
+        for run in &non_empty {
+            let font_name = resolve_font_name(run, None, None);
+            content.push_str(&format!("/{font_name} {} Tf\n", run.font_size));
+            let target_baseline = y
+                + run_vertical_align_shift(run, parent_font_size)
+                + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
+            if first {
+                content.push_str(&format!(
+                    "{} {} Td\n",
+                    format_pdf_number(start_x),
+                    format_pdf_number(target_baseline),
+                ));
+                cur_baseline = target_baseline;
+                first = false;
+            } else if (target_baseline - cur_baseline).abs() > f32::EPSILON {
+                content.push_str(&format!(
+                    "0 {} Td\n",
+                    format_pdf_number(target_baseline - cur_baseline),
+                ));
+                cur_baseline = target_baseline;
+            }
+            let encoded = encode_pdf_text(&run.text);
+            content.push_str(&format!("({encoded}) Tj\n"));
+        }
+    } else {
+        let mut x = start_x;
+        for run in &non_empty {
+            if let Some(inline) = run.inline_box.as_deref() {
+                x += inline.outer_width();
+                continue;
+            }
+            if run.text.is_empty() {
+                continue;
+            }
+            let run_y = y
+                + run_vertical_align_shift(run, parent_font_size)
+                + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
+            let shaped = crate::text::shape_text_run(run, custom_fonts);
+            let run_width = shaped.as_ref().map_or_else(
+                || estimate_run_width_with_fonts(run, custom_fonts),
+                |shaped| shaped.width,
+            );
+            let custom_font =
+                crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, custom_fonts);
+            let font_name = resolve_font_name(run, custom_font, shaped.as_ref());
+            content.push_str(&format!("/{font_name} {} Tf\n", run.font_size));
+            const FAUX_ITALIC_SHEAR: f32 = 0.25;
+            let faux_bold = matches!(run.font_family, FontFamily::Custom(_))
+                && crate::system_fonts::needs_faux_bold(
+                    custom_fonts,
+                    run.font_family.name(),
+                    run.bold,
+                    run.italic,
+                );
+            let shear = if matches!(run.font_family, FontFamily::Custom(_))
+                && crate::system_fonts::needs_faux_italic(
+                    custom_fonts,
+                    run.font_family.name(),
+                    run.bold,
+                    run.italic,
+                ) {
+                FAUX_ITALIC_SHEAR
+            } else {
+                0.0
+            };
+            if let (Some((resolved_name, font)), Some(shaped)) = (custom_font, shaped.as_ref()) {
+                let prepared_font = prepared_custom_fonts.get(resolved_name);
+                let embolden = run.font_size * 0.011;
+                let offsets = [
+                    (0.0, 0.0),
+                    (-embolden, 0.0),
+                    (embolden, 0.0),
+                    (0.0, embolden),
+                    (0.0, -embolden),
+                    (-embolden, embolden),
+                    (embolden, embolden),
+                    (-embolden * 2.0, embolden),
+                    (0.0, embolden * 2.0),
+                ];
+                let offset_count = if faux_bold { offsets.len() } else { 1 };
+                for (dx, dy) in offsets.iter().take(offset_count) {
+                    let render = ShapedTextRender::new(
+                        PdfPoint::new(x + dx, run_y + dy),
+                        run.font_size,
+                        font,
+                        shaped,
+                        prepared_font,
+                    )
+                    .with_word_spacing(word_spacing)
+                    .with_shear(shear);
+                    if render.has_complex_offsets() {
+                        append_positioned_shaped_text(content, render);
+                    } else {
+                        append_tj_shaped_text(content, render);
+                    }
+                }
+            } else {
+                let encoded = encode_pdf_text(&run.text);
+                content.push_str(&format!(
+                    "1 0 0 1 {} {} Tm\n",
+                    format_pdf_number(x),
+                    format_pdf_number(run_y),
+                ));
+                content.push_str(&format!("({encoded}) Tj\n"));
+            }
+            x += run_width;
+        }
+    }
+    content.push_str("ET\n");
+    true
+}
+
 /// Baseline shift (PDF points, up positive) for a text run's `vertical-align`.
 ///
 /// css2 §10.8.1: `super`/`sub` move a text run's baseline up/down by a fraction
@@ -13832,37 +14246,198 @@ fn render_border_image_linear_gradient(
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
 ) {
-    let strips = [
-        (x, y + height - border_top, width, border_top),
-        (x + width - border_right, y, border_right, height),
-        (x, y, width, border_bottom),
-        (x, y, border_left, height),
-    ];
     let mut gradient = gradient.clone();
     gradient.layer_box.border_image = false;
     gradient.layer_box.size = None;
     gradient.layer_box.position = None;
     gradient.layer_box.repeat = None;
-    for (cx, cy, cw, ch) in strips {
-        if cw <= 0.0 || ch <= 0.0 {
-            continue;
+
+    if gradient_requires_raster(&gradient.stops) {
+        let strips = [
+            (x, y + height - border_top, width, border_top),
+            (x + width - border_right, y, border_right, height),
+            (x, y, width, border_bottom),
+            (x, y, border_left, height),
+        ];
+        for (cx, cy, cw, ch) in strips {
+            if cw <= 0.0 || ch <= 0.0 {
+                continue;
+            }
+            content.push_str("q\n");
+            content.push_str(&format!("{cx} {cy} {cw} {ch} re W n\n"));
+            render_linear_gradient(
+                content,
+                &gradient,
+                x,
+                y,
+                width,
+                height,
+                shadings,
+                shading_counter,
+                pdf_writer,
+                page_images,
+            );
+            content.push_str("Q\n");
         }
-        content.push_str("q\n");
-        content.push_str(&format!("{cx} {cy} {cw} {ch} re W n\n"));
-        render_linear_gradient(
-            content,
-            &gradient,
-            x,
-            y,
-            width,
-            height,
-            shadings,
-            shading_counter,
-            pdf_writer,
-            page_images,
-        );
-        content.push_str("Q\n");
+        return;
     }
+
+    render_border_image_gradient_edge(
+        content,
+        &gradient,
+        x,
+        y,
+        width,
+        height,
+        x,
+        y + height - border_top,
+        width,
+        border_top,
+        x,
+        y + height,
+        x + width,
+        y + height,
+        x + border_left,
+        y + height - border_top / 2.0,
+        x + width - border_right,
+        y + height - border_top / 2.0,
+        shadings,
+        shading_counter,
+    );
+    render_border_image_gradient_edge(
+        content,
+        &gradient,
+        x,
+        y,
+        width,
+        height,
+        x + width - border_right,
+        y,
+        border_right,
+        height,
+        x + width,
+        y,
+        x + width,
+        y + height,
+        x + width - border_right / 2.0,
+        y + border_bottom,
+        x + width - border_right / 2.0,
+        y + height - border_top,
+        shadings,
+        shading_counter,
+    );
+    render_border_image_gradient_edge(
+        content,
+        &gradient,
+        x,
+        y,
+        width,
+        height,
+        x,
+        y,
+        width,
+        border_bottom,
+        x,
+        y,
+        x + width,
+        y,
+        x + border_left,
+        y + border_bottom / 2.0,
+        x + width - border_right,
+        y + border_bottom / 2.0,
+        shadings,
+        shading_counter,
+    );
+    render_border_image_gradient_edge(
+        content,
+        &gradient,
+        x,
+        y,
+        width,
+        height,
+        x,
+        y,
+        border_left,
+        height,
+        x,
+        y,
+        x,
+        y + height,
+        x + border_left / 2.0,
+        y + border_bottom,
+        x + border_left / 2.0,
+        y + height - border_top,
+        shadings,
+        shading_counter,
+    );
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_border_image_gradient_edge(
+    content: &mut String,
+    gradient: &LinearGradient,
+    source_x: f32,
+    source_y: f32,
+    source_w: f32,
+    source_h: f32,
+    clip_x: f32,
+    clip_y: f32,
+    clip_w: f32,
+    clip_h: f32,
+    sample_x0: f32,
+    sample_y0: f32,
+    sample_x1: f32,
+    sample_y1: f32,
+    shade_x0: f32,
+    shade_y0: f32,
+    shade_x1: f32,
+    shade_y1: f32,
+    shadings: &mut Vec<ShadingEntry>,
+    shading_counter: &mut usize,
+) {
+    if clip_w <= 0.0 || clip_h <= 0.0 {
+        return;
+    }
+    let c0 = sample_linear_gradient_rgb(
+        gradient, source_x, source_y, source_w, source_h, sample_x0, sample_y0,
+    );
+    let c1 = sample_linear_gradient_rgb(
+        gradient, source_x, source_y, source_w, source_h, sample_x1, sample_y1,
+    );
+    let name = push_axial_shading(
+        shadings,
+        shading_counter,
+        [shade_x0, shade_y0, shade_x1, shade_y1],
+        vec![(0.0, c0), (1.0, c1)],
+    );
+    content.push_str("q\n");
+    content.push_str(&format!("{clip_x} {clip_y} {clip_w} {clip_h} re W n\n"));
+    content.push_str(&format!("/{name} sh\n"));
+    content.push_str("Q\n");
+}
+
+#[allow(clippy::too_many_arguments)]
+fn sample_linear_gradient_rgb(
+    gradient: &LinearGradient,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+    sample_x: f32,
+    sample_y: f32,
+) -> (f32, f32, f32) {
+    let theta = gradient.angle.to_radians();
+    let dx = theta.sin();
+    let dy = theta.cos();
+    let half = (width * dx.abs() + height * dy.abs()).max(1e-6) / 2.0;
+    let cx = x + width / 2.0;
+    let cy = y + height / 2.0;
+    let proj = (sample_x - cx) * dx + (sample_y - cy) * dy;
+    let t = (proj + half) / (2.0 * half);
+    let basis = linear_gradient_line_length(gradient.angle, width, height);
+    let stops = resolve_gradient_stop_positions(&gradient.stops, basis);
+    let (r, g, b, _) = sample_rgba_gradient_stops(&stops, t, gradient.repeating);
+    (r, g, b)
 }
 
 fn linear_gradient_line_length(angle: f32, width: f32, height: f32) -> f32 {

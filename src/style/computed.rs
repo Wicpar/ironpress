@@ -1411,6 +1411,33 @@ pub enum BorderStyle {
     None,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum BorderBevelKind {
+    Groove,
+    Ridge,
+    Inset,
+    Outset,
+}
+
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct BorderBevelSides {
+    pub top: Option<BorderBevelKind>,
+    pub right: Option<BorderBevelKind>,
+    pub bottom: Option<BorderBevelKind>,
+    pub left: Option<BorderBevelKind>,
+}
+
+impl BorderBevelSides {
+    fn uniform(kind: Option<BorderBevelKind>) -> Self {
+        Self {
+            top: kind,
+            right: kind,
+            bottom: kind,
+            left: kind,
+        }
+    }
+}
+
 /// A single border side with width, color, and style.
 #[derive(Debug, Clone, Copy, Default)]
 pub struct BorderSide {
@@ -1620,6 +1647,7 @@ pub struct ComputedStyle {
     /// initial `auto` value (the default page). Not inherited.
     pub page_name: Option<String>,
     pub border: BorderSides,
+    pub(crate) border_bevel: BorderBevelSides,
     pub display: Display,
     pub width: Option<f32>,
     /// css-sizing-3 § 5.1 intrinsic `width` keyword (`min-content` / `max-content`
@@ -2062,6 +2090,7 @@ impl Default for ComputedStyle {
             break_inside_avoid: false,
             page_name: None,
             border: BorderSides::default(),
+            border_bevel: BorderBevelSides::default(),
             display: Display::Block,
             width: None,
             width_keyword: None,
@@ -2324,6 +2353,7 @@ pub fn compute_style_with_context(
 
     // Border does not inherit in CSS — reset for all elements
     style.border = BorderSides::default();
+    style.border_bevel = BorderBevelSides::default();
 
     // Reset non-inherited sizing and opacity properties
     style.width = None;
@@ -2557,6 +2587,7 @@ pub fn compute_style_with_context(
     //      default), leaving the side with `color: None`. Such a side must paint
     //      in the element's `color`, not the black fallback.
     resolve_current_color(&mut style);
+    apply_border_bevel_alpha(&mut style);
 
     style
 }
@@ -2612,6 +2643,35 @@ fn resolve_current_color(style: &mut ComputedStyle) {
     }
 }
 
+fn border_bevel_alpha(kind: BorderBevelKind) -> u8 {
+    match kind {
+        BorderBevelKind::Groove => 251,
+        BorderBevelKind::Ridge => 252,
+        BorderBevelKind::Inset => 253,
+        BorderBevelKind::Outset => 254,
+    }
+}
+
+fn apply_border_bevel_alpha(style: &mut ComputedStyle) {
+    let markers = style.border_bevel;
+    let apply = |side: &mut BorderSide, marker: Option<BorderBevelKind>| {
+        if let Some(kind) = marker {
+            if side.width > 0.0
+                && side.style != BorderStyle::None
+                && let Some(mut color) = side.color
+            {
+                color.a = border_bevel_alpha(kind);
+                side.color = Some(color);
+                side.style = BorderStyle::Solid;
+            }
+        }
+    };
+    apply(&mut style.border.top, markers.top);
+    apply(&mut style.border.right, markers.right);
+    apply(&mut style.border.bottom, markers.bottom);
+    apply(&mut style.border.left, markers.left);
+}
+
 /// Compute the style for a `::before` or `::after` pseudo-element.
 ///
 /// The pseudo-element inherits all inherited properties from the originating
@@ -2662,6 +2722,7 @@ pub fn compute_pseudo_element_style(
     style.padding = EdgeSizes::default();
     style.reset_background();
     style.border = BorderSides::default();
+    style.border_bevel = BorderBevelSides::default();
     style.width = None;
     style.width_keyword = None;
     style.height = None;
@@ -2965,6 +3026,7 @@ fn reset_to_initial(style: &mut ComputedStyle, property: &str) {
         }
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
             style.border = default.border;
+            style.border_bevel = default.border_bevel;
         }
         "float" => style.float = default.float,
         "clear" => style.clear = default.clear,
@@ -3188,6 +3250,7 @@ fn restore_from_parent(style: &mut ComputedStyle, property: &str, parent: &Compu
         }
         "border" | "border-top" | "border-right" | "border-bottom" | "border-left" => {
             style.border = parent.border;
+            style.border_bevel = parent.border_bevel;
         }
         "float" => style.float = parent.float,
         "clear" => style.clear = parent.clear,
@@ -4325,57 +4388,62 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
     // Border shorthand: "1px solid black"
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "border") {
         let k = resolve_embedded_vars(k, &style.custom_properties);
-        let (w, c, bs) = parse_border_shorthand(&k, style.font_size);
+        let (w, c, bs, bevel) = parse_border_shorthand(&k, style.font_size);
         style.border = BorderSides::uniform_styled(w, c, bs);
+        style.border_bevel = BorderBevelSides::uniform(bevel);
     }
 
     // Per-side border shorthands
     for (prop, setter) in &[
         (
             "border-top",
-            (|s: &mut ComputedStyle, w, c, bs| {
+            (|s: &mut ComputedStyle, w, c, bs, bevel| {
                 s.border.top = BorderSide {
                     width: w,
                     color: c,
                     style: bs,
                 };
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle),
+                s.border_bevel.top = bevel;
+            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-right",
-            (|s: &mut ComputedStyle, w, c, bs| {
+            (|s: &mut ComputedStyle, w, c, bs, bevel| {
                 s.border.right = BorderSide {
                     width: w,
                     color: c,
                     style: bs,
                 };
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle),
+                s.border_bevel.right = bevel;
+            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-bottom",
-            (|s: &mut ComputedStyle, w, c, bs| {
+            (|s: &mut ComputedStyle, w, c, bs, bevel| {
                 s.border.bottom = BorderSide {
                     width: w,
                     color: c,
                     style: bs,
                 };
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle),
+                s.border_bevel.bottom = bevel;
+            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-left",
-            (|s: &mut ComputedStyle, w, c, bs| {
+            (|s: &mut ComputedStyle, w, c, bs, bevel| {
                 s.border.left = BorderSide {
                     width: w,
                     color: c,
                     style: bs,
                 };
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle),
+                s.border_bevel.left = bevel;
+            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
     ] {
         if let Some(CssValue::Keyword(k)) = get_non_special(map, prop) {
             let k = resolve_embedded_vars(k, &style.custom_properties);
-            let (w, c, bs) = parse_border_shorthand(&k, style.font_size);
-            setter(style, w, c, bs);
+            let (w, c, bs, bevel) = parse_border_shorthand(&k, style.font_size);
+            setter(style, w, c, bs, bevel);
         }
     }
 
@@ -4580,16 +4648,21 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
     // edges (e.g. `border-style: solid` paired with per-side `border-*-width`).
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "border-style") {
         if let Some(styles) = parse_border_style_shorthand_values(k) {
-            style.border.top.style = styles[0];
-            style.border.right.style = styles[1];
-            style.border.bottom.style = styles[2];
-            style.border.left.style = styles[3];
+            style.border.top.style = styles[0].0;
+            style.border.right.style = styles[1].0;
+            style.border.bottom.style = styles[2].0;
+            style.border.left.style = styles[3].0;
+            style.border_bevel.top = styles[0].1;
+            style.border_bevel.right = styles[1].1;
+            style.border_bevel.bottom = styles[2].1;
+            style.border_bevel.left = styles[3].1;
         } else {
-            let bs = parse_border_style_keyword(k);
+            let (bs, bevel) = parse_border_style_keyword_with_bevel(k);
             style.border.top.style = bs;
             style.border.right.style = bs;
             style.border.bottom.style = bs;
             style.border.left.style = bs;
+            style.border_bevel = BorderBevelSides::uniform(bevel);
         }
     }
 
@@ -4649,27 +4722,36 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
     for (prop, setter) in &[
         (
             "border-top-style",
-            (|s: &mut ComputedStyle, bs| s.border.top.style = bs)
-                as fn(&mut ComputedStyle, BorderStyle),
+            (|s: &mut ComputedStyle, bs, bevel| {
+                s.border.top.style = bs;
+                s.border_bevel.top = bevel;
+            }) as fn(&mut ComputedStyle, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-right-style",
-            (|s: &mut ComputedStyle, bs| s.border.right.style = bs)
-                as fn(&mut ComputedStyle, BorderStyle),
+            (|s: &mut ComputedStyle, bs, bevel| {
+                s.border.right.style = bs;
+                s.border_bevel.right = bevel;
+            }) as fn(&mut ComputedStyle, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-bottom-style",
-            (|s: &mut ComputedStyle, bs| s.border.bottom.style = bs)
-                as fn(&mut ComputedStyle, BorderStyle),
+            (|s: &mut ComputedStyle, bs, bevel| {
+                s.border.bottom.style = bs;
+                s.border_bevel.bottom = bevel;
+            }) as fn(&mut ComputedStyle, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-left-style",
-            (|s: &mut ComputedStyle, bs| s.border.left.style = bs)
-                as fn(&mut ComputedStyle, BorderStyle),
+            (|s: &mut ComputedStyle, bs, bevel| {
+                s.border.left.style = bs;
+                s.border_bevel.left = bevel;
+            }) as fn(&mut ComputedStyle, BorderStyle, Option<BorderBevelKind>),
         ),
     ] {
         if let Some(CssValue::Keyword(k)) = get_non_special(map, prop) {
-            setter(style, parse_border_style_keyword(k));
+            let (bs, bevel) = parse_border_style_keyword_with_bevel(k);
+            setter(style, bs, bevel);
         }
     }
 
@@ -5638,7 +5720,9 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
             style.background_origin = parse_background_origin_value(&part);
         }
     }
-    if let Some(CssValue::Keyword(k)) = get_non_special(map, "background-clip") {
+    if let Some(CssValue::Keyword(k)) = get_non_special(map, "background-clip")
+        .or_else(|| get_non_special(map, "-webkit-background-clip"))
+    {
         if let Some(part) = nth_layer_value(k, raster_layer_index.unwrap_or(0)) {
             style.background_clip = parse_background_clip_value(&part);
         }
@@ -10124,12 +10208,21 @@ fn parse_border_radius_shorthand(
 /// Map a CSS `border-style` keyword to a `BorderStyle`. Unknown keywords keep
 /// the CSS-wide default (`solid`); `none`/`hidden` suppress the edge.
 fn parse_border_style_keyword(keyword: &str) -> BorderStyle {
+    parse_border_style_keyword_with_bevel(keyword).0
+}
+
+fn parse_border_style_keyword_with_bevel(keyword: &str) -> (BorderStyle, Option<BorderBevelKind>) {
     match keyword.trim().to_ascii_lowercase().as_str() {
-        "dashed" => BorderStyle::Dashed,
-        "dotted" => BorderStyle::Dotted,
-        "double" => BorderStyle::Double,
-        "none" | "hidden" => BorderStyle::None,
-        _ => BorderStyle::Solid,
+        "solid" => (BorderStyle::Solid, None),
+        "dashed" => (BorderStyle::Dashed, None),
+        "dotted" => (BorderStyle::Dotted, None),
+        "double" => (BorderStyle::Double, None),
+        "groove" => (BorderStyle::Solid, Some(BorderBevelKind::Groove)),
+        "ridge" => (BorderStyle::Solid, Some(BorderBevelKind::Ridge)),
+        "inset" => (BorderStyle::Solid, Some(BorderBevelKind::Inset)),
+        "outset" => (BorderStyle::Solid, Some(BorderBevelKind::Outset)),
+        "none" | "hidden" => (BorderStyle::None, None),
+        _ => (BorderStyle::Solid, None),
     }
 }
 
@@ -10139,7 +10232,7 @@ fn parse_border_style_keyword(keyword: &str) -> BorderStyle {
 /// style without a width (e.g. `column-rule: dotted blue`) still paints at the
 /// medium width rather than the 0 the border tokenizer leaves it at.
 fn parse_column_rule_shorthand(k: &str, font_size: f32) -> BorderSide {
-    let (mut width, color, style) = parse_border_shorthand(k, font_size);
+    let (mut width, color, style, _) = parse_border_shorthand(k, font_size);
     if width <= 0.0 && style != BorderStyle::None {
         width = MEDIUM_RULE_WIDTH_PT;
     }
@@ -10334,16 +10427,24 @@ fn parse_border_color_shorthand_values(raw: &str) -> Option<[Color; 4]> {
     expand_box_values(&values)
 }
 
-fn parse_border_style_shorthand_values(raw: &str) -> Option<[BorderStyle; 4]> {
+fn parse_border_style_shorthand_values(
+    raw: &str,
+) -> Option<[(BorderStyle, Option<BorderBevelKind>); 4]> {
     let parts = split_css_whitespace(raw);
     if parts.is_empty() || parts.len() > 4 {
         return None;
     }
-    let values: Vec<BorderStyle> = parts.into_iter().map(parse_border_style_keyword).collect();
+    let values: Vec<(BorderStyle, Option<BorderBevelKind>)> = parts
+        .into_iter()
+        .map(parse_border_style_keyword_with_bevel)
+        .collect();
     expand_box_values(&values)
 }
 
-fn parse_border_shorthand(k: &str, font_size: f32) -> (f32, Option<Color>, BorderStyle) {
+fn parse_border_shorthand(
+    k: &str,
+    font_size: f32,
+) -> (f32, Option<Color>, BorderStyle, Option<BorderBevelKind>) {
     // A function color such as `rgba(38, 50, 56, 0.35)` contains internal spaces,
     // so pull it out (and remove it from the string) before tokenizing on
     // whitespace. Otherwise the rgba(...) would shatter into several "words" and
@@ -10352,13 +10453,15 @@ fn parse_border_shorthand(k: &str, font_size: f32) -> (f32, Option<Color>, Borde
     let parts: Vec<&str> = rest.split_whitespace().collect();
     let mut width = 0.0f32;
     let mut border_style = BorderStyle::Solid;
+    let mut border_bevel = None;
     for part in &parts {
         match *part {
-            "dashed" => border_style = BorderStyle::Dashed,
-            "dotted" => border_style = BorderStyle::Dotted,
-            "double" => border_style = BorderStyle::Double,
-            "none" | "hidden" => border_style = BorderStyle::None,
-            "solid" => border_style = BorderStyle::Solid,
+            "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset"
+            | "none" | "hidden" | "solid" => {
+                let (style, bevel) = parse_border_style_keyword_with_bevel(part);
+                border_style = style;
+                border_bevel = bevel;
+            }
             // CSS keyword border widths.
             "thin" => width = 0.75,
             "medium" => width = 2.25,
@@ -10376,7 +10479,7 @@ fn parse_border_shorthand(k: &str, font_size: f32) -> (f32, Option<Color>, Borde
         }
     }
     let color = func_color.or_else(|| parts.last().and_then(|last| parse_border_color(last)));
-    (width, color, border_style)
+    (width, color, border_style, border_bevel)
 }
 
 /// Parse a single border color token using the shared CSS color parser, which
