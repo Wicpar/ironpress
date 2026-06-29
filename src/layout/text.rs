@@ -919,7 +919,7 @@ pub(crate) fn split_word_to_fit(
 // ---------------------------------------------------------------------------
 
 fn expand_leader_placeholders(
-    mut runs: Vec<TextRun>,
+    runs: Vec<TextRun>,
     max_width: f32,
     fonts: &HashMap<String, TtfFont>,
 ) -> Vec<TextRun> {
@@ -955,41 +955,129 @@ fn expand_leader_placeholders(
         0.0
     };
 
-    for run in &mut runs {
-        if run.text.contains(LEADER_PLACEHOLDER_START) {
-            run.text = replace_leader_placeholders(&run.text, available, run, fonts);
-        }
-    }
-    runs
+    runs.into_iter()
+        .flat_map(|run| {
+            if run.text.contains(LEADER_PLACEHOLDER_START) && run.inline_box.is_none() {
+                expand_leader_run(run, available, fonts)
+            } else {
+                vec![run]
+            }
+        })
+        .collect()
 }
 
 fn remove_leader_placeholders(text: &str) -> String {
     replace_leader_placeholders_raw(text, |_| String::new())
 }
 
-fn replace_leader_placeholders(
-    text: &str,
+fn expand_leader_run(
+    run: TextRun,
+    available: f32,
+    fonts: &HashMap<String, TtfFont>,
+) -> Vec<TextRun> {
+    let mut out = Vec::new();
+    let mut rest = run.text.as_str();
+    while let Some(start) = rest.find(LEADER_PLACEHOLDER_START) {
+        push_leader_text_run(&mut out, &run, &rest[..start]);
+        let payload_start = start + LEADER_PLACEHOLDER_START.len();
+        let Some(end_rel) = rest[payload_start..].find(LEADER_PLACEHOLDER_END) else {
+            push_leader_text_run(&mut out, &run, &rest[start..]);
+            return out;
+        };
+        let pattern = &rest[payload_start..payload_start + end_rel];
+        let (leading_space, leader, trailing_space) =
+            leader_replacement_parts(pattern, available, &run, fonts);
+        if leading_space > 0.0 {
+            out.push(leader_spacer_run(&run, leading_space));
+        }
+        push_leader_text_run(&mut out, &run, &leader);
+        if trailing_space > 0.0 {
+            out.push(leader_spacer_run(&run, trailing_space));
+        }
+        rest = &rest[payload_start + end_rel + LEADER_PLACEHOLDER_END.len()..];
+    }
+    push_leader_text_run(&mut out, &run, rest);
+    out
+}
+
+fn push_leader_text_run(out: &mut Vec<TextRun>, template: &TextRun, text: &str) {
+    if text.is_empty() {
+        return;
+    }
+    out.push(TextRun {
+        text: text.to_string(),
+        ..template.clone()
+    });
+}
+
+fn leader_spacer_run(template: &TextRun, width: f32) -> TextRun {
+    TextRun {
+        text: String::new(),
+        background_color: None,
+        padding: (0.0, 0.0),
+        border_radius: 0.0,
+        inline_box: Some(Box::new(InlineBox {
+            width,
+            height: 0.0,
+            margin_left: 0.0,
+            margin_right: 0.0,
+            background_color: None,
+            border: LayoutBorder::default(),
+            border_radius: 0.0,
+            padding_top: 0.0,
+            padding_left: 0.0,
+            vertical_align: template.vertical_align,
+            baseline_ascent: Some(0.0),
+            lines: Vec::new(),
+            image: None,
+            rel_offset_x: 0.0,
+            rel_offset_y: 0.0,
+        })),
+        ..template.clone()
+    }
+}
+
+fn leader_replacement_parts(
+    pattern: &str,
     available: f32,
     run: &TextRun,
     fonts: &HashMap<String, TtfFont>,
-) -> String {
-    replace_leader_placeholders_raw(text, |pattern| {
-        let pattern = if pattern.is_empty() { "." } else { pattern };
-        let pattern_width = estimate_word_width(
-            pattern,
+) -> (f32, String, f32) {
+    let pattern = if pattern.is_empty() { "." } else { pattern };
+    let pattern_width = estimate_word_width(
+        pattern,
+        run.font_size,
+        &run.font_family,
+        run.bold,
+        run.italic,
+        fonts,
+    );
+    let max_count = if pattern_width > 0.0 && available > 0.0 {
+        (available / pattern_width).floor() as usize
+    } else {
+        0
+    }
+    .min(512);
+    let hidden_count = usize::from(max_count > 0);
+    let mut count = max_count.saturating_sub(hidden_count);
+    while count > 0 {
+        let candidate = pattern.repeat(count);
+        let width = estimate_word_width(
+            &candidate,
             run.font_size,
             &run.font_family,
             run.bold,
             run.italic,
             fonts,
         );
-        let count = if pattern_width > 0.0 && available > 0.0 {
-            (available / pattern_width).round() as usize
-        } else {
-            16
-        };
-        pattern.repeat(count.clamp(1, 512))
-    })
+        if width <= available {
+            let hidden = pattern_width * hidden_count as f32;
+            let leading = (available - width - hidden).max(0.0);
+            return (leading, candidate, hidden.min((available - width).max(0.0)));
+        }
+        count -= 1;
+    }
+    (0.0, String::new(), available.max(0.0))
 }
 
 fn replace_leader_placeholders_raw<F>(text: &str, mut replacement: F) -> String

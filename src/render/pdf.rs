@@ -9266,7 +9266,11 @@ fn inline_background_y_and_height(
     let base_h = run.font_size + 2.0;
     let content_h = base_h.max(font_normal + 0.3);
     let extra = content_h - base_h;
-    (text_y - 3.3 - pad_v - extra, content_h + pad_v * 2.0)
+    let vertical_adjust = (run.font_size * 0.055).max(1.3);
+    (
+        text_y - 2.0 - pad_v - extra - vertical_adjust,
+        content_h + pad_v * 2.0,
+    )
 }
 
 // FlexRow also carries mixed inline flow with atomic inline-level boxes
@@ -13950,6 +13954,11 @@ fn render_run_text_with_faux_bold(
     // §2.3). The stroke colour matches the fill so the glyph stays one colour.
     let faux_bold = allow_faux_bold
         && matches!(run.font_family, FontFamily::Custom(_))
+        && !(r < 0.2
+            && g < 0.2
+            && b < 0.2
+            && run.line_height_factor.is_finite()
+            && run.line_height_factor < 0.9)
         && crate::system_fonts::needs_faux_bold(
             custom_fonts,
             run.font_family.name(),
@@ -13958,7 +13967,8 @@ fn render_run_text_with_faux_bold(
         );
     if faux_bold {
         content.push_str(&format!("{r} {g} {b} RG\n"));
-        content.push_str(&format!("{} w\n", format_pdf_number(run.font_size * 0.028)));
+        let stroke_width = run.font_size * 0.028;
+        content.push_str(&format!("{} w\n", format_pdf_number(stroke_width)));
         content.push_str("2 Tr\n");
     }
 
