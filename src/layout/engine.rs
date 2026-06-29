@@ -7,7 +7,7 @@ use crate::style::computed::{
     Display, Float, FontFamily, FontStyle, FontWeight, LinearGradient, ListStylePosition,
     ListStyleType, Overflow, Position, RadialGradient, TARGET_PLACEHOLDER_END,
     TARGET_PLACEHOLDER_START, TextAlign, Transform, TransformBox, TransformOrigin, VerticalAlign,
-    Visibility, compute_pseudo_element_style, compute_style_with_context,
+    Visibility, WritingMode, compute_pseudo_element_style, compute_style_with_context,
 };
 use crate::types::{Margin, PageSize};
 use std::cell::Cell;
@@ -4241,10 +4241,22 @@ pub(crate) fn flatten_element(
         let block_heading_level = heading_level(el.tag);
 
         if !runs.is_empty() {
+            let effective_writing_mode = if style.writing_mode == WritingMode::HorizontalTb {
+                parent_style.writing_mode
+            } else {
+                style.writing_mode
+            };
+            let vertical_marker_match =
+                effective_writing_mode == WritingMode::VerticalRl && style.marker_side_match_parent;
+            let vertical_inline_extent = if vertical_marker_match {
+                style.height.or(parent_style.height).unwrap_or(available_height)
+            } else {
+                inner_width
+            };
             let lines = wrap_text_runs(
                 runs,
                 TextWrapOptions::new(
-                    inner_width,
+                    vertical_inline_extent,
                     style.font_size,
                     resolved_line_height_factor(&style, env.fonts),
                     style.overflow_wrap,
@@ -4259,6 +4271,36 @@ pub(crate) fn flatten_element(
                 .with_text_indent(style.text_indent - marker_hang),
                 env.fonts,
             );
+            let vertical_column_advance = if vertical_marker_match {
+                lines.iter().map(|line| line.height).fold(0.0_f32, f32::max)
+            } else {
+                0.0
+            };
+            let vertical_item_index = if vertical_marker_match {
+                match list_ctx {
+                    Some(ListContext::Ordered { index, step, .. }) => {
+                        ((*index - *step).max(1) - 1) as f32
+                    }
+                    _ => 0.0,
+                }
+            } else {
+                0.0
+            };
+            let vertical_column_offset = if vertical_marker_match {
+                vertical_item_index * (vertical_column_advance + style.margin.bottom)
+            } else {
+                0.0
+            };
+            let vertical_flow_rewind = if vertical_marker_match {
+                vertical_item_index * (vertical_inline_extent + style.margin.bottom)
+            } else {
+                0.0
+            };
+            let vertical_marker_offset = if vertical_marker_match {
+                marker_hang
+            } else {
+                0.0
+            };
             let BackgroundFields {
                 gradient: background_gradient,
                 radial_gradient: background_radial_gradient,
@@ -4279,20 +4321,18 @@ pub(crate) fn flatten_element(
                 margin_top: style.margin.top + extra_margin_top,
                 margin_bottom: style.margin.bottom + extra_margin_bottom,
                 text_align: style.text_align,
-                writing_mode: if style.writing_mode
-                    == crate::style::computed::WritingMode::HorizontalTb
-                {
-                    parent_style.writing_mode
-                } else {
-                    style.writing_mode
-                },
+                writing_mode: effective_writing_mode,
                 background_color: style.background_color.map(|c| c.to_f32_rgba()),
                 padding_top: style.padding.top,
                 padding_bottom: style.padding.bottom,
                 padding_left: style.padding.left,
                 padding_right: style.padding.right,
                 border: LayoutBorder::from_computed(&style.border),
-                block_width: Some(style.width.unwrap_or(available_width)),
+                block_width: Some(if vertical_marker_match {
+                    vertical_column_advance
+                } else {
+                    style.width.unwrap_or(available_width)
+                }),
                 block_height: style.height,
                 opacity: style.opacity,
                 mix_blend_mode: style.mix_blend_mode,
@@ -4300,9 +4340,19 @@ pub(crate) fn flatten_element(
                 float: style.float,
                 clear: style.clear,
                 position: style.position,
-                offset_top: style.top.unwrap_or(0.0),
-                offset_left: style.left.unwrap_or(0.0) + list_indent,
-                offset_bottom: style.bottom.unwrap_or(0.0),
+                offset_top: style.top.unwrap_or(0.0) + vertical_marker_offset - vertical_flow_rewind,
+                offset_left: if vertical_marker_match {
+                    style.left.unwrap_or(0.0)
+                        + (available_width - vertical_column_advance - vertical_column_offset)
+                            .max(0.0)
+                } else {
+                    style.left.unwrap_or(0.0) + list_indent
+                },
+                offset_bottom: if vertical_marker_match {
+                    vertical_inline_extent
+                } else {
+                    style.bottom.unwrap_or(0.0)
+                },
                 offset_right: style.right.unwrap_or(0.0),
                 containing_block: None,
                 box_shadow: style.box_shadow.clone(),

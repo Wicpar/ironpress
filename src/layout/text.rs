@@ -6,8 +6,9 @@ use crate::parser::ttf::TtfFont;
 pub(crate) use crate::style::computed::OverflowWrap;
 use crate::style::computed::{
     BoxSizing, ComputedStyle, Display, Float, FontFamily, FontStyle, FontWeight,
-    IntrinsicWidthKeyword, Position, TARGET_PLACEHOLDER_START, TextDecorationStyle, VerticalAlign,
-    WhiteSpace, compute_style_with_context,
+    IntrinsicWidthKeyword, LEADER_PLACEHOLDER_END, LEADER_PLACEHOLDER_START, Position,
+    TARGET_PLACEHOLDER_START, TextDecorationStyle, VerticalAlign, WhiteSpace,
+    compute_style_with_context,
 };
 use std::collections::HashMap;
 
@@ -913,6 +914,102 @@ pub(crate) fn split_word_to_fit(
 // wrap_text_runs
 // ---------------------------------------------------------------------------
 
+fn expand_leader_placeholders(
+    mut runs: Vec<TextRun>,
+    max_width: f32,
+    fonts: &HashMap<String, TtfFont>,
+) -> Vec<TextRun> {
+    let leader_count: usize = runs
+        .iter()
+        .map(|run| run.text.matches(LEADER_PLACEHOLDER_START).count())
+        .sum();
+    if leader_count == 0 {
+        return runs;
+    }
+
+    let base_width: f32 = runs
+        .iter()
+        .map(|run| {
+            if let Some(inline) = run.inline_box.as_deref() {
+                inline.outer_width()
+            } else {
+                let text = remove_leader_placeholders(&run.text);
+                estimate_word_width(
+                    &text,
+                    run.font_size,
+                    &run.font_family,
+                    run.bold,
+                    run.italic,
+                    fonts,
+                )
+            }
+        })
+        .sum();
+    let available = if max_width.is_finite() && max_width < 100_000.0 {
+        (max_width - base_width).max(0.0) / leader_count as f32
+    } else {
+        0.0
+    };
+
+    for run in &mut runs {
+        if run.text.contains(LEADER_PLACEHOLDER_START) {
+            run.text = replace_leader_placeholders(&run.text, available, run, fonts);
+        }
+    }
+    runs
+}
+
+fn remove_leader_placeholders(text: &str) -> String {
+    replace_leader_placeholders_raw(text, |_| String::new())
+}
+
+fn replace_leader_placeholders(
+    text: &str,
+    available: f32,
+    run: &TextRun,
+    fonts: &HashMap<String, TtfFont>,
+) -> String {
+    replace_leader_placeholders_raw(text, |pattern| {
+        let pattern = if pattern.is_empty() { "." } else { pattern };
+        let pattern_width = estimate_word_width(
+            pattern,
+            run.font_size,
+            &run.font_family,
+            run.bold,
+            run.italic,
+            fonts,
+        );
+        let count = if pattern_width > 0.0 && available > 0.0 {
+            (available / pattern_width).round() as usize
+        } else {
+            16
+        };
+        pattern.repeat(count.clamp(1, 512))
+    })
+}
+
+fn replace_leader_placeholders_raw<F>(text: &str, mut replacement: F) -> String
+where
+    F: FnMut(&str) -> String,
+{
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(LEADER_PLACEHOLDER_START) {
+        out.push_str(&rest[..start]);
+        let payload_start = start + LEADER_PLACEHOLDER_START.len();
+        let Some(end_rel) = rest[payload_start..].find(LEADER_PLACEHOLDER_END) else {
+            out.push_str(&rest[start..]);
+            return out;
+        };
+        let payload = &rest[payload_start..payload_start + end_rel];
+        let replacement = replacement(payload);
+        out.push_str(&replacement);
+        rest = &rest[payload_start + end_rel + LEADER_PLACEHOLDER_END.len()..];
+    }
+    out.push_str(rest);
+    out
+}
+
 /// Simple text wrapping using character width estimation.
 /// Uses TTF metrics when a custom font is available.
 pub(crate) fn wrap_text_runs(
@@ -920,6 +1017,7 @@ pub(crate) fn wrap_text_runs(
     options: TextWrapOptions,
     fonts: &HashMap<String, TtfFont>,
 ) -> Vec<TextLine> {
+    let runs = expand_leader_placeholders(runs, options.max_width, fonts);
     let line_height_factor = options.line_height_factor.max(0.0);
     let mut lines: Vec<TextLine> = Vec::new();
     let mut current_runs: Vec<TextRun> = Vec::new();

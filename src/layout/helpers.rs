@@ -4,8 +4,8 @@ use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
     BackgroundClip, BackgroundOrigin, BackgroundPosition, BackgroundRepeat, BackgroundSize,
     BoxSizing, ComputedStyle, ConicGradient, ContentItem, Display, FontStyle, FontWeight,
-    IntrinsicWidthKeyword, LinearGradient, ListStyleType, Position, RadialGradient, VerticalAlign,
-    Visibility, compute_style_with_context,
+    IntrinsicWidthKeyword, LEADER_PLACEHOLDER_END, LEADER_PLACEHOLDER_START, LinearGradient,
+    ListStyleType, Position, RadialGradient, VerticalAlign, Visibility, compute_style_with_context,
 };
 use std::collections::HashMap;
 
@@ -1244,7 +1244,7 @@ pub(crate) fn format_counter_value(style: &ListStyleType, value: i32) -> String 
         ListStyleType::LowerRoman => to_roman_lower(n),
         ListStyleType::UpperRoman => to_roman_upper(n),
         ListStyleType::CjkDecimal => to_cjk_decimal(n),
-        ListStyleType::CounterStyle(custom) => format_custom_counter_marker(custom, value),
+        ListStyleType::CounterStyle(custom) => format_custom_counter_text(custom, value),
         // decimal, disc, circle, square, none → plain decimal text.
         _ => value.to_string(),
     }
@@ -1253,6 +1253,18 @@ pub(crate) fn format_counter_value(style: &ListStyleType, value: i32) -> String 
 fn format_custom_counter_marker(
     style: &crate::style::computed::CounterStyle,
     value: i32,
+) -> String {
+    format_custom_counter(style, value, true)
+}
+
+fn format_custom_counter_text(style: &crate::style::computed::CounterStyle, value: i32) -> String {
+    format_custom_counter(style, value, false)
+}
+
+fn format_custom_counter(
+    style: &crate::style::computed::CounterStyle,
+    value: i32,
+    include_affixes: bool,
 ) -> String {
     use crate::style::computed::CounterStyleSystem;
 
@@ -1281,7 +1293,11 @@ fn format_custom_counter_marker(
             style.negative.0, representation, style.negative.1
         );
     }
-    format!("{}{}{}", style.prefix, representation, style.suffix)
+    if include_affixes {
+        format!("{}{}{}", style.prefix, representation, style.suffix)
+    } else {
+        representation
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -1357,9 +1373,9 @@ pub(crate) fn resolve_content_with_quotes(
                 } else {
                     pattern.as_str()
                 };
-                for _ in 0..16 {
-                    result.push_str(pattern);
-                }
+                result.push_str(LEADER_PLACEHOLDER_START);
+                result.push_str(pattern);
+                result.push_str(LEADER_PLACEHOLDER_END);
             }
             ContentItem::OpenQuote => {
                 result.push_str(&open_glyph(depth));

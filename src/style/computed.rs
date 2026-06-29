@@ -1385,6 +1385,8 @@ pub enum ContentItem {
 
 pub(crate) const TARGET_PLACEHOLDER_START: &str = "\u{1e}ip-target:";
 pub(crate) const TARGET_PLACEHOLDER_END: &str = "\u{1f}";
+pub(crate) const LEADER_PLACEHOLDER_START: &str = "\u{1d}ip-leader:";
+pub(crate) const LEADER_PLACEHOLDER_END: &str = "\u{1d}";
 
 /// CSS box-shadow value.
 #[derive(Debug, Clone, Copy)]
@@ -1884,6 +1886,7 @@ pub struct ComputedStyle {
     pub custom_properties: HashMap<String, String>,
     pub list_style_type: ListStyleType,
     pub list_style_position: ListStylePosition,
+    pub marker_side_match_parent: bool,
     /// CSS `list-style-image` source (`url(...)`), if any. When set and
     /// decodable, it replaces the `list-style-type` marker glyph (css-lists-3
     /// §3.1). `None` means "use the list-style-type marker".
@@ -2220,6 +2223,7 @@ impl Default for ComputedStyle {
             custom_properties: HashMap::new(),
             list_style_type: ListStyleType::Disc,
             list_style_position: ListStylePosition::Outside,
+            marker_side_match_parent: false,
             list_style_image: None,
             content: Vec::new(),
             quotes: None,
@@ -2581,6 +2585,7 @@ pub fn compute_style_with_context(
         add_filter_drop_shadow_box_shadow(&mut style);
     }
     resolve_custom_counter_style(&mut style.list_style_type, rules);
+    resolve_custom_counter_styles_in_content(&mut style.content, rules);
 
     // Resolve `currentColor`. Two cases collapse here, both needing the
     // element's now-finalized `color`:
@@ -2877,6 +2882,7 @@ pub fn compute_pseudo_element_style(
     }
     sync_line_height_from_absolute(&mut style);
     resolve_custom_counter_style(&mut style.list_style_type, rules);
+    resolve_custom_counter_styles_in_content(&mut style.content, rules);
 
     // Resolve any `currentColor` sentinels against the pseudo-element's color.
     resolve_current_color(&mut style);
@@ -3111,6 +3117,7 @@ fn reset_to_initial(style: &mut ComputedStyle, property: &str) {
         "background" => style.reset_background(),
         "list-style-type" => style.list_style_type = default.list_style_type.clone(),
         "list-style-position" => style.list_style_position = default.list_style_position,
+        "marker-side" => style.marker_side_match_parent = default.marker_side_match_parent,
         "list-style-image" => style.list_style_image = default.list_style_image.clone(),
         "content" => style.content = default.content,
         "counter-reset" => style.counter_reset = default.counter_reset,
@@ -3343,6 +3350,7 @@ fn restore_from_parent(style: &mut ComputedStyle, property: &str, parent: &Compu
         "background" => style.inherit_background(parent),
         "list-style-type" => style.list_style_type = parent.list_style_type.clone(),
         "list-style-position" => style.list_style_position = parent.list_style_position,
+        "marker-side" => style.marker_side_match_parent = parent.marker_side_match_parent,
         "list-style-image" => style.list_style_image = parent.list_style_image.clone(),
         "content" => style.content = parent.content.clone(),
         "counter-reset" => style.counter_reset = parent.counter_reset.clone(),
@@ -6221,6 +6229,9 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
             _ => ListStylePosition::Outside,
         };
     }
+    if let Some(CssValue::Keyword(k)) = get_non_special(map, "marker-side") {
+        style.marker_side_match_parent = k.eq_ignore_ascii_case("match-parent");
+    }
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "list-style-image") {
         let trimmed = k.trim();
         style.list_style_image = if trimmed.eq_ignore_ascii_case("none") {
@@ -6297,6 +6308,17 @@ fn resolve_custom_counter_style(list_style_type: &mut ListStyleType, rules: &[Cs
         return;
     };
     *list_style_type = ListStyleType::CounterStyle(style);
+}
+
+fn resolve_custom_counter_styles_in_content(items: &mut [ContentItem], rules: &[CssRule]) {
+    for item in items {
+        match item {
+            ContentItem::Counter(_, style) | ContentItem::Counters(_, _, style) => {
+                resolve_custom_counter_style(style, rules);
+            }
+            _ => {}
+        }
+    }
 }
 
 fn find_counter_style(name: &str, rules: &[CssRule]) -> Option<CounterStyle> {

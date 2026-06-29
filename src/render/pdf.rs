@@ -10060,6 +10060,7 @@ fn render_container_children(
                 position,
                 offset_top,
                 offset_left,
+                offset_bottom,
                 opacity: tb_opacity,
                 mix_blend_mode: tb_mix_blend,
                 background_blend_mode: tb_bg_blend,
@@ -10070,6 +10071,7 @@ fn render_container_children(
                 text_indent: tb_text_indent,
                 letter_spacing: tb_letter_spacing,
                 word_spacing: tb_word_spacing,
+                writing_mode: tb_writing_mode,
                 containing_block: tb_containing_block,
                 ..
             } => {
@@ -10254,6 +10256,16 @@ fn render_container_children(
                 let child_h = pad_box_h + border.vertical_width();
 
                 let render_w = tb_block_width.unwrap_or(width);
+                let vertical_column_paint_h = if *offset_bottom > 0.0
+                    && matches!(
+                        tb_writing_mode,
+                        crate::style::computed::WritingMode::VerticalRl
+                    )
+                {
+                    *offset_bottom + border.vertical_width()
+                } else {
+                    child_h
+                };
 
                 // Apply float/position offset. `offset_left`/`offset_top` combine
                 // the in-flow horizontal placement (margin-left / margin:auto
@@ -10303,7 +10315,7 @@ fn render_container_children(
                         w = render_w + 2.0 * ov,
                         h = child_h + 2.0 * ov,
                         ix = render_x - ov,
-                        iy = render_y - child_h - ov,
+                        iy = render_y - vertical_column_paint_h - ov,
                         name = img_name,
                     ));
                     page_images.push(ImageRef {
@@ -10346,9 +10358,9 @@ fn render_container_children(
                     content.push_str(&format!(
                         "{r} {g} {b} rg\n{cx} {cy} {cw} {ch} re\nf\n",
                         cx = render_x,
-                        cy = render_y - child_h,
+                        cy = render_y - vertical_column_paint_h,
                         cw = render_w,
-                        ch = child_h,
+                        ch = vertical_column_paint_h,
                     ));
                     if needs_alpha {
                         content.push_str("/GSDefault gs\n");
@@ -10364,7 +10376,7 @@ fn render_container_children(
                 // Draw linear gradient background
                 if let Some(gradient) = tb_bg_gradient {
                     let bg_x = render_x;
-                    let bg_y = render_y - child_h;
+                    let bg_y = render_y - vertical_column_paint_h;
                     if bg_blended {
                         content.push_str("q\n");
                         begin_blend_mode(content, page_ext_gstates, bg_blend_mode);
@@ -10386,7 +10398,7 @@ fn render_container_children(
                         bg_x,
                         bg_y,
                         render_w,
-                        child_h,
+                        vertical_column_paint_h,
                         page_shadings,
                         shading_counter,
                         pdf_writer,
@@ -10403,7 +10415,7 @@ fn render_container_children(
                 // Draw radial gradient background
                 if let Some(gradient) = tb_bg_radial {
                     let bg_x = render_x;
-                    let bg_y = render_y - child_h;
+                    let bg_y = render_y - vertical_column_paint_h;
                     if bg_blended {
                         content.push_str("q\n");
                         begin_blend_mode(content, page_ext_gstates, bg_blend_mode);
@@ -10425,7 +10437,7 @@ fn render_container_children(
                         bg_x,
                         bg_y,
                         render_w,
-                        child_h,
+                        vertical_column_paint_h,
                         page_shadings,
                         shading_counter,
                         pdf_writer,
@@ -10442,7 +10454,7 @@ fn render_container_children(
                 // Draw conic gradient background
                 if let Some(gradient) = tb_bg_conic {
                     let bg_x = render_x;
-                    let bg_y = render_y - child_h;
+                    let bg_y = render_y - vertical_column_paint_h;
                     if bg_blended {
                         content.push_str("q\n");
                         begin_blend_mode(content, page_ext_gstates, bg_blend_mode);
@@ -10464,7 +10476,7 @@ fn render_container_children(
                         bg_x,
                         bg_y,
                         render_w,
-                        child_h,
+                        vertical_column_paint_h,
                         pdf_writer,
                         page_images,
                     );
@@ -10492,7 +10504,7 @@ fn render_container_children(
                     let bx1 = render_x;
                     let bx2 = render_x + render_w;
                     let by1 = render_y;
-                    let by2 = render_y - child_h;
+                    let by2 = render_y - vertical_column_paint_h;
                     if border.top.width > 0.0 {
                         let (r, g, b) = border.top.color;
                         let a = begin_border_alpha(
@@ -10566,9 +10578,9 @@ fn render_container_children(
                     content.push_str("q\n");
                     content.push_str(&overflow_clip_path(
                         render_x,
-                        render_y - child_h,
+                        render_y - vertical_column_paint_h,
                         render_w,
-                        child_h,
+                        vertical_column_paint_h,
                         border.left.width,
                         border.right.width,
                         border.top.width,
@@ -10583,6 +10595,30 @@ fn render_container_children(
                 // at the top of this fn); omitting the border placed the first
                 // baseline `border-top` px too high inside bordered clip boxes.
                 let mut text_y = render_y - border.top.width - padding_top;
+                let marker = lines.first().map_or(0.0, |line| line.x_offset);
+                let vertical_lr = marker <= -1_000_000.0 && marker > -2_000_000.0;
+                let upright_vertical = marker <= -2_000_000.0;
+                let vertical = matches!(
+                    tb_writing_mode,
+                    crate::style::computed::WritingMode::VerticalRl
+                ) && !upright_vertical;
+                if vertical {
+                    let padding_box_x = render_x + border.left.width;
+                    let padding_box_w =
+                        (render_w - border.left.width - border.right.width).max(0.0);
+                    let content_top = text_y;
+                    let content_left = padding_box_x + padding_left;
+                    let content_right = padding_box_x + padding_box_w - padding_right;
+                    let column_x = if vertical_lr {
+                        content_left + lines.first().map_or(0.0, |line| line.height)
+                    } else {
+                        content_right
+                    };
+                    let e = column_x - content_top;
+                    let f = content_top + content_left;
+                    content.push_str("q\n");
+                    content.push_str(&format!("0 -1 1 0 {e} {f} cm\n"));
+                }
                 let mut tb_first_line = true;
                 for line in lines {
                     let metrics = line_box_metrics(line, custom_fonts);
@@ -10624,7 +10660,10 @@ fn render_container_children(
                         .max(0.0);
                     // Drop-cap float exclusion: shift the line right so its text
                     // wraps beside the floated `::first-letter` (css2 §9.5).
-                    let line_inset = line.x_offset;
+                    let mut line_inset = line.x_offset;
+                    if line_inset <= -1_000_000.0 {
+                        line_inset = 0.0;
+                    }
                     let text_x = match text_align {
                         TextAlign::Right => content_x + (content_w - line_width).max(0.0),
                         TextAlign::Center => content_x + (content_w - line_width).max(0.0) / 2.0,
@@ -10774,6 +10813,9 @@ fn render_container_children(
                         content.push_str("0 Tw\n");
                     }
                     text_y -= metrics.descender + metrics.half_leading;
+                }
+                if vertical {
+                    content.push_str("Q\n");
                 }
                 if tb_needs_clip {
                     content.push_str("Q\n");
