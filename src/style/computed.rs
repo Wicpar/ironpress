@@ -6365,6 +6365,7 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "counter-set") {
         style.counter_set = parse_counter_directive(k, 0);
     }
+    synthesize_simple_multi_background_svg(map, style);
 }
 
 fn parse_list_style_type(k: &str) -> ListStyleType {
@@ -7304,6 +7305,445 @@ fn resolve_gradient_layer_box(map: &StyleMap, gradient_idx: usize) -> GradientLa
         border_image: false,
         paint_above_raster: false,
     }
+}
+
+#[derive(Clone, Copy)]
+struct CssBoxRect {
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+}
+
+enum SimpleBackgroundLayerSource {
+    Image(String),
+    Linear(LinearGradient),
+}
+
+const BACKGROUND_LAYER_RECORD_SEP: char = '\x1f';
+const BACKGROUND_LAYER_FIELD_SEP: char = '\x1e';
+
+fn synthesize_simple_multi_background_svg(map: &StyleMap, style: &mut ComputedStyle) {
+    let Some(sources) = parse_background_layer_sources(map) else {
+        return;
+    };
+    if sources.len() <= 1 {
+        return;
+    }
+    let Some((border_width, border_height)) = style_background_border_box_size(style) else {
+        return;
+    };
+    let Some(svg) = build_simple_multi_background_svg(map, style, &sources, border_width, border_height)
+    else {
+        return;
+    };
+    let Some(tree) = crate::parser::svg::parse_svg_from_string(&svg) else {
+        return;
+    };
+
+    style.clear_background_images();
+    style.background_svg = Some(tree);
+    style.background_size = BackgroundSize::Explicit {
+        width: border_width,
+        height: Some(border_height),
+        width_is_percent: false,
+        height_is_percent: false,
+    };
+    style.background_repeat = BackgroundRepeat::NoRepeat;
+    style.background_position = BackgroundPosition::default();
+    style.background_origin = BackgroundOrigin::Border;
+    style.background_clip = BackgroundClip::Border;
+}
+
+fn parse_background_layer_sources(map: &StyleMap) -> Option<Vec<SimpleBackgroundLayerSource>> {
+    let CssValue::Keyword(raw) = get_non_special(map, "background-layer-sources")? else {
+        return None;
+    };
+    let mut sources = Vec::new();
+    for record in raw.split(BACKGROUND_LAYER_RECORD_SEP) {
+        let (kind, value) = record.split_once(BACKGROUND_LAYER_FIELD_SEP)?;
+        let value = value.trim();
+        if value.eq_ignore_ascii_case("none") {
+            continue;
+        }
+        match kind {
+            "background-image" => {
+                sources.push(SimpleBackgroundLayerSource::Image(value.to_string()));
+            }
+            "background-gradient" => {
+                sources.push(SimpleBackgroundLayerSource::Linear(parse_linear_gradient(value)?));
+            }
+            _ => return None,
+        }
+    }
+    Some(sources)
+}
+
+fn style_background_border_box_size(style: &ComputedStyle) -> Option<(f32, f32)> {
+    let mut width = style.width?;
+    let mut height = style.height?;
+    if style.box_sizing == BoxSizing::ContentBox {
+        width += style.padding.left
+            + style.padding.right
+            + style.border.left.width
+            + style.border.right.width;
+        height += style.padding.top
+            + style.padding.bottom
+            + style.border.top.width
+            + style.border.bottom.width;
+    }
+    (width > 0.0 && height > 0.0).then_some((width, height))
+}
+
+fn build_simple_multi_background_svg(
+    map: &StyleMap,
+    style: &ComputedStyle,
+    sources: &[SimpleBackgroundLayerSource],
+    border_width: f32,
+    border_height: f32,
+) -> Option<String> {
+    let mut defs = String::new();
+    let mut body = String::new();
+    let border_rect = CssBoxRect {
+        x: 0.0,
+        y: 0.0,
+        width: border_width,
+        height: border_height,
+    };
+
+    for (rev_idx, source) in sources.iter().enumerate().rev() {
+        let origin = background_layer_origin_rect(map, style, rev_idx, border_rect)?;
+        let clip = background_layer_clip_rect(map, style, rev_idx, border_rect)?;
+        let size = background_layer_size(map, rev_idx)
+            .and_then(|size| resolve_simple_background_tile_size(size, origin.width, origin.height))
+            .unwrap_or((origin.width, origin.height));
+        if size.0 <= 0.0 || size.1 <= 0.0 {
+            return None;
+        }
+        let position = background_layer_position(map, rev_idx).unwrap_or_default();
+        let offset_x = if position.x_is_percent {
+            (origin.width - size.0) * position.x
+        } else if position.x < 0.0 {
+            (origin.width - size.0) + position.x
+        } else {
+            position.x
+        };
+        let offset_y = if position.y_is_percent {
+            (origin.height - size.1) * position.y
+        } else if position.y < 0.0 {
+            (origin.height - size.1) + position.y
+        } else {
+            position.y
+        };
+        let x = origin.x + offset_x;
+        let y = origin.y + offset_y;
+        let clip_id = format!("bgclip{rev_idx}");
+        defs.push_str(&format!(
+            r#"<clipPath id="{clip_id}"><rect x="{x}" y="{y}" width="{w}" height="{h}"/></clipPath>"#,
+            x = fmt_svg_num(clip.x),
+            y = fmt_svg_num(clip.y),
+            w = fmt_svg_num(clip.width),
+            h = fmt_svg_num(clip.height),
+        ));
+        body.push_str(&format!(r#"<g clip-path="url(#{clip_id})">"#));
+        let blend_mode = style.background_blend_mode.background_layer(rev_idx);
+        match source {
+            SimpleBackgroundLayerSource::Image(raw) => {
+                let href = background_url_href(raw)?;
+                if blend_mode == BlendMode::Normal {
+                    body.push_str(&format!(
+                        r#"<image href="{href}" x="{x}" y="{y}" width="{w}" height="{h}"/>"#,
+                        href = xml_escape_attr(&href),
+                        x = fmt_svg_num(x),
+                        y = fmt_svg_num(y),
+                        w = fmt_svg_num(size.0),
+                        h = fmt_svg_num(size.1),
+                    ));
+                } else if blend_mode == BlendMode::Multiply
+                    && rev_idx + 1 == sources.len()
+                    && let Some(background) = style.background_color
+                    && let Some(color) = solid_data_png_color(&href)
+                {
+                    let color = multiply_colors(color, background);
+                    body.push_str(&format!(
+                        r#"<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="{color}" fill-opacity="{opacity}"/>"#,
+                        x = fmt_svg_num(x),
+                        y = fmt_svg_num(y),
+                        w = fmt_svg_num(size.0),
+                        h = fmt_svg_num(size.1),
+                        color = color_to_svg_hex(color),
+                        opacity = fmt_svg_num(color.a as f32 / 255.0),
+                    ));
+                } else {
+                    return None;
+                }
+            }
+            SimpleBackgroundLayerSource::Linear(gradient) => {
+                if blend_mode != BlendMode::Normal {
+                    return None;
+                }
+                let grad_id = format!("bggrad{rev_idx}");
+                let (x1, y1, x2, y2) = linear_gradient_svg_line(gradient.angle, x, y, size.0, size.1);
+                defs.push_str(&format!(
+                    r#"<linearGradient id="{grad_id}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">"#,
+                    x1 = fmt_svg_num(x1),
+                    y1 = fmt_svg_num(y1),
+                    x2 = fmt_svg_num(x2),
+                    y2 = fmt_svg_num(y2),
+                ));
+                let basis = size.0 * gradient.angle.to_radians().sin().abs()
+                    + size.1 * gradient.angle.to_radians().cos().abs();
+                for stop in &gradient.stops {
+                    let offset = (stop.position + stop.position_length / basis.max(1e-6))
+                        .clamp(0.0, 1.0)
+                        * 100.0;
+                    defs.push_str(&format!(
+                        r#"<stop offset="{offset}%" stop-color="{color}" stop-opacity="{opacity}"/>"#,
+                        offset = fmt_svg_num(offset),
+                        color = color_to_svg_hex(stop.color),
+                        opacity = fmt_svg_num(stop.color.a as f32 / 255.0),
+                    ));
+                }
+                defs.push_str("</linearGradient>");
+                body.push_str(&format!(
+                    r#"<rect x="{x}" y="{y}" width="{w}" height="{h}" fill="url(#{grad_id})"/>"#,
+                    x = fmt_svg_num(x),
+                    y = fmt_svg_num(y),
+                    w = fmt_svg_num(size.0),
+                    h = fmt_svg_num(size.1),
+                ));
+            }
+        }
+        body.push_str("</g>");
+    }
+
+    Some(format!(
+        r#"<svg xmlns="http://www.w3.org/2000/svg" width="{w}" height="{h}" viewBox="0 0 {w} {h}"><defs>{defs}</defs>{body}</svg>"#,
+        w = fmt_svg_num(border_width),
+        h = fmt_svg_num(border_height),
+    ))
+}
+
+fn background_layer_origin_rect(
+    map: &StyleMap,
+    style: &ComputedStyle,
+    index: usize,
+    border_rect: CssBoxRect,
+) -> Option<CssBoxRect> {
+    let origin = get_non_special(map, "background-origin")
+        .and_then(|v| match v {
+            CssValue::Keyword(k) => nth_layer_value(k, index).map(|part| parse_background_origin_value(&part)),
+            _ => None,
+        })
+        .unwrap_or(style.background_origin);
+    Some(css_box_rect_for_background_origin(origin, style, border_rect))
+}
+
+fn background_layer_clip_rect(
+    map: &StyleMap,
+    style: &ComputedStyle,
+    index: usize,
+    border_rect: CssBoxRect,
+) -> Option<CssBoxRect> {
+    let clip = get_non_special(map, "background-clip")
+        .or_else(|| get_non_special(map, "-webkit-background-clip"))
+        .and_then(|v| match v {
+            CssValue::Keyword(k) => nth_layer_value(k, index).map(|part| parse_background_clip_value(&part)),
+            _ => None,
+        })
+        .unwrap_or(style.background_clip);
+    if clip == BackgroundClip::Text {
+        return None;
+    }
+    Some(match clip {
+        BackgroundClip::Border => border_rect,
+        BackgroundClip::Padding => css_padding_box_rect(style, border_rect),
+        BackgroundClip::Content => css_content_box_rect(style, border_rect),
+        BackgroundClip::Text => border_rect,
+    })
+}
+
+fn css_box_rect_for_background_origin(
+    origin: BackgroundOrigin,
+    style: &ComputedStyle,
+    border_rect: CssBoxRect,
+) -> CssBoxRect {
+    match origin {
+        BackgroundOrigin::Border => border_rect,
+        BackgroundOrigin::Padding => css_padding_box_rect(style, border_rect),
+        BackgroundOrigin::Content => css_content_box_rect(style, border_rect),
+    }
+}
+
+fn css_padding_box_rect(style: &ComputedStyle, border_rect: CssBoxRect) -> CssBoxRect {
+    CssBoxRect {
+        x: border_rect.x + style.border.left.width,
+        y: border_rect.y + style.border.top.width,
+        width: (border_rect.width - style.border.left.width - style.border.right.width).max(0.0),
+        height: (border_rect.height - style.border.top.width - style.border.bottom.width).max(0.0),
+    }
+}
+
+fn css_content_box_rect(style: &ComputedStyle, border_rect: CssBoxRect) -> CssBoxRect {
+    let padding = css_padding_box_rect(style, border_rect);
+    CssBoxRect {
+        x: padding.x + style.padding.left,
+        y: padding.y + style.padding.top,
+        width: (padding.width - style.padding.left - style.padding.right).max(0.0),
+        height: (padding.height - style.padding.top - style.padding.bottom).max(0.0),
+    }
+}
+
+fn background_layer_size(map: &StyleMap, index: usize) -> Option<BackgroundSize> {
+    get_non_special(map, "background-size").and_then(|v| match v {
+        CssValue::Keyword(k) => nth_layer_value(k, index).map(|part| parse_background_size_value(&part)),
+        _ => None,
+    })
+}
+
+fn background_layer_position(map: &StyleMap, index: usize) -> Option<BackgroundPosition> {
+    get_non_special(map, "background-position").and_then(|v| match v {
+        CssValue::Keyword(k) => nth_layer_value(k, index).and_then(|part| parse_background_position(&part)),
+        _ => None,
+    })
+}
+
+fn resolve_simple_background_tile_size(
+    size: BackgroundSize,
+    reference_width: f32,
+    reference_height: f32,
+) -> Option<(f32, f32)> {
+    let resolve = |value: f32, is_percent: bool, basis: f32| {
+        if is_percent {
+            basis * value / 100.0
+        } else {
+            value
+        }
+    };
+    match size {
+        BackgroundSize::Auto => Some((reference_width, reference_height)),
+        BackgroundSize::Explicit {
+            width,
+            height,
+            width_is_percent,
+            height_is_percent,
+        } => Some((
+            resolve(width, width_is_percent, reference_width),
+            height
+                .map(|value| resolve(value, height_is_percent, reference_height))
+                .unwrap_or(reference_height),
+        )),
+        BackgroundSize::ExplicitAuto {
+            width: Some(width),
+            height,
+            width_is_percent,
+            height_is_percent,
+        } => Some((
+            resolve(width, width_is_percent, reference_width),
+            height
+                .map(|value| resolve(value, height_is_percent, reference_height))
+                .unwrap_or(reference_height),
+        )),
+        BackgroundSize::ExplicitAuto {
+            width: None,
+            height: Some(height),
+            height_is_percent,
+            ..
+        } => Some((
+            reference_width,
+            resolve(height, height_is_percent, reference_height),
+        )),
+        BackgroundSize::ExplicitAuto { .. } => Some((reference_width, reference_height)),
+        BackgroundSize::Cover | BackgroundSize::Contain => None,
+    }
+}
+
+fn background_url_href(raw: &str) -> Option<String> {
+    let trimmed = raw.trim();
+    let inner = trimmed
+        .strip_prefix("url(")?
+        .strip_suffix(')')?
+        .trim()
+        .trim_matches(|c| c == '\'' || c == '"');
+    (!inner.is_empty()).then(|| inner.to_string())
+}
+
+fn solid_data_png_color(href: &str) -> Option<Color> {
+    let href = href.trim();
+    let comma = href.find(',')?;
+    let (header, data) = href.split_at(comma);
+    if !header.to_ascii_lowercase().starts_with("data:image/png")
+        || !header.to_ascii_lowercase().contains("base64")
+    {
+        return None;
+    }
+    let bytes = crate::util::decode_base64(&data[1..])?;
+    let image = image::load_from_memory(&bytes).ok()?.to_rgba8();
+    let mut pixels = image.pixels();
+    let first = pixels.next()?;
+    if pixels.any(|pixel| pixel.0 != first.0) {
+        return None;
+    }
+    Some(Color {
+        r: first[0],
+        g: first[1],
+        b: first[2],
+        a: first[3],
+    })
+}
+
+fn multiply_colors(source: Color, backdrop: Color) -> Color {
+    if source.a < 255 || backdrop.a < 255 {
+        return source;
+    }
+    Color {
+        r: ((source.r as u16 * backdrop.r as u16) / 255) as u8,
+        g: ((source.g as u16 * backdrop.g as u16) / 255) as u8,
+        b: ((source.b as u16 * backdrop.b as u16) / 255) as u8,
+        a: 255,
+    }
+}
+
+fn linear_gradient_svg_line(
+    angle: f32,
+    x: f32,
+    y: f32,
+    width: f32,
+    height: f32,
+) -> (f32, f32, f32, f32) {
+    let angle = angle.to_radians();
+    let dx = angle.sin();
+    let dy = -angle.cos();
+    let half = (width * dx.abs() + height * dy.abs()) / 2.0;
+    let cx = x + width / 2.0;
+    let cy = y + height / 2.0;
+    (cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half)
+}
+
+fn color_to_svg_hex(color: Color) -> String {
+    format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
+}
+
+fn xml_escape_attr(value: &str) -> String {
+    value
+        .replace('&', "&amp;")
+        .replace('"', "&quot;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+}
+
+fn fmt_svg_num(value: f32) -> String {
+    let mut out = format!("{value:.4}");
+    while out.contains('.') && out.ends_with('0') {
+        out.pop();
+    }
+    if out.ends_with('.') {
+        out.pop();
+    }
+    if out == "-0" {
+        out = "0".to_string();
+    }
+    out
 }
 
 fn parse_background_size_explicit(val: &str) -> Option<BackgroundSize> {

@@ -1,6 +1,15 @@
 use crate::parser::dom::ElementNode;
 use crate::types::Color;
+use std::cell::RefCell;
 use std::collections::HashMap;
+
+const BACKGROUND_LAYER_SOURCES: &str = "background-layer-sources";
+const BACKGROUND_LAYER_RECORD_SEP: char = '\x1f';
+const BACKGROUND_LAYER_FIELD_SEP: char = '\x1e';
+
+thread_local! {
+    static BACKGROUND_LAYER_CAPTURE: RefCell<Vec<(String, String)>> = const { RefCell::new(Vec::new()) };
+}
 
 /// Context for evaluating CSS media queries against the target page.
 #[derive(Debug, Clone, Copy)]
@@ -137,6 +146,7 @@ impl StyleMap {
         if self.is_important(key) && !is_important {
             return;
         }
+        capture_background_layer_source(key, &value);
         self.properties.insert(key.to_string(), value);
         self.important.insert(key.to_string(), is_important);
         if key == "font"
@@ -148,6 +158,17 @@ impl StyleMap {
             self.important
                 .insert("font-family".to_string(), is_important);
         }
+        if key == "background-layer-slots"
+            && let Some(CssValue::Keyword(slots)) = self.properties.get(key)
+            && let Some(sources) = captured_background_layer_sources(slots)
+        {
+            self.properties.insert(
+                BACKGROUND_LAYER_SOURCES.to_string(),
+                CssValue::Keyword(sources),
+            );
+            self.important
+                .insert(BACKGROUND_LAYER_SOURCES.to_string(), is_important);
+        }
     }
 
     pub fn get(&self, key: &str) -> Option<&CssValue> {
@@ -157,6 +178,18 @@ impl StyleMap {
     pub fn remove(&mut self, key: &str) {
         self.properties.remove(key);
         self.important.remove(key);
+        if matches!(
+            key,
+            "background-image"
+                | "background-svg"
+                | "background-gradient"
+                | "background-radial-gradient"
+                | "background-conic-gradient"
+                | "background-layer-slots"
+        ) {
+            self.properties.remove(BACKGROUND_LAYER_SOURCES);
+            self.important.remove(BACKGROUND_LAYER_SOURCES);
+        }
     }
 
     pub fn is_important(&self, key: &str) -> bool {
@@ -166,9 +199,60 @@ impl StyleMap {
     #[allow(dead_code)]
     pub fn merge(&mut self, other: &StyleMap) {
         for (key, value) in &other.properties {
-            self.set_with_importance(key, value.clone(), other.is_important(key));
+            let is_important = other.is_important(key);
+            if self.is_important(key) && !is_important {
+                continue;
+            }
+            self.properties.insert(key.clone(), value.clone());
+            self.important.insert(key.clone(), is_important);
+            if key == "font"
+                && let Some(CssValue::Keyword(font)) = self.properties.get(key)
+                && let Some(family) = font_shorthand_family(font)
+            {
+                self.properties
+                    .insert("font-family".to_string(), CssValue::Keyword(family));
+                self.important
+                    .insert("font-family".to_string(), is_important);
+            }
         }
     }
+}
+
+fn capture_background_layer_source(key: &str, value: &CssValue) {
+    let kind = match key {
+        "background-image" | "background-svg" | "background-gradient"
+        | "background-radial-gradient" | "background-conic-gradient" => key,
+        _ => return,
+    };
+    let CssValue::Keyword(raw) = value else {
+        return;
+    };
+    BACKGROUND_LAYER_CAPTURE.with(|capture| {
+        capture
+            .borrow_mut()
+            .push((kind.to_string(), raw.to_string()));
+    });
+}
+
+fn captured_background_layer_sources(slots: &str) -> Option<String> {
+    let layer_count = slots.split(',').filter(|slot| !slot.trim().is_empty()).count();
+    if layer_count <= 1 {
+        return None;
+    }
+    BACKGROUND_LAYER_CAPTURE.with(|capture| {
+        let capture = capture.borrow();
+        if capture.len() < layer_count {
+            return None;
+        }
+        let start = capture.len() - layer_count;
+        Some(
+            capture[start..]
+                .iter()
+                .map(|(kind, raw)| format!("{kind}{BACKGROUND_LAYER_FIELD_SEP}{raw}"))
+                .collect::<Vec<_>>()
+                .join(&BACKGROUND_LAYER_RECORD_SEP.to_string()),
+        )
+    })
 }
 
 fn font_shorthand_family(value: &str) -> Option<String> {

@@ -4046,12 +4046,20 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             let x_right = block_x + render_width - border.right.width / 2.0;
                             // Top border
                             if border.top.paints() {
+                                let (tx1, tx2) = if border.top.style == BorderStyle::Dotted {
+                                    (
+                                        x1 + border.left.width / 2.0,
+                                        x2 - border.right.width / 2.0,
+                                    )
+                                } else {
+                                    (x1, x2)
+                                };
                                 paint_table_cell_border_line(
                                     &mut content,
                                     &border.top,
-                                    x1,
+                                    tx1,
                                     y_top,
-                                    x2,
+                                    tx2,
                                     y_top,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
@@ -4072,12 +4080,20 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             }
                             // Bottom border
                             if border.bottom.paints() {
+                                let (bx1, bx2) = if border.bottom.style == BorderStyle::Dotted {
+                                    (
+                                        x1 + border.left.width / 2.0,
+                                        x2 - border.right.width / 2.0,
+                                    )
+                                } else {
+                                    (x1, x2)
+                                };
                                 paint_table_cell_border_line(
                                     &mut content,
                                     &border.bottom,
-                                    x1,
+                                    bx1,
                                     y_bottom,
-                                    x2,
+                                    bx2,
                                     y_bottom,
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
@@ -7963,13 +7979,22 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         ));
                                         end_border_alpha(&mut content, a);
                                     } else {
+                                        let (seg_y1, seg_y2) =
+                                            if border.left.style == BorderStyle::Dotted {
+                                                (
+                                                    by1 - border.top.width * 0.5,
+                                                    by2 + border.bottom.width * 0.5,
+                                                )
+                                            } else {
+                                                (by1, by2)
+                                            };
                                         paint_table_cell_border_line(
                                             &mut content,
                                             &border.left,
                                             x,
-                                            by1,
+                                            seg_y1,
                                             x,
-                                            by2,
+                                            seg_y2,
                                             &mut page_ext_gstates,
                                             &mut bg_alpha_counter,
                                         );
@@ -7993,13 +8018,22 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         ));
                                         end_border_alpha(&mut content, a);
                                     } else {
+                                        let (seg_y1, seg_y2) =
+                                            if border.right.style == BorderStyle::Dotted {
+                                                (
+                                                    by1 - border.top.width * 0.5,
+                                                    by2 + border.bottom.width * 0.5,
+                                                )
+                                            } else {
+                                                (by1, by2)
+                                            };
                                         paint_table_cell_border_line(
                                             &mut content,
                                             &border.right,
                                             x,
-                                            by1,
+                                            seg_y1,
                                             x,
-                                            by2,
+                                            seg_y2,
                                             &mut page_ext_gstates,
                                             &mut bg_alpha_counter,
                                         );
@@ -8023,12 +8057,21 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         ));
                                         end_border_alpha(&mut content, a);
                                     } else {
+                                        let (seg_x1, seg_x2) =
+                                            if border.top.style == BorderStyle::Dotted {
+                                                (
+                                                    bx1 + border.left.width * 0.5,
+                                                    bx2 - border.right.width * 0.5,
+                                                )
+                                            } else {
+                                                (bx1, bx2)
+                                            };
                                         paint_table_cell_border_line(
                                             &mut content,
                                             &border.top,
-                                            bx1,
+                                            seg_x1,
                                             y,
-                                            bx2,
+                                            seg_x2,
                                             y,
                                             &mut page_ext_gstates,
                                             &mut bg_alpha_counter,
@@ -8053,12 +8096,21 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         ));
                                         end_border_alpha(&mut content, a);
                                     } else {
+                                        let (seg_x1, seg_x2) =
+                                            if border.bottom.style == BorderStyle::Dotted {
+                                                (
+                                                    bx1 + border.left.width * 0.5,
+                                                    bx2 - border.right.width * 0.5,
+                                                )
+                                            } else {
+                                                (bx1, bx2)
+                                            };
                                         paint_table_cell_border_line(
                                             &mut content,
                                             &border.bottom,
-                                            bx1,
+                                            seg_x1,
                                             y,
-                                            bx2,
+                                            seg_x2,
                                             y,
                                             &mut page_ext_gstates,
                                             &mut bg_alpha_counter,
@@ -15235,6 +15287,16 @@ fn gradient_requires_raster(stops: &[crate::style::computed::GradientStop]) -> b
     stops.iter().any(|stop| stop.color.a < 255)
 }
 
+fn linear_gradient_requires_raster(stops: &[crate::style::computed::GradientStop]) -> bool {
+    gradient_requires_raster(stops)
+        || stops
+            .iter()
+            .any(|stop| stop.position_length.abs() > 1e-6)
+        || stops
+            .windows(2)
+            .any(|pair| (pair[1].position - pair[0].position).abs() < 0.0001)
+}
+
 fn radial_gradient_requires_raster(
     stops: &[crate::style::computed::GradientStop],
     repeating: bool,
@@ -15740,7 +15802,7 @@ fn render_linear_gradient(
     page_images: &mut Vec<ImageRef>,
 ) {
     for tile in gradient_layer_tiles(&gradient.layer_box, x, y, width, height) {
-        if gradient_requires_raster(&gradient.stops) {
+        if linear_gradient_requires_raster(&gradient.stops) {
             render_linear_gradient_tile_raster(
                 content,
                 gradient,
@@ -15802,7 +15864,7 @@ fn render_border_image_linear_gradient(
     gradient.layer_box.position = None;
     gradient.layer_box.repeat = None;
 
-    if gradient_requires_raster(&gradient.stops) {
+    if linear_gradient_requires_raster(&gradient.stops) {
         let strips = [
             (x, y + height - border_top, width, border_top),
             (x + width - border_right, y, border_right, height),
