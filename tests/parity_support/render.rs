@@ -105,12 +105,11 @@ pub(crate) fn load_bundled_fonts() -> Vec<(&'static str, Vec<u8>)> {
 /// `FONTCONFIG_FILE=tests/parity/fonts/fonts.conf`:
 ///   * `font-family: sans-serif` -> LiberationSans
 ///   * `font-family: serif`      -> LiberationSerif
-///   * `font-family: monospace`  -> DejaVuSansMono   (NOT LiberationMono — the
-///                                  snap ships its own DejaVu mono and uses it)
+///   * `font-family: monospace`  -> DejaVuSansMono (NOT LiberationMono — the
+///     snap ships its own DejaVu mono and uses it)
 ///   * bare `ParitySans`/`ParitySerif`/`ParityMono` -> LiberationSerif (the
-///                                  snap's last-resort serif default; the
-///                                  bundled DejaVu-based Parity faces are
-///                                  invisible to the confined snap).
+///     snap's last-resort serif default; the bundled DejaVu-based Parity faces
+///     are invisible to the confined snap).
 pub(crate) fn bundled_font_faces() -> Vec<(&'static str, PathBuf)> {
     let lib = PathBuf::from("/usr/share/fonts/truetype/liberation");
     let sans = lib.join("LiberationSans-Regular.ttf");

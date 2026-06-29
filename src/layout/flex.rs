@@ -1,24 +1,24 @@
 use crate::parser::css::{AncestorInfo, CssRule, CssValue, SelectorContext};
 use crate::parser::dom::{DomNode, ElementNode, HtmlTag};
 use crate::style::computed::{
-    compute_style_with_context, AlignContent, AlignItems, AlignSelf, BackgroundClip,
-    BackgroundOrigin, BackgroundPosition, BackgroundRepeat, BackgroundSize, BoxSizing, Clear,
-    ComputedStyle, Display, FlexDirection, FlexWrap, Float, FontWeight, IntrinsicWidthKeyword,
-    JustifyContent, Overflow, OverflowWrap, Position, TextAlign, VerticalAlign, Visibility,
-    WhiteSpace, WritingMode,
+    AlignContent, AlignItems, AlignSelf, BackgroundClip, BackgroundOrigin, BackgroundPosition,
+    BackgroundRepeat, BackgroundSize, BoxSizing, Clear, ComputedStyle, Display, FlexDirection,
+    FlexWrap, Float, FontWeight, IntrinsicWidthKeyword, JustifyContent, Overflow, OverflowWrap,
+    Position, TextAlign, VerticalAlign, Visibility, WhiteSpace, WritingMode,
+    compute_style_with_context,
 };
 
 use super::context::{ContainingBlock, LayoutContext, LayoutEnv};
 use super::engine::{
+    BackgroundFields, FlexCell, LayoutBorder, LayoutElement, PageBreakSide, TextLine, TextRun,
     aspect_ratio_height, background_svg_for_style, collects_as_inline_text, flatten_element,
     has_background_paint, measure_runs_width, pseudo_is_block_like, push_block_pseudo,
-    resolve_padding_box_height, BackgroundFields, FlexCell, LayoutBorder, LayoutElement,
-    PageBreakSide, TextLine, TextRun,
+    resolve_padding_box_height,
 };
 use super::paginate::estimate_element_height;
 use super::text::{
-    estimate_word_width, resolve_style_font_family, resolved_line_height_factor, wrap_text_runs,
-    FlexTextRunCollector, TextWrapOptions,
+    FlexTextRunCollector, TextWrapOptions, estimate_word_width, resolve_style_font_family,
+    resolved_line_height_factor, wrap_text_runs,
 };
 
 /// Each child is laid out as a TextBlock at a computed position. The container
@@ -569,8 +569,7 @@ fn flex_cell_first_baseline(
             crate::style::computed::FontFamily::Custom(name) => {
                 crate::system_fonts::find_font(fonts, name, run.bold, run.italic)
                     .map(|(_, ttf)| {
-                        ttf.pdf_vertical_metrics().descender_ratio(ttf.units_per_em)
-                            * run.font_size
+                        ttf.pdf_vertical_metrics().descender_ratio(ttf.units_per_em) * run.font_size
                     })
                     .unwrap_or(desc * run.font_size)
             }
@@ -601,10 +600,7 @@ fn apply_row_baseline_offsets(
     }
 }
 
-fn clear_item_background_runs(
-    runs: &mut [TextRun],
-    item_background: Option<(f32, f32, f32, f32)>,
-) {
+fn clear_item_background_runs(runs: &mut [TextRun], item_background: Option<(f32, f32, f32, f32)>) {
     let Some(bg) = item_background else {
         return;
     };
@@ -1603,17 +1599,19 @@ pub(crate) fn layout_flex_container(
             // Detect that pattern and take the background block's border-box
             // height as the item's natural height instead.
             let self_bg_natural = match child_elements_buf.as_slice() {
-                [LayoutElement::TextBlock {
-                    block_height: Some(bg_h),
-                    border: bg_border,
-                    ..
-                }, LayoutElement::TextBlock {
-                    margin_top: spacer_mt,
-                    lines: spacer_lines,
-                    ..
-                }, ..]
-                    if *spacer_mt < 0.0 && spacer_lines.is_empty() =>
-                {
+                [
+                    LayoutElement::TextBlock {
+                        block_height: Some(bg_h),
+                        border: bg_border,
+                        ..
+                    },
+                    LayoutElement::TextBlock {
+                        margin_top: spacer_mt,
+                        lines: spacer_lines,
+                        ..
+                    },
+                    ..,
+                ] if *spacer_mt < 0.0 && spacer_lines.is_empty() => {
                     Some(bg_h + bg_border.vertical_width())
                 }
                 _ => None,
@@ -1717,7 +1715,9 @@ pub(crate) fn layout_flex_container(
         );
         clear_item_background_runs(
             &mut runs,
-            child_style.background_color.map(|color| color.to_f32_rgba()),
+            child_style
+                .background_color
+                .map(|color| color.to_f32_rgba()),
         );
 
         // `flex-basis: content` sizes the flex base to the item's max-content

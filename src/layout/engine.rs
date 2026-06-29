@@ -1560,16 +1560,10 @@ pub fn layout_with_rules_and_fonts(
             origin: background_origin,
             clip: background_clip,
         } = BackgroundFields::from_style(&body_style);
-        let body_w = body_style
-            .width
-            .unwrap_or(available_width)
-            .max(0.0)
+        let body_w = body_style.width.unwrap_or(available_width).max(0.0)
             + body_style.padding.left
             + body_style.padding.right;
-        let body_h = body_style
-            .height
-            .unwrap_or(content_height)
-            .max(0.0)
+        let body_h = body_style.height.unwrap_or(content_height).max(0.0)
             + body_style.padding.top
             + body_style.padding.bottom;
         let body_offset_top = first_root_child_margin_top(nodes, &parent_style, rules);
@@ -4047,7 +4041,9 @@ pub(crate) fn flatten_element(
                         env.counter_state.get("list-item").max(0) as usize,
                     )
                 }
-                Some(ListContext::Unordered { .. }) => format_list_marker(&style.list_style_type, 0),
+                Some(ListContext::Unordered { .. }) => {
+                    format_list_marker(&style.list_style_type, 0)
+                }
                 // The <ol> UA default (`list-style-type: decimal`, set in
                 // `default_style`) is inherited by the <li>, so `style
                 // .list_style_type` already carries the correct ordered glyph
@@ -4283,7 +4279,10 @@ pub(crate) fn flatten_element(
             let vertical_marker_match =
                 effective_writing_mode == WritingMode::VerticalRl && style.marker_side_match_parent;
             let vertical_inline_extent = if vertical_marker_match {
-                style.height.or(parent_style.height).unwrap_or(available_height)
+                style
+                    .height
+                    .or(parent_style.height)
+                    .unwrap_or(available_height)
             } else {
                 inner_width
             };
@@ -4374,7 +4373,8 @@ pub(crate) fn flatten_element(
                 float: style.float,
                 clear: style.clear,
                 position: style.position,
-                offset_top: style.top.unwrap_or(0.0) + vertical_marker_offset - vertical_flow_rewind,
+                offset_top: style.top.unwrap_or(0.0) + vertical_marker_offset
+                    - vertical_flow_rewind,
                 offset_left: if vertical_marker_match {
                     style.left.unwrap_or(0.0)
                         + (available_width - vertical_column_advance - vertical_column_offset)
@@ -5040,6 +5040,7 @@ fn flex_element_with_display_contents_children(
 pub(crate) use super::paginate::estimate_element_height;
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::parser::css::parse_stylesheet;
@@ -5086,7 +5087,7 @@ mod tests {
     #[test]
     fn page_break_creates_new_page() {
         let html = r#"<p>Page 1</p><div style="page-break-before: always"><p>Page 2</p></div>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         assert!(pages.len() >= 2);
     }
@@ -5103,7 +5104,7 @@ mod tests {
     #[test]
     fn br_element_creates_empty_line() {
         let html = "<p>Line one</p><br><p>Line two</p>";
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         assert_eq!(pages.len(), 1);
         // Should have at least 3 elements (p, br, p)
@@ -11972,7 +11973,7 @@ line 3</pre>
                 }
             }
         }
-        assert!(true);
+        assert!(!pages[0].elements.is_empty());
     }
 
     #[test]

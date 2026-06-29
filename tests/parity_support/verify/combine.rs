@@ -43,7 +43,7 @@ const CONCERNS: [Concern; 3] = [Concern::Geometry, Concern::Appearance, Concern:
 /// The verifier that holds AUTHORITY over a concern when it is present and
 /// applies (§1.1 table):
 ///   * Geometry  -> PdfGeometry when it applies, else RasterDiff (Phase 1: always
-///                  RasterDiff, since PdfGeometry is not implemented yet).
+///     RasterDiff, since PdfGeometry is not implemented yet).
 ///   * Appearance-> RasterDiff (ΔE/AA/blend over real pixels).
 ///   * Presence  -> RasterDiff (missing/extra coverage is a whole-area signal).
 ///

@@ -1,6 +1,6 @@
-use std::collections::HashMap;
 use crate::parser::dom::ElementNode;
 use crate::types::Color;
+use std::collections::HashMap;
 
 /// Context for evaluating CSS media queries against the target page.
 #[derive(Debug, Clone, Copy)]

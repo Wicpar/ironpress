@@ -95,10 +95,7 @@ pub fn run() -> Result<(), String> {
     }
 
     // Discover + parse manifests.
-    let mut entries = match load_manifests(&manifest_dir, &parity_dir) {
-        Ok(e) => e,
-        Err(e) => return Err(e),
-    };
+    let mut entries = load_manifests(&manifest_dir, &parity_dir)?;
     if entries.is_empty() {
         eprintln!(
             "parity: no manifest entries found under {} (nothing to do).",

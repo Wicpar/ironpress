@@ -659,7 +659,7 @@
     "description": "vertical-align:text-bottom aligns to the parent text bottom inside a tall line box; catches aliasing text-bottom to bottom.",
     "file": "cases/inline-text/inline-text-vertical-align-text-bottom.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline",
       "probe-fill-box"
@@ -736,7 +736,7 @@
     "pass_threshold_pct": 6.0,
     "partial_threshold_pct": 18.0,
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "oracle": "chrome",
     "depends_on": [
       "probe-text-baseline",

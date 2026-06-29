@@ -920,7 +920,10 @@ fn inject_gcpm_footnote_declarations(css: &str, rules: &mut Vec<parser::css::Css
                 };
                 let prop = prop.trim().to_ascii_lowercase();
                 if matches!(prop.as_str(), "footnote-display" | "footnote-policy") {
-                    map.set(&prop, parser::css::CssValue::Keyword(val.trim().to_ascii_lowercase()));
+                    map.set(
+                        &prop,
+                        parser::css::CssValue::Keyword(val.trim().to_ascii_lowercase()),
+                    );
                 }
             }
             if !map.properties.is_empty() {

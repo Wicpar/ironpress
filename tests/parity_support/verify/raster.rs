@@ -16,6 +16,7 @@
 //!   * overall FAIL  ⟺ some concern FAILs  ⟺ WORST == Fail
 //!   * overall PASS  ⟺ every concern PASSes ⟺ WORST == Pass
 //!   * otherwise PARTIAL                     ⟺ WORST == Partial
+//!
 //! Each concern below applies exactly the verdict.rs fail-bound / pass-bound for
 //! its own gates, so the per-concern triple reconstructs the verdict by WORST.
 

@@ -185,10 +185,14 @@ fn encode_text_decoration_metadata(style: &ComputedStyle, factor: f32) -> Option
     }
 
     let factor_q = (factor.clamp(0.0, 3.96875) * 32.0).round() as u32;
-    let thickness_q = (style.text_decoration_thickness.unwrap_or(0.0).clamp(0.0, 7.75) * 4.0)
+    let thickness_q = (style
+        .text_decoration_thickness
+        .unwrap_or(0.0)
+        .clamp(0.0, 7.75)
+        * 4.0)
         .round() as u32;
-    let offset_q = (style.text_underline_offset.unwrap_or(0.0).clamp(0.0, 7.75) * 4.0).round()
-        as u32;
+    let offset_q =
+        (style.text_underline_offset.unwrap_or(0.0).clamp(0.0, 7.75) * 4.0).round() as u32;
     let wavy = u32::from(style.text_decoration_style == TextDecorationStyle::Wavy);
     let emphasis = u32::from(style.text_emphasis_mark);
     let payload = (TEXT_DECORATION_NAN_MARKER << 19)
@@ -242,7 +246,10 @@ fn style_run_italic(style: &ComputedStyle) -> bool {
     style.font_style == FontStyle::Italic && style.font_synthesis_style
 }
 
-fn decoration_padding(style: &ComputedStyle, background: Option<(f32, f32, f32, f32)>) -> (f32, f32) {
+fn decoration_padding(
+    style: &ComputedStyle,
+    background: Option<(f32, f32, f32, f32)>,
+) -> (f32, f32) {
     if background.is_some() {
         return (style.padding.left, style.padding.top);
     }
@@ -280,11 +287,7 @@ fn letter_spacing_extra_for_text(run: &TextRun, text: &str) -> f32 {
     encoded_run_letter_spacing(run) * text.chars().count().saturating_sub(1) as f32
 }
 
-fn estimate_text_width_for_run(
-    text: &str,
-    run: &TextRun,
-    fonts: &HashMap<String, TtfFont>,
-) -> f32 {
+fn estimate_text_width_for_run(text: &str, run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
     estimate_word_width(
         text,
         run.font_size,
@@ -332,8 +335,7 @@ pub(crate) fn line_primary_font_size(runs: &[crate::layout::engine::TextRun]) ->
 
 fn run_glyph_box_floor(run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
     if let FontFamily::Custom(name) = &run.font_family
-        && let Some((_, ttf)) =
-            crate::system_fonts::find_font(fonts, name, run.bold, run.italic)
+        && let Some((_, ttf)) = crate::system_fonts::find_font(fonts, name, run.bold, run.italic)
         && let Ok(face) = rustybuzz::ttf_parser::Face::parse(&ttf.data, 0)
     {
         let mut y_min = i16::MAX;
@@ -862,7 +864,9 @@ fn should_break_as_char_tokens(word: &str, keep_all: bool) -> bool {
 fn push_char_break_tokens(word: &str, template: &TextRun, out: &mut Vec<StyledWord>) {
     let mut first = true;
     for ch in word.chars() {
-        if is_cjk_closing_punctuation(ch) && let Some(prev) = out.last_mut() {
+        if is_cjk_closing_punctuation(ch)
+            && let Some(prev) = out.last_mut()
+        {
             prev.text.push(ch);
             continue;
         }
@@ -2417,22 +2421,13 @@ fn collect_text_runs_inner(
                                 .to_string();
                                 let authored_call_text =
                                     footnote_pseudo_content(rules, "footnote-call", &marker);
-                                let marker_prefix = footnote_pseudo_content(
-                                    rules,
-                                    "footnote-marker",
-                                    &marker,
-                                )
-                                .unwrap_or_else(|| "{marker}. ".to_string());
-                                let marker_color = footnote_pseudo_color(
-                                    rules,
-                                    "footnote-marker",
-                                )
-                                .unwrap_or_else(|| style.color.to_f32_rgb());
-                                let call_color = footnote_pseudo_color(
-                                    rules,
-                                    "footnote-call",
-                                )
-                                .unwrap_or_else(|| style.color.to_f32_rgb());
+                                let marker_prefix =
+                                    footnote_pseudo_content(rules, "footnote-marker", &marker)
+                                        .unwrap_or_else(|| "{marker}. ".to_string());
+                                let marker_color = footnote_pseudo_color(rules, "footnote-marker")
+                                    .unwrap_or_else(|| style.color.to_f32_rgb());
+                                let call_color = footnote_pseudo_color(rules, "footnote-call")
+                                    .unwrap_or_else(|| style.color.to_f32_rgb());
                                 let display_compact = footnote_authored_keyword(
                                     el,
                                     rules,

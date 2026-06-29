@@ -1,20 +1,20 @@
 use crate::parser::css::{
-    parse_inline_style, parse_length, selector_matches_with_context, specificity, AncestorInfo,
-    CssRule, CssValue, PseudoElement, SelectorContext,
+    AncestorInfo, CssRule, CssValue, PseudoElement, SelectorContext, parse_inline_style,
+    parse_length, selector_matches_with_context, specificity,
 };
 use crate::parser::dom::{DomNode, ElementNode};
 use crate::style::computed::{
-    compute_pseudo_element_style, compute_style_with_context, AlignContent, AlignItems, BoxSizing,
-    ComputedStyle, ContentItem, Display, FontWeight, GridAlign, GridLine, GridTrack,
-    JustifyContent, Position, TextAlign, VerticalAlign, Visibility, WhiteSpace,
+    AlignContent, AlignItems, BoxSizing, ComputedStyle, ContentItem, Display, FontWeight,
+    GridAlign, GridLine, GridTrack, JustifyContent, Position, TextAlign, VerticalAlign, Visibility,
+    WhiteSpace, compute_pseudo_element_style, compute_style_with_context,
 };
 
 use super::context::{ContainingBlock, LayoutContext, LayoutEnv};
-use super::engine::{flatten_element, BackgroundFields, LayoutBorder, LayoutElement};
+use super::engine::{BackgroundFields, LayoutBorder, LayoutElement, flatten_element};
 use super::table::{GridInset, TableCell};
 use super::text::{
-    estimate_word_width, resolved_line_height_factor, wrap_text_runs, FlexTextRunCollector,
-    TextWrapOptions,
+    FlexTextRunCollector, TextWrapOptions, estimate_word_width, resolved_line_height_factor,
+    wrap_text_runs,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq)]

@@ -748,6 +748,7 @@ fn fill_prim(r: &[f64; 4]) -> Prim {
 ///   2. a self-contained `re S` on the OUTER box (block-uniform path);
 ///   3. a self-contained `re S` on the already-inset CENTERLINE box (image /
 ///      grid-cell path).
+///
 /// (2) and (3) are indistinguishable from the `re` rect alone, so we DISAMBIGUATE
 /// against the element's fill rect: a CSS background fills the OUTER border-box, so
 /// the element's outer edge is whichever fill rect is co-located with the border.

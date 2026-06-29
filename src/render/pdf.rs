@@ -339,7 +339,9 @@ fn border_bevel_kind_from_alpha(alpha: f32) -> Option<BorderBevelKind> {
     }
 }
 
-fn border_side_bevel_kind(side: &crate::layout::engine::LayoutBorderSide) -> Option<BorderBevelKind> {
+fn border_side_bevel_kind(
+    side: &crate::layout::engine::LayoutBorderSide,
+) -> Option<BorderBevelKind> {
     border_bevel_kind_from_alpha(side.alpha)
 }
 
@@ -1360,7 +1362,9 @@ fn bake_mask_into_blurred_raster(
     if box_w <= 0.0 || box_h <= 0.0 {
         return None;
     }
-    let mut rgba = image::load_from_memory(&blurred.asset.data).ok()?.to_rgba8();
+    let mut rgba = image::load_from_memory(&blurred.asset.data)
+        .ok()?
+        .to_rgba8();
     let (img_w, img_h) = (rgba.width(), rgba.height());
     if img_w == 0 || img_h == 0 {
         return None;
@@ -1511,7 +1515,11 @@ fn composite_text_mask(
                 continue;
             }
             let dst = *img.get_pixel(tx as u32, ty as u32);
-            img.put_pixel(tx as u32, ty as u32, over_rgba(image::Rgba([r, g, b, a]), dst));
+            img.put_pixel(
+                tx as u32,
+                ty as u32,
+                over_rgba(image::Rgba([r, g, b, a]), dst),
+            );
         }
     }
 }
@@ -1572,12 +1580,8 @@ fn paint_simple_text_block(
     if let Some(bg) = background {
         fill_rgba_rect(img, px_per_pt, x_pt, y_pt, width_pt, height_pt, bg);
     }
-    let content_w = (width_pt
-        - border.left.width
-        - border.right.width
-        - padding_left
-        - padding_right)
-        .max(0.0);
+    let content_w =
+        (width_pt - border.left.width - border.right.width - padding_left - padding_right).max(0.0);
     let mut baseline_y = y_pt + border.top.width + padding_top;
     for (line_idx, line) in lines.iter().enumerate() {
         let metrics = line_box_metrics(line, custom_fonts);
@@ -1644,8 +1648,7 @@ fn paint_simple_text_block(
                     run.bold,
                     run.italic,
                 ) {
-                let stroke_px =
-                    (run.font_size * 0.028 * px_per_pt / 2.0).ceil().max(1.0) as u32;
+                let stroke_px = (run.font_size * 0.028 * px_per_pt / 2.0).ceil().max(1.0) as u32;
                 dilate_alpha_mask(&raster.mask, stroke_px)
             } else {
                 raster.mask
@@ -3546,8 +3549,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 &mut page_images,
                             );
                         } else if !tb_text_clip_background
-                            && gradient.layer_box.attachment
-                            != Some(BackgroundAttachment::Local)
+                            && gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
                         {
                             if tb_bg_blended {
                                 content.push_str("q\n");
@@ -3604,44 +3606,49 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             && gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
                         {
                             if tb_bg_blended {
-                            content.push_str("q\n");
-                            begin_blend_mode(&mut content, &mut page_ext_gstates, tb_bg_blend_mode);
-                        }
-                        if tb_gradient_clip {
-                            push_background_clip_box(
-                                &mut content,
-                                tb_clip_x,
-                                tb_clip_y,
-                                tb_clip_w,
-                                tb_clip_h,
-                                tb_clip_rx,
-                                tb_clip_ry,
-                            );
-                        }
-                        let (grad_x, grad_y, grad_w, grad_h) =
-                            if gradient.layer_box.attachment == Some(BackgroundAttachment::Fixed) {
+                                content.push_str("q\n");
+                                begin_blend_mode(
+                                    &mut content,
+                                    &mut page_ext_gstates,
+                                    tb_bg_blend_mode,
+                                );
+                            }
+                            if tb_gradient_clip {
+                                push_background_clip_box(
+                                    &mut content,
+                                    tb_clip_x,
+                                    tb_clip_y,
+                                    tb_clip_w,
+                                    tb_clip_h,
+                                    tb_clip_rx,
+                                    tb_clip_ry,
+                                );
+                            }
+                            let (grad_x, grad_y, grad_w, grad_h) = if gradient.layer_box.attachment
+                                == Some(BackgroundAttachment::Fixed)
+                            {
                                 (0.0, 0.0, page_size.width, page_size.height)
                             } else {
                                 (tb_ref_x, tb_ref_y, tb_ref_w, tb_ref_h)
                             };
-                        render_radial_gradient(
-                            &mut content,
-                            &gradient,
-                            grad_x,
-                            grad_y,
-                            grad_w,
-                            grad_h,
-                            &mut page_shadings,
-                            &mut shading_counter,
-                            &mut pdf_writer,
-                            &mut page_images,
-                        );
-                        if tb_gradient_clip {
-                            content.push_str("Q\n");
-                        }
-                        if tb_bg_blended {
-                            content.push_str("Q\n");
-                        }
+                            render_radial_gradient(
+                                &mut content,
+                                &gradient,
+                                grad_x,
+                                grad_y,
+                                grad_w,
+                                grad_h,
+                                &mut page_shadings,
+                                &mut shading_counter,
+                                &mut pdf_writer,
+                                &mut page_images,
+                            );
+                            if tb_gradient_clip {
+                                content.push_str("Q\n");
+                            }
+                            if tb_bg_blended {
+                                content.push_str("Q\n");
+                            }
                         }
                     }
 
@@ -3652,42 +3659,47 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             && gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
                         {
                             if tb_bg_blended {
-                            content.push_str("q\n");
-                            begin_blend_mode(&mut content, &mut page_ext_gstates, tb_bg_blend_mode);
-                        }
-                        if tb_gradient_clip {
-                            push_background_clip_box(
-                                &mut content,
-                                tb_clip_x,
-                                tb_clip_y,
-                                tb_clip_w,
-                                tb_clip_h,
-                                tb_clip_rx,
-                                tb_clip_ry,
-                            );
-                        }
-                        let (grad_x, grad_y, grad_w, grad_h) =
-                            if gradient.layer_box.attachment == Some(BackgroundAttachment::Fixed) {
+                                content.push_str("q\n");
+                                begin_blend_mode(
+                                    &mut content,
+                                    &mut page_ext_gstates,
+                                    tb_bg_blend_mode,
+                                );
+                            }
+                            if tb_gradient_clip {
+                                push_background_clip_box(
+                                    &mut content,
+                                    tb_clip_x,
+                                    tb_clip_y,
+                                    tb_clip_w,
+                                    tb_clip_h,
+                                    tb_clip_rx,
+                                    tb_clip_ry,
+                                );
+                            }
+                            let (grad_x, grad_y, grad_w, grad_h) = if gradient.layer_box.attachment
+                                == Some(BackgroundAttachment::Fixed)
+                            {
                                 (0.0, 0.0, page_size.width, page_size.height)
                             } else {
                                 (tb_ref_x, tb_ref_y, tb_ref_w, tb_ref_h)
                             };
-                        render_conic_gradient(
-                            &mut content,
-                            &gradient,
-                            grad_x,
-                            grad_y,
-                            grad_w,
-                            grad_h,
-                            &mut pdf_writer,
-                            &mut page_images,
-                        );
-                        if tb_gradient_clip {
-                            content.push_str("Q\n");
-                        }
-                        if tb_bg_blended {
-                            content.push_str("Q\n");
-                        }
+                            render_conic_gradient(
+                                &mut content,
+                                &gradient,
+                                grad_x,
+                                grad_y,
+                                grad_w,
+                                grad_h,
+                                &mut pdf_writer,
+                                &mut page_images,
+                            );
+                            if tb_gradient_clip {
+                                content.push_str("Q\n");
+                            }
+                            if tb_bg_blended {
+                                content.push_str("Q\n");
+                            }
                         }
                     }
 
@@ -4133,7 +4145,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         .find(|r| r.inline_box.is_none())
                                         .map(run_line_height_for_vertical_align)
                                         .unwrap_or(line.height);
-                                    content_right - (upright_box_width + line_width) / 2.0 + line_inset
+                                    content_right - (upright_box_width + line_width) / 2.0
+                                        + line_inset
                                 } else {
                                     padding_box_x + padding_left + first_line_indent + line_inset
                                 }
@@ -4179,7 +4192,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         if tb_text_clip_background {
                             if let Some(gradient) = background_gradient {
                                 let gradient = linear_with_background_layer(gradient, tb_layer_box);
-                                if gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                                if gradient.layer_box.attachment
+                                    != Some(BackgroundAttachment::Local)
                                     && !gradient.layer_box.border_image
                                 {
                                     content.push_str("q\n");
@@ -4230,7 +4244,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 }
                             } else if let Some(gradient) = background_radial_gradient {
                                 let gradient = radial_with_background_layer(gradient, tb_layer_box);
-                                if gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                                if gradient.layer_box.attachment
+                                    != Some(BackgroundAttachment::Local)
                                 {
                                     content.push_str("q\n");
                                     if push_line_text_clip(
@@ -4280,7 +4295,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 }
                             } else if let Some(gradient) = background_conic_gradient {
                                 let gradient = conic_with_background_layer(gradient, tb_layer_box);
-                                if gradient.layer_box.attachment != Some(BackgroundAttachment::Local)
+                                if gradient.layer_box.attachment
+                                    != Some(BackgroundAttachment::Local)
                                 {
                                     content.push_str("q\n");
                                     if push_line_text_clip(
@@ -4424,8 +4440,12 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 let (pad_h, pad_v) = run.padding;
                                 let rect_x = bg_x - pad_h;
                                 let rect_w = run_width + pad_h * 2.0;
-                                let (rect_y, rect_h) =
-                                    inline_background_y_and_height(run, text_y, pad_v, custom_fonts);
+                                let (rect_y, rect_h) = inline_background_y_and_height(
+                                    run,
+                                    text_y,
+                                    pad_v,
+                                    custom_fonts,
+                                );
                                 content.push_str(&format!("{br} {bg} {bb} rg\n"));
                                 if run.border_radius > 0.0 {
                                     content.push_str(&rounded_rect_path(
@@ -4462,15 +4482,18 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     let sy_shift = -shadow.offset_y;
                                     let thickness = decoration_thickness(run);
                                     if run.underline {
-                                        let (_, descender_ratio) = crate::fonts::font_metrics_ratios(
-                                            &run.font_family,
-                                            run.bold,
-                                            run.italic,
-                                            custom_fonts,
-                                        );
+                                        let (_, descender_ratio) =
+                                            crate::fonts::font_metrics_ratios(
+                                                &run.font_family,
+                                                run.bold,
+                                                run.italic,
+                                                custom_fonts,
+                                            );
                                         let desc = descender_ratio * run.font_size;
-                                        let uy =
-                                            text_y - desc * underline_descender_factor(run) - decoration_offset(run) + sy_shift;
+                                        let uy = text_y
+                                            - desc * underline_descender_factor(run)
+                                            - decoration_offset(run)
+                                            + sy_shift;
                                         push_decoration_stroke(
                                             &mut content,
                                             (sr, sg, sb),
@@ -4500,7 +4523,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                             run.italic,
                                             custom_fonts,
                                         );
-                                        let oy = text_y + ascender_ratio * run.font_size + overline_lift(run) + sy_shift;
+                                        let oy = text_y
+                                            + ascender_ratio * run.font_size
+                                            + overline_lift(run)
+                                            + sy_shift;
                                         push_decoration_stroke(
                                             &mut content,
                                             (sr, sg, sb),
@@ -4523,7 +4549,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     custom_fonts,
                                 );
                                 let desc = descender_ratio * run.font_size;
-                                let uy = text_y - desc * underline_descender_factor(run) - decoration_offset(run);
+                                let uy = text_y
+                                    - desc * underline_descender_factor(run)
+                                    - decoration_offset(run);
                                 let thickness = decoration_thickness(run);
                                 push_decoration_stroke(
                                     &mut content,
@@ -4574,7 +4602,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     run.italic,
                                     custom_fonts,
                                 );
-                                let oy = text_y + ascender_ratio * run.font_size + overline_lift(run);
+                                let oy =
+                                    text_y + ascender_ratio * run.font_size + overline_lift(run);
                                 let thickness = decoration_thickness(run);
                                 push_decoration_stroke(
                                     &mut content,
@@ -5487,11 +5516,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             let x2 = bx + container_width - border.right.width / 2.0;
                             let y_top = row_y - border.top.width / 2.0;
                             let y_bottom = by + border.bottom.width / 2.0;
-                            let y_side_top = if border.top.width > 0.0 {
-                                row_y
-                            } else {
-                                y_top
-                            };
+                            let y_side_top = if border.top.width > 0.0 { row_y } else { y_top };
                             let y_side_bottom = if border.bottom.width > 0.0 {
                                 by
                             } else {
@@ -5772,8 +5797,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             let bg_inset_t = cell.border.top.width * 0.5;
                             let bg_inset_b = cell.border.bottom.width * 0.5;
                             let bg_x = cells_left + padding_left + cell.x_offset + bg_inset_l;
-                            let bg_y =
-                                text_area_top - cell_y_shift - cell_render_h + bg_inset_b;
+                            let bg_y = text_area_top - cell_y_shift - cell_render_h + bg_inset_b;
                             let bg_w = (cell.width - bg_inset_l - bg_inset_r).max(0.0);
                             let bg_w = if cell.border_radius <= 0.0
                                 && !cell.border.has_any()
@@ -5874,7 +5898,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     &mut page_ext_gstates,
                                     &mut bg_alpha_counter,
                                 );
-                            } else if cell.border_radius <= 0.0 && border_needs_miter_fill(&cell.border) {
+                            } else if cell.border_radius <= 0.0
+                                && border_needs_miter_fill(&cell.border)
+                            {
                                 paint_miter_border(
                                     &mut content,
                                     box_left,
@@ -6106,10 +6132,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         }
 
                         // Render cell text
-                        let mut text_y = text_area_top
-                            - cell_y_shift
-                            - cell.border.top.width
-                            - cell.padding_top;
+                        let mut text_y =
+                            text_area_top - cell_y_shift - cell.border.top.width - cell.padding_top;
                         for line in &cell.lines {
                             let metrics = line_box_metrics(line, custom_fonts);
                             text_y -= metrics.half_leading + metrics.ascender;
@@ -6213,7 +6237,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         custom_fonts,
                                     );
                                     let desc = descender_ratio * run.font_size;
-                                    let uy = text_y - desc * underline_descender_factor(run) - decoration_offset(run);
+                                    let uy = text_y
+                                        - desc * underline_descender_factor(run)
+                                        - decoration_offset(run);
                                     let thickness = decoration_thickness(run);
                                     push_decoration_stroke(
                                         &mut content,
@@ -6262,7 +6288,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         run.italic,
                                         custom_fonts,
                                     );
-                                    let oy = text_y + ascender_ratio * run.font_size + overline_lift(run);
+                                    let oy = text_y
+                                        + ascender_ratio * run.font_size
+                                        + overline_lift(run);
                                     let thickness = decoration_thickness(run);
                                     push_decoration_stroke(
                                         &mut content,
@@ -6290,9 +6318,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         // Render nested elements (tables, images, etc. inside flex items)
                         if !cell.nested_elements.is_empty() {
                             let nested_x = cell_x + cell.border.left.width * 0.5;
-                            let mut nested_y = text_area_top
-                                - cell_y_shift
-                                - cell.border.top.width * 0.5;
+                            let mut nested_y =
+                                text_area_top - cell_y_shift - cell.border.top.width * 0.5;
                             for nested_elem in &cell.nested_elements {
                                 match nested_elem {
                                     LayoutElement::TextBlock {
@@ -6333,8 +6360,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                                     "{r} {g} {b} rg\n{x} {y} {w} {h} re\nf\n",
                                                     x = nested_x + bg_inset_l,
                                                     y = nested_y - total_h + bg_inset_b,
-                                                    w = (n_width - bg_inset_l - bg_inset_r).max(0.0),
-                                                    h = (total_h - bg_inset_t - bg_inset_b).max(0.0),
+                                                    w = (n_width - bg_inset_l - bg_inset_r)
+                                                        .max(0.0),
+                                                    h = (total_h - bg_inset_t - bg_inset_b)
+                                                        .max(0.0),
                                                 ));
                                             }
                                         }
@@ -6442,11 +6471,12 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         offset_left,
                                         ..
                                     } => {
-                                        let spacing = if *border_collapse == BorderCollapse::Collapse {
-                                            0.0
-                                        } else {
-                                            *border_spacing
-                                        };
+                                        let spacing =
+                                            if *border_collapse == BorderCollapse::Collapse {
+                                                0.0
+                                            } else {
+                                                *border_spacing
+                                            };
                                         let t_row_h = compute_row_height(t_cells);
                                         let row_top = nested_y - spacing;
                                         for (i, t_cell) in t_cells.iter().enumerate() {
@@ -6983,8 +7013,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     // CSS `opacity`). Wraps everything below in its own q..Q so the
                     // ExtGState alpha applies to the entire box uniformly.
                     let c_needs_opacity = *c_opacity < 1.0;
-                    let c_needs_blend =
-                        *c_mix_blend != crate::style::computed::BlendMode::Normal;
+                    let c_needs_blend = *c_mix_blend != crate::style::computed::BlendMode::Normal;
                     let c_group_start = (c_needs_opacity || c_needs_blend).then_some(content.len());
 
                     // Apply a CSS transform around the box centre (wrap the whole
@@ -8631,14 +8660,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     underline: false,
                     line_through: false,
                     overline: false,
-                    color: mb
-                        .color
-                        .unwrap_or(crate::types::Color::BLACK)
-                        .to_f32_rgb(),
+                    color: mb.color.unwrap_or(crate::types::Color::BLACK).to_f32_rgb(),
                     decoration_color: None,
                     link_url: None,
-                    font_family: if matches!(mb.selector, crate::parser::css::PageSelector::Blank)
-                    {
+                    font_family: if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
                         FontFamily::Helvetica
                     } else {
                         dec.margin_box_font_family.clone()
@@ -9067,11 +9092,7 @@ fn inline_background_y_and_height(
 // FlexRow also carries mixed inline flow with atomic inline-level boxes
 // (`inline-table`, `inline-flex`, etc.). Inline backgrounds in that row should
 // use a font-based content area instead of inflating to the line box.
-fn flex_row_inline_background_y_and_height(
-    run: &TextRun,
-    text_y: f32,
-    pad_v: f32,
-) -> (f32, f32) {
+fn flex_row_inline_background_y_and_height(run: &TextRun, text_y: f32, pad_v: f32) -> (f32, f32) {
     let base_h = run.font_size + 2.0;
     let content_h = (run.font_size * 1.2).max(base_h);
     let extra = content_h - base_h;
@@ -9373,8 +9394,7 @@ fn append_tj_shaped_text(content: &mut String, render: ShapedTextRender<'_>) {
         } else {
             0.0
         };
-        let tj_adjustment =
-            kern_adjustment + render.space_tj_adjustment(glyph) + letter_adjustment;
+        let tj_adjustment = kern_adjustment + render.space_tj_adjustment(glyph) + letter_adjustment;
         if tj_adjustment.abs() > 0.001 {
             content.push(' ');
             content.push_str(&format_pdf_number(tj_adjustment));
@@ -10483,8 +10503,7 @@ fn render_container_children(
                     && matches!(
                         tb_writing_mode,
                         crate::style::computed::WritingMode::VerticalRl
-                    )
-                {
+                    ) {
                     *offset_bottom + border.vertical_width()
                 } else {
                     child_h
@@ -10557,14 +10576,14 @@ fn render_container_children(
                     continue;
                 }
 
-                let tb_effective_mix_blend =
-                    if *tb_mix_blend != crate::style::computed::BlendMode::Normal
-                        && isolated_group_has_no_backdrop(content, isolated_group_start)
-                    {
-                        crate::style::computed::BlendMode::Normal
-                    } else {
-                        *tb_mix_blend
-                    };
+                let tb_effective_mix_blend = if *tb_mix_blend
+                    != crate::style::computed::BlendMode::Normal
+                    && isolated_group_has_no_backdrop(content, isolated_group_start)
+                {
+                    crate::style::computed::BlendMode::Normal
+                } else {
+                    *tb_mix_blend
+                };
                 let tb_grouped = *tb_opacity < 1.0
                     || tb_effective_mix_blend != crate::style::computed::BlendMode::Normal;
                 let tb_group_start = tb_grouped.then_some(content.len());
@@ -11401,14 +11420,14 @@ fn render_container_children(
                     // `mix-blend-mode`: composite the whole box (background + border +
                     // children) with the backdrop. Outermost q..Q so the blend gstate
                     // scopes the entire element and is restored by `Q` afterwards.
-                    let nk_effective_mix_blend =
-                        if *nk_mix_blend != crate::style::computed::BlendMode::Normal
-                            && isolated_group_has_no_backdrop(content, isolated_group_start)
-                        {
-                            crate::style::computed::BlendMode::Normal
-                        } else {
-                            *nk_mix_blend
-                        };
+                    let nk_effective_mix_blend = if *nk_mix_blend
+                        != crate::style::computed::BlendMode::Normal
+                        && isolated_group_has_no_backdrop(content, isolated_group_start)
+                    {
+                        crate::style::computed::BlendMode::Normal
+                    } else {
+                        *nk_mix_blend
+                    };
                     let nk_blended =
                         nk_effective_mix_blend != crate::style::computed::BlendMode::Normal;
                     let nk_needs_opacity = *nk_opacity < 1.0;
@@ -12707,7 +12726,8 @@ fn render_container_children(
                                 page_ext_gstates,
                                 bg_alpha_counter,
                             );
-                        } else if cell.border_radius <= 0.0 && border_needs_miter_fill(&cell.border) {
+                        } else if cell.border_radius <= 0.0 && border_needs_miter_fill(&cell.border)
+                        {
                             paint_miter_border(
                                 content,
                                 cell_x,
@@ -13130,8 +13150,12 @@ fn render_nested_table_rows(
                                 let run_w = estimate_run_width_with_fonts(run, custom_fonts);
                                 let rx = lx - pad_h;
                                 let rw2 = run_w + pad_h * 2.0;
-                                let (ry, rh) =
-                                    inline_background_y_and_height(run, text_y, pad_v, custom_fonts);
+                                let (ry, rh) = inline_background_y_and_height(
+                                    run,
+                                    text_y,
+                                    pad_v,
+                                    custom_fonts,
+                                );
                                 content.push_str(&format!("{br} {bg_c} {bb} rg\n"));
                                 if run.border_radius > 0.0 {
                                     content.push_str(&rounded_rect_path(
@@ -13592,8 +13616,9 @@ fn render_run_text_with_faux_bold(
     // baseline raised/lowered by a fraction of the parent (line) font size. This
     // only moves the painted glyphs vertically; the horizontal advance (the
     // returned width) is unchanged, so callers position the next run normally.
-    let text_y =
-        text_y + run_vertical_align_shift(run, parent_font_size) + text_emphasis_baseline_shift(run);
+    let text_y = text_y
+        + run_vertical_align_shift(run, parent_font_size)
+        + text_emphasis_baseline_shift(run);
 
     // CSS `text-shadow` (css-text-decor-3 §3): paint the glyphs again behind the
     // real text, once per shadow (back-to-front: the last listed shadow is
@@ -14211,8 +14236,12 @@ fn push_line_text_clip(
                 || estimate_run_width_with_fonts(run, custom_fonts),
                 |shaped| shaped.width,
             );
-            let custom_font =
-                crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, custom_fonts);
+            let custom_font = crate::text::resolve_custom_font(
+                &run.font_family,
+                run.bold,
+                run.italic,
+                custom_fonts,
+            );
             let font_name = resolve_font_name(run, custom_font, shaped.as_ref());
             content.push_str(&format!("/{font_name} {} Tf\n", run.font_size));
             const FAUX_ITALIC_SHEAR: f32 = 0.25;
@@ -14399,10 +14428,7 @@ fn line_shifted_text_extents(
     let rep_factor = line
         .runs
         .iter()
-        .filter(|r| {
-            r.inline_box.is_none()
-                && !is_drop_cap_run(r)
-        })
+        .filter(|r| r.inline_box.is_none() && !is_drop_cap_run(r))
         .map(|r| r.line_height_factor)
         .fold(0.0f32, f32::max);
     let rep_factor = if rep_factor > 0.0 { rep_factor } else { 1.2 };
@@ -18922,76 +18948,71 @@ impl PdfWriter {
             }
         };
         let layer_rects = |layer: &MaskLayer| -> Option<MaskLayerPaintRect> {
-                let (origin_x, origin_y, origin_w, origin_h) =
-                    mask_box_rect_pts(w, h, metrics, layer.origin);
-                let (clip_x, clip_y, clip_w, clip_h) =
-                    mask_box_rect_pts(w, h, metrics, layer.clip);
-                let (tile_w, tile_h) = match layer.layer_box.size {
-                    Some(BackgroundSize::Explicit {
-                        width,
-                        height,
-                        width_is_percent,
-                        height_is_percent,
-                    }) => (
-                        resolve_axis(width, width_is_percent, origin_w),
-                        height.map_or(origin_h, |v| {
-                            resolve_axis(v, height_is_percent, origin_h)
-                        }),
-                    ),
-                    Some(BackgroundSize::ExplicitAuto {
-                        width: Some(width),
-                        height,
-                        width_is_percent,
-                        height_is_percent,
-                    }) => (
-                        resolve_axis(width, width_is_percent, origin_w),
-                        height.map_or(origin_h, |v| {
-                            resolve_axis(v, height_is_percent, origin_h)
-                        }),
-                    ),
-                    Some(BackgroundSize::ExplicitAuto {
-                        width: None,
-                        height: Some(height),
-                        height_is_percent,
-                        ..
-                    }) => (origin_w, resolve_axis(height, height_is_percent, origin_h)),
-                    _ => (origin_w, origin_h),
-                };
-                if !(tile_w > 0.0 && tile_h > 0.0 && clip_w > 0.0 && clip_h > 0.0) {
-                    return None;
-                }
-                let (offset_x, offset_y) = match layer.layer_box.position {
-                    Some(pos) => (
-                        if pos.x_is_percent {
-                            (origin_w - tile_w) * pos.x
-                        } else {
-                            pos.x
-                        },
-                        if pos.y_is_percent {
-                            (origin_h - tile_h) * pos.y
-                        } else {
-                            pos.y
-                        },
-                    ),
-                    None => (0.0, 0.0),
-                };
-                let tile_x = x + origin_x + offset_x;
-                let tile_top = top_y - origin_y - offset_y;
-                let tile_bottom = tile_top - tile_h;
-                let clip_left = x + clip_x;
-                let clip_top = top_y - clip_y;
-                let clip_bottom = clip_top - clip_h;
-                Some(MaskLayerPaintRect {
-                    tile_x,
-                    tile_bottom,
-                    tile_w,
-                    tile_h,
-                    clip_left,
-                    clip_bottom,
-                    clip_w,
-                    clip_h,
-                })
+            let (origin_x, origin_y, origin_w, origin_h) =
+                mask_box_rect_pts(w, h, metrics, layer.origin);
+            let (clip_x, clip_y, clip_w, clip_h) = mask_box_rect_pts(w, h, metrics, layer.clip);
+            let (tile_w, tile_h) = match layer.layer_box.size {
+                Some(BackgroundSize::Explicit {
+                    width,
+                    height,
+                    width_is_percent,
+                    height_is_percent,
+                }) => (
+                    resolve_axis(width, width_is_percent, origin_w),
+                    height.map_or(origin_h, |v| resolve_axis(v, height_is_percent, origin_h)),
+                ),
+                Some(BackgroundSize::ExplicitAuto {
+                    width: Some(width),
+                    height,
+                    width_is_percent,
+                    height_is_percent,
+                }) => (
+                    resolve_axis(width, width_is_percent, origin_w),
+                    height.map_or(origin_h, |v| resolve_axis(v, height_is_percent, origin_h)),
+                ),
+                Some(BackgroundSize::ExplicitAuto {
+                    width: None,
+                    height: Some(height),
+                    height_is_percent,
+                    ..
+                }) => (origin_w, resolve_axis(height, height_is_percent, origin_h)),
+                _ => (origin_w, origin_h),
             };
+            if !(tile_w > 0.0 && tile_h > 0.0 && clip_w > 0.0 && clip_h > 0.0) {
+                return None;
+            }
+            let (offset_x, offset_y) = match layer.layer_box.position {
+                Some(pos) => (
+                    if pos.x_is_percent {
+                        (origin_w - tile_w) * pos.x
+                    } else {
+                        pos.x
+                    },
+                    if pos.y_is_percent {
+                        (origin_h - tile_h) * pos.y
+                    } else {
+                        pos.y
+                    },
+                ),
+                None => (0.0, 0.0),
+            };
+            let tile_x = x + origin_x + offset_x;
+            let tile_top = top_y - origin_y - offset_y;
+            let tile_bottom = tile_top - tile_h;
+            let clip_left = x + clip_x;
+            let clip_top = top_y - clip_y;
+            let clip_bottom = clip_top - clip_h;
+            Some(MaskLayerPaintRect {
+                tile_x,
+                tile_bottom,
+                tile_w,
+                tile_h,
+                clip_left,
+                clip_bottom,
+                clip_w,
+                clip_h,
+            })
+        };
 
         let mut shadings = Vec::new();
         let mut counter = 0usize;
@@ -19062,14 +19083,13 @@ impl PdfWriter {
                                 || angle_is(270.0))
                         {
                             let mut rects = String::new();
-                            let mut fill_rect =
-                                |gray: f32, rx: f32, ry: f32, rw: f32, rh: f32| {
-                                    if gray > 1e-6 && rw > 0.0 && rh > 0.0 {
-                                        rects.push_str(&format!(
-                                            "{gray} {gray} {gray} rg\n{rx} {ry} {rw} {rh} re f\n"
-                                        ));
-                                    }
-                                };
+                            let mut fill_rect = |gray: f32, rx: f32, ry: f32, rw: f32, rh: f32| {
+                                if gray > 1e-6 && rw > 0.0 && rh > 0.0 {
+                                    rects.push_str(&format!(
+                                        "{gray} {gray} {gray} rg\n{rx} {ry} {rw} {rh} re f\n"
+                                    ));
+                                }
+                            };
                             content.push_str(&format!(
                                 "q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\n{tile_x} {tile_bottom} {tile_w} {tile_h} re W n\n"
                             ));
@@ -19092,13 +19112,7 @@ impl PdfWriter {
                                     right_w,
                                     tile_h,
                                 );
-                                fill_rect(
-                                    end_gray,
-                                    tile_x,
-                                    tile_bottom,
-                                    tile_w - right_w,
-                                    tile_h,
-                                );
+                                fill_rect(end_gray, tile_x, tile_bottom, tile_w - right_w, tile_h);
                             } else if angle_is(0.0) {
                                 let bottom_h = tile_h * boundary;
                                 fill_rect(start_gray, tile_x, tile_bottom, tile_w, bottom_h);
@@ -19118,13 +19132,7 @@ impl PdfWriter {
                                     tile_w,
                                     top_h,
                                 );
-                                fill_rect(
-                                    end_gray,
-                                    tile_x,
-                                    tile_bottom,
-                                    tile_w,
-                                    tile_h - top_h,
-                                );
+                                fill_rect(end_gray, tile_x, tile_bottom, tile_w, tile_h - top_h);
                             }
                             content.push_str(&rects);
                             content.push_str("Q\n");
@@ -19168,11 +19176,10 @@ impl PdfWriter {
                         RadialShape::Circle => rg.radius.unwrap_or_else(|| match rg.extent {
                             RadialExtent::ClosestSide => near_x.min(near_y),
                             RadialExtent::FarthestSide => far_x.max(far_y),
-                            RadialExtent::ClosestCorner => (near_x * near_x + near_y * near_y)
-                                .sqrt(),
-                            RadialExtent::FarthestCorner => {
-                                (far_x * far_x + far_y * far_y).sqrt()
+                            RadialExtent::ClosestCorner => {
+                                (near_x * near_x + near_y * near_y).sqrt()
                             }
+                            RadialExtent::FarthestCorner => (far_x * far_x + far_y * far_y).sqrt(),
                         }),
                         RadialShape::Ellipse => return None,
                     };
@@ -20263,6 +20270,7 @@ fn render_math_glyphs(
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
     use crate::layout::engine::{LayoutBorder, layout};
@@ -20442,7 +20450,7 @@ mod tests {
     #[test]
     fn render_background_color() {
         let html = r#"<pre>code here</pre>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -20453,7 +20461,7 @@ mod tests {
     #[test]
     fn render_center_align() {
         let html = r#"<p style="text-align: center">Centered</p>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         assert!(pdf.starts_with(b"%PDF"));
@@ -20462,7 +20470,7 @@ mod tests {
     #[test]
     fn render_right_align() {
         let html = r#"<p style="text-align: right">Right</p>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         assert!(pdf.starts_with(b"%PDF"));
@@ -20471,7 +20479,7 @@ mod tests {
     #[test]
     fn render_underline() {
         let html = "<p><u>Underlined text</u></p>";
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -20482,7 +20490,7 @@ mod tests {
     #[test]
     fn render_bold_italic_combined() {
         let html = "<p><strong><em>Bold Italic</em></strong></p>";
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -20492,7 +20500,7 @@ mod tests {
     #[test]
     fn render_page_break_in_content() {
         let html = r#"<p>Page 1</p><div style="page-break-before: always"><p>Page 2</p></div>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -20611,7 +20619,7 @@ mod tests {
     #[test]
     fn render_colored_text() {
         let html = r#"<p style="color: red">Red text</p>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -21189,7 +21197,7 @@ mod tests {
     #[test]
     fn render_image_xobject_uses_source_pixel_dimensions() {
         let html = r#"<img src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==" width="120" height="90">"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -21908,7 +21916,7 @@ mod tests {
         // where tx = cx*(1-sx) and ty = cy*(1-sy) (non-zero when the element
         // is not at the page origin).
         let html = r#"<div style="transform: scale(2); width: 100pt; height: 20pt; background-color: blue">Box</div>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -21931,7 +21939,7 @@ mod tests {
     #[test]
     fn render_transform_rotate_includes_translation_terms() {
         let html = r#"<div style="transform: rotate(45deg); width: 100pt; height: 20pt; background-color: red">Rotated</div>"#;
-        let nodes = parse_html(&html).unwrap();
+        let nodes = parse_html(html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -23012,46 +23020,47 @@ mod tests {
         let mut annotations = Vec::new();
 
         let mut without_padding = String::new();
-        let mut without_padding_context = PageRenderContext::new(
-            &mut pdf_writer,
-            &mut page_images,
-            &custom_fonts,
-            &prepared_custom_fonts,
-            &mut shadings,
-            &mut shading_counter,
-            &mut page_ext_gstates,
-            &mut bg_alpha_counter,
-            &mut annotations,
-        );
-        render_nested_text_block(
-            &mut without_padding,
-            NestedTextBlock {
-                lines: &lines,
-                clips: false,
-                text_align: TextAlign::Left,
-                padding_top: 0.0,
-                padding_bottom: 0.0,
-                padding_left: 0.0,
-                padding_right: 0.0,
-                border: LayoutBorder::default(),
-                block_width: Some(80.0),
-                block_height: None,
-                background_color: None,
-                background_svg: None,
-                background_blur_radius: 0.0,
-                background_size: BackgroundSize::Auto,
-                background_position: BackgroundPosition::default(),
-                background_repeat: BackgroundRepeat::Repeat,
-                background_origin: BackgroundOrigin::Padding,
-                background_clip: BackgroundClip::Border,
-                background_blur_canvas_box: None,
-                border_radius: 0.0,
-                text_indent: 0.0,
-            },
-            NestedLayoutFrame::new(10.0, 100.0, 10.0, 100.0, 80.0),
-            &mut without_padding_context,
-        );
-        drop(without_padding_context);
+        {
+            let mut without_padding_context = PageRenderContext::new(
+                &mut pdf_writer,
+                &mut page_images,
+                &custom_fonts,
+                &prepared_custom_fonts,
+                &mut shadings,
+                &mut shading_counter,
+                &mut page_ext_gstates,
+                &mut bg_alpha_counter,
+                &mut annotations,
+            );
+            render_nested_text_block(
+                &mut without_padding,
+                NestedTextBlock {
+                    lines: &lines,
+                    clips: false,
+                    text_align: TextAlign::Left,
+                    padding_top: 0.0,
+                    padding_bottom: 0.0,
+                    padding_left: 0.0,
+                    padding_right: 0.0,
+                    border: LayoutBorder::default(),
+                    block_width: Some(80.0),
+                    block_height: None,
+                    background_color: None,
+                    background_svg: None,
+                    background_blur_radius: 0.0,
+                    background_size: BackgroundSize::Auto,
+                    background_position: BackgroundPosition::default(),
+                    background_repeat: BackgroundRepeat::Repeat,
+                    background_origin: BackgroundOrigin::Padding,
+                    background_clip: BackgroundClip::Border,
+                    background_blur_canvas_box: None,
+                    border_radius: 0.0,
+                    text_indent: 0.0,
+                },
+                NestedLayoutFrame::new(10.0, 100.0, 10.0, 100.0, 80.0),
+                &mut without_padding_context,
+            );
+        }
 
         let mut with_padding = String::new();
         let mut with_padding_context = PageRenderContext::new(

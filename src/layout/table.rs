@@ -1,23 +1,23 @@
 use crate::parser::css::{
-    selector_matches_with_context, specificity, AncestorInfo, CssRule, CssValue, SelectorContext,
+    AncestorInfo, CssRule, CssValue, SelectorContext, selector_matches_with_context, specificity,
 };
 use crate::parser::dom::{DomNode, ElementNode, HtmlTag};
 use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
-    compute_style_with_context, BorderCollapse, BorderStyle, BoxSizing, ComputedStyle, Display,
-    FontStyle, FontWeight, TableLayout, TextAlign, VerticalAlign, Visibility, WhiteSpace,
+    BorderCollapse, BorderStyle, BoxSizing, ComputedStyle, Display, FontStyle, FontWeight,
+    TableLayout, TextAlign, VerticalAlign, Visibility, WhiteSpace, compute_style_with_context,
 };
 use std::collections::HashMap;
 
 use super::context::{LayoutContext, LayoutEnv, ParentBox, Viewport};
 use super::engine::{
-    collects_as_inline_text, flatten_element, has_background_paint, recurses_as_layout_child,
     CounterState, LayoutBorder, LayoutBorderSide, LayoutElement, PageBreakSide, TextLine, TextRun,
+    collects_as_inline_text, flatten_element, has_background_paint, recurses_as_layout_child,
 };
 use super::paginate::{estimate_element_height, table_row_content_width};
 use super::text::{
-    collapse_whitespace, estimate_word_width, expand_pre_tabs, resolve_style_font_family,
-    resolved_line_height_factor, wrap_text_runs, TextWrapOptions,
+    TextWrapOptions, collapse_whitespace, estimate_word_width, expand_pre_tabs,
+    resolve_style_font_family, resolved_line_height_factor, wrap_text_runs,
 };
 
 const MAX_COLSPAN: usize = 1000;

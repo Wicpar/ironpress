@@ -2,9 +2,9 @@ use crate::parser::css::{AncestorInfo, CssRule, SelectorContext};
 use crate::parser::dom::{DomNode, ElementNode, HtmlTag};
 use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
-    compute_style_with_context, BackgroundClip, BackgroundOrigin, BackgroundPosition,
-    BackgroundRepeat, BackgroundSize, BoxSizing, ComputedStyle, ConicGradient, Display, GridTrack,
-    IntrinsicWidthKeyword, LinearGradient, OverflowWrap, RadialGradient, TextAlign, Transform,
+    BackgroundClip, BackgroundOrigin, BackgroundPosition, BackgroundRepeat, BackgroundSize,
+    BoxSizing, ComputedStyle, ConicGradient, Display, GridTrack, IntrinsicWidthKeyword,
+    LinearGradient, OverflowWrap, RadialGradient, TextAlign, Transform, compute_style_with_context,
 };
 use std::collections::HashMap;
 
@@ -14,8 +14,8 @@ use super::flex::layout_flex_container;
 use super::grid::layout_grid_container;
 use super::table::flatten_table;
 use super::text::{
-    collect_text_runs, estimate_word_width, resolve_style_font_family, resolved_line_height_factor,
-    wrap_text_runs, FlexTextRunCollector, TextWrapOptions,
+    FlexTextRunCollector, TextWrapOptions, collect_text_runs, estimate_word_width,
+    resolve_style_font_family, resolved_line_height_factor, wrap_text_runs,
 };
 
 fn min_content_anywhere_width(
@@ -1263,7 +1263,8 @@ fn layout_inline_block_group_inner(
                 crate::style::computed::Position::Relative
                     | crate::style::computed::Position::Absolute
             ),
-            suppress_strut_descent: child_style.width_keyword == Some(IntrinsicWidthKeyword::MinContent)
+            suppress_strut_descent: child_style.width_keyword
+                == Some(IntrinsicWidthKeyword::MinContent)
                 && child_style.overflow_wrap == OverflowWrap::Anywhere,
         });
     }

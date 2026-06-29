@@ -1369,7 +1369,7 @@ mod tests {
     fn parse_cmap_subtable_record_break() {
         // Line 196: subtable record truncated
         // cmap header says 2 subtables but data only has room for partial second
-        let mut data = vec![0u8; 100];
+        let mut data = [0u8; 100];
         // offset 0: version=0, numSubtables=2
         data[2] = 0;
         data[3] = 2;
@@ -1379,7 +1379,7 @@ mod tests {
         // Should find no suitable subtable (first one at platform 0 would match but
         // second record breaks)
         // Actually platform_id=0 matches, so let's set first to non-matching
-        let mut data2 = vec![0u8; 20];
+        let mut data2 = [0u8; 20];
         data2[3] = 2; // 2 subtables
         // First record: platform 5 (no match)
         data2[4] = 0;
@@ -1392,7 +1392,7 @@ mod tests {
     #[test]
     fn parse_cmap_subtable_too_short() {
         // Line 213: subtable offset valid but data too short to read format
-        let mut data = vec![0u8; 20];
+        let mut data = [0u8; 20];
         data[3] = 1; // 1 subtable
         // platform 3, encoding 1
         data[4] = 0;

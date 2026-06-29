@@ -30,8 +30,7 @@ fn collect_footnotes_from_element(element: &LayoutElement, out: &mut Vec<Footnot
                     if !seen_links.insert(link.to_string()) {
                         continue;
                     }
-                    let Some(data) = decode_footnote_link_data(link)
-                    else {
+                    let Some(data) = decode_footnote_link_data(link) else {
                         continue;
                     };
                     out.push(FootnoteItem {
@@ -189,9 +188,8 @@ fn footnote_reserved_height(footnotes: &[FootnoteItem], area: FootnoteAreaLayout
         return 0.0;
     }
     let height = footnote_lines_height(footnotes, area.content_width);
-    area.max_height.map_or(height, |max| {
-        if height > max + 0.5 { 0.0 } else { height }
-    })
+    area.max_height
+        .map_or(height, |max| if height > max + 0.5 { 0.0 } else { height })
 }
 
 pub(crate) fn move_overflow_footnotes_to_next_page(

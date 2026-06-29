@@ -271,9 +271,11 @@ mod tests {
         assert!(combined.contains("Hello"));
         assert!(combined.contains("World"));
         // Arabic chars should be present (possibly reversed)
-        assert!(combined
-            .chars()
-            .any(|c| (0x0600..=0x06FF).contains(&(c as u32))));
+        assert!(
+            combined
+                .chars()
+                .any(|c| (0x0600..=0x06FF).contains(&(c as u32)))
+        );
     }
 
     #[test]

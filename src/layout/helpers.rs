@@ -1288,10 +1288,7 @@ fn format_custom_counter(
         }
     }
     if negative {
-        representation = format!(
-            "{}{}{}",
-            style.negative.0, representation, style.negative.1
-        );
+        representation = format!("{}{}{}", style.negative.0, representation, style.negative.1);
     }
     if include_affixes {
         format!("{}{}{}", style.prefix, representation, style.suffix)
@@ -2521,14 +2518,10 @@ pub(crate) fn layout_element_paint_order(element: &LayoutElement) -> (i32, i32) 
             ..
         } if *z_index < 0 => (i32::MIN, 0),
         LayoutElement::TextBlock {
-            position,
-            z_index,
-            ..
+            position, z_index, ..
         }
         | LayoutElement::Container {
-            position,
-            z_index,
-            ..
+            position, z_index, ..
         } => {
             if *z_index < 0 {
                 (-1, *z_index)

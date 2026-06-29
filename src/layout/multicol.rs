@@ -29,15 +29,15 @@
 //!   split across a column boundary (so `break-inside: avoid` is honored).
 
 use crate::parser::css::{
-    parse_inline_style, selector_matches_with_context, specificity, AncestorInfo, CssValue,
-    SelectorContext,
+    AncestorInfo, CssValue, SelectorContext, parse_inline_style, selector_matches_with_context,
+    specificity,
 };
 use crate::parser::dom::{DomNode, ElementNode};
 use crate::style::computed::{BorderStyle, ComputedStyle, Position, Visibility, WritingMode};
 
 use super::context::{LayoutContext, LayoutEnv};
 use super::engine::{
-    flatten_element, BackgroundFields, LayoutBorder, LayoutElement, PageBreakSide,
+    BackgroundFields, LayoutBorder, LayoutElement, PageBreakSide, flatten_element,
 };
 use super::paginate::estimate_element_height;
 

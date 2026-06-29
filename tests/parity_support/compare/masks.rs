@@ -85,7 +85,7 @@ fn get(bits: &[u64], i: usize) -> bool {
 /// |Δ| exceeds `EDGE_GRAD` (0..255). Returns the raw edge bitset for `img`.
 fn detect_edges(img: &RgbaImage) -> Vec<u64> {
     let (w, h) = img.dimensions();
-    let words = ((w as usize * h as usize) + 63) / 64;
+    let words = (w as usize * h as usize).div_ceil(64);
     let mut edge = vec![0u64; words.max(1)];
     for y in 0..h {
         for x in 0..w {
@@ -119,7 +119,7 @@ fn detect_edges(img: &RgbaImage) -> Vec<u64> {
 
 /// 3x3 morphological dilation of an edge bitset by 1px.
 fn dilate(edge: &[u64], w: u32, h: u32) -> Vec<u64> {
-    let words = ((w as usize * h as usize) + 63) / 64;
+    let words = (w as usize * h as usize).div_ceil(64);
     let mut out = vec![0u64; words.max(1)];
     for y in 0..h {
         for x in 0..w {

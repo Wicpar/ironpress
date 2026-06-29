@@ -113,7 +113,7 @@ impl Mask {
 /// Build the content mask of `img`: one set bit per ink pixel (`is_content`).
 pub(crate) fn content_mask(img: &RgbaImage) -> Mask {
     let (w, h) = img.dimensions();
-    let words = ((w as usize * h as usize) + 63) / 64;
+    let words = (w as usize * h as usize).div_ceil(64);
     let mut m = Mask {
         w,
         h,

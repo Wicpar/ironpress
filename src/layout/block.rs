@@ -2128,93 +2128,97 @@ pub(crate) fn layout_block_element(
                     }
                 }
                 DomNode::Element(child_el) => {
-                // `element_is_inline_block` checks the *computed* display, so
-                // it correctly matches inline tags (e.g. `<span>`) styled with
-                // `display: inline-block`. Don't gate on `recurses_as_layout_child`
-                // here — that excludes inline tags and is the wrong test for an
-                // inline-block box, which lays out as a block regardless of tag.
-                if element_is_inline_block(
-                    child_el,
-                    style,
-                    env.rules,
-                    child_ancestors,
-                    child_el_idx,
-                    child_el_count,
-                    &preceding_siblings,
-                ) {
-                    ib_group_wrapper.push((child_el, pending_inline_space));
-                    pending_inline_space = false;
-                } else {
-                    // Flush any pending inline-block group
-                    if !ib_group_wrapper.is_empty() {
-                        #[allow(clippy::drain_collect)]
-                        let taken: Vec<(&ElementNode, bool)> =
-                            ib_group_wrapper.drain(..).collect();
-                        layout_inline_block_group_with_spacing(
-                            &taken,
-                            style,
-                            &ib_ctx,
-                            &mut child_elements,
-                            env.rules,
-                            child_ancestors,
-                            env.fonts,
-                        );
-                    }
-                    pending_inline_space = false;
-                    if recurses_as_layout_child(child_el.tag)
-                        || element_has_css_display_block(
-                            child_el,
-                            style,
-                            env.rules,
-                            child_ancestors,
-                        )
-                    {
-                        // An in-flow child's percentage height resolves against
-                        // this box's *content-box* height (CSS 2.1 § 10.5), not
-                        // its border-box `effective_height`. For `border-box`
-                        // that means subtracting this box's own padding and
-                        // border; for `content-box` the effective height already
-                        // is the content height. (Absolute descendants use the
-                        // padding box via `make_containing_block`, kept separate.)
-                        let child_cb = effective_height.map(|h| ContainingBlock {
-                            x: 0.0,
-                            width: inner_width,
-                            height: resolve_content_box_height(
-                                h,
-                                style.padding.top,
-                                style.padding.bottom,
-                                style.border.vertical_width(),
-                                style.box_sizing,
-                            ),
-                            depth: positioned_depth,
-                        });
-                        flatten_element(
-                            child_el,
-                            child_parent_style,
-                            &ctx.with_parent(inner_width, Some(available_height), style.font_size)
+                    // `element_is_inline_block` checks the *computed* display, so
+                    // it correctly matches inline tags (e.g. `<span>`) styled with
+                    // `display: inline-block`. Don't gate on `recurses_as_layout_child`
+                    // here — that excludes inline tags and is the wrong test for an
+                    // inline-block box, which lays out as a block regardless of tag.
+                    if element_is_inline_block(
+                        child_el,
+                        style,
+                        env.rules,
+                        child_ancestors,
+                        child_el_idx,
+                        child_el_count,
+                        &preceding_siblings,
+                    ) {
+                        ib_group_wrapper.push((child_el, pending_inline_space));
+                        pending_inline_space = false;
+                    } else {
+                        // Flush any pending inline-block group
+                        if !ib_group_wrapper.is_empty() {
+                            #[allow(clippy::drain_collect)]
+                            let taken: Vec<(&ElementNode, bool)> =
+                                ib_group_wrapper.drain(..).collect();
+                            layout_inline_block_group_with_spacing(
+                                &taken,
+                                style,
+                                &ib_ctx,
+                                &mut child_elements,
+                                env.rules,
+                                child_ancestors,
+                                env.fonts,
+                            );
+                        }
+                        pending_inline_space = false;
+                        if recurses_as_layout_child(child_el.tag)
+                            || element_has_css_display_block(
+                                child_el,
+                                style,
+                                env.rules,
+                                child_ancestors,
+                            )
+                        {
+                            // An in-flow child's percentage height resolves against
+                            // this box's *content-box* height (CSS 2.1 § 10.5), not
+                            // its border-box `effective_height`. For `border-box`
+                            // that means subtracting this box's own padding and
+                            // border; for `content-box` the effective height already
+                            // is the content height. (Absolute descendants use the
+                            // padding box via `make_containing_block`, kept separate.)
+                            let child_cb = effective_height.map(|h| ContainingBlock {
+                                x: 0.0,
+                                width: inner_width,
+                                height: resolve_content_box_height(
+                                    h,
+                                    style.padding.top,
+                                    style.padding.bottom,
+                                    style.border.vertical_width(),
+                                    style.box_sizing,
+                                ),
+                                depth: positioned_depth,
+                            });
+                            flatten_element(
+                                child_el,
+                                child_parent_style,
+                                &ctx.with_parent(
+                                    inner_width,
+                                    Some(available_height),
+                                    style.font_size,
+                                )
                                 .with_cbs(forward_abs_cb, child_cb),
-                            &mut child_elements,
-                            None,
-                            child_ancestors,
-                            positioned_depth,
-                            child_el_idx,
-                            child_el_count,
-                            &preceding_siblings,
-                            forward_siblings(&child_sibling_list, child_el_idx),
-                            env,
-                        );
+                                &mut child_elements,
+                                None,
+                                child_ancestors,
+                                positioned_depth,
+                                child_el_idx,
+                                child_el_count,
+                                &preceding_siblings,
+                                forward_siblings(&child_sibling_list, child_el_idx),
+                                env,
+                            );
+                        }
                     }
+                    preceding_siblings.push((
+                        child_el.tag_name().to_string(),
+                        child_el
+                            .class_list()
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    ));
+                    child_el_idx += 1;
                 }
-                preceding_siblings.push((
-                    child_el.tag_name().to_string(),
-                    child_el
-                        .class_list()
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect(),
-                ));
-                child_el_idx += 1;
-            }
             }
         }
         // Flush remaining inline-block group
@@ -2631,70 +2635,74 @@ pub(crate) fn layout_block_element(
                     }
                 }
                 DomNode::Element(child_el) => {
-                if recurses_as_layout_child(child_el.tag)
-                    && element_is_inline_block(
-                        child_el,
-                        style,
-                        env.rules,
-                        child_ancestors,
-                        child_el_idx,
-                        child_el_count,
-                        &preceding_siblings,
-                    )
-                {
-                    ib_group.push((child_el, pending_inline_space));
-                    pending_inline_space = false;
-                } else {
-                    // Flush any pending inline-block group
-                    if !ib_group.is_empty() {
-                        #[allow(clippy::drain_collect)]
-                        let taken: Vec<(&ElementNode, bool)> = ib_group.drain(..).collect();
-                        layout_inline_block_group_with_spacing(
-                            &taken,
-                            style,
-                            &ib_ctx,
-                            output,
-                            env.rules,
-                            child_ancestors,
-                            env.fonts,
-                        );
-                    }
-                    pending_inline_space = false;
                     if recurses_as_layout_child(child_el.tag)
-                        || element_has_css_display_block(
+                        && element_is_inline_block(
                             child_el,
                             style,
                             env.rules,
                             child_ancestors,
-                        )
-                    {
-                        flatten_element(
-                            child_el,
-                            child_parent_style,
-                            &ctx.with_parent(inner_width, Some(available_height), style.font_size)
-                                .with_cbs(forward_abs_cb, cb_info),
-                            output,
-                            None,
-                            child_ancestors,
-                            positioned_depth,
                             child_el_idx,
                             child_el_count,
                             &preceding_siblings,
-                            forward_siblings(&child_sibling_list, child_el_idx),
-                            env,
-                        );
+                        )
+                    {
+                        ib_group.push((child_el, pending_inline_space));
+                        pending_inline_space = false;
+                    } else {
+                        // Flush any pending inline-block group
+                        if !ib_group.is_empty() {
+                            #[allow(clippy::drain_collect)]
+                            let taken: Vec<(&ElementNode, bool)> = ib_group.drain(..).collect();
+                            layout_inline_block_group_with_spacing(
+                                &taken,
+                                style,
+                                &ib_ctx,
+                                output,
+                                env.rules,
+                                child_ancestors,
+                                env.fonts,
+                            );
+                        }
+                        pending_inline_space = false;
+                        if recurses_as_layout_child(child_el.tag)
+                            || element_has_css_display_block(
+                                child_el,
+                                style,
+                                env.rules,
+                                child_ancestors,
+                            )
+                        {
+                            flatten_element(
+                                child_el,
+                                child_parent_style,
+                                &ctx.with_parent(
+                                    inner_width,
+                                    Some(available_height),
+                                    style.font_size,
+                                )
+                                .with_cbs(forward_abs_cb, cb_info),
+                                output,
+                                None,
+                                child_ancestors,
+                                positioned_depth,
+                                child_el_idx,
+                                child_el_count,
+                                &preceding_siblings,
+                                forward_siblings(&child_sibling_list, child_el_idx),
+                                env,
+                            );
+                        }
                     }
+                    preceding_siblings.push((
+                        child_el.tag_name().to_string(),
+                        child_el
+                            .class_list()
+                            .iter()
+                            .map(|s| s.to_string())
+                            .collect(),
+                    ));
+                    child_el_idx += 1;
                 }
-                preceding_siblings.push((
-                    child_el.tag_name().to_string(),
-                    child_el
-                        .class_list()
-                        .iter()
-                        .map(|s| s.to_string())
-                        .collect(),
-                ));
-                child_el_idx += 1;
-            }
             }
         }
         // Flush remaining inline-block group

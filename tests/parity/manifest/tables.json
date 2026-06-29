@@ -749,7 +749,7 @@
     "description": "Text before and after an inline-table should remain on the same line while the inline-table internally lays out two cells side by side. Catches wrong implementations where a renderer that treats inline-table as inline text or block flow will either drop the table grid or force the trailing text to a new line.",
     "file": "cases/tables/tables-inline-table-inline-flow.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"

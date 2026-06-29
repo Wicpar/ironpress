@@ -3707,8 +3707,7 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
             && target_aspect > 0.0
         {
             let actual_aspect =
-                crate::style::font_ctx::style_font_size_adjust_x_height_ratio(style)
-                    .unwrap_or(0.5);
+                crate::style::font_ctx::style_font_size_adjust_x_height_ratio(style).unwrap_or(0.5);
             if actual_aspect > 0.0 {
                 style.font_size *= target_aspect / actual_aspect;
                 sync_line_height_from_absolute(style);
@@ -4420,7 +4419,8 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
                     style: bs,
                 };
                 s.border_bevel.top = bevel;
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
+            })
+                as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-right",
@@ -4431,7 +4431,8 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
                     style: bs,
                 };
                 s.border_bevel.right = bevel;
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
+            })
+                as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-bottom",
@@ -4442,7 +4443,8 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
                     style: bs,
                 };
                 s.border_bevel.bottom = bevel;
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
+            })
+                as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
         (
             "border-left",
@@ -4453,7 +4455,8 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
                     style: bs,
                 };
                 s.border_bevel.left = bevel;
-            }) as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
+            })
+                as fn(&mut ComputedStyle, f32, Option<Color>, BorderStyle, Option<BorderBevelKind>),
         ),
     ] {
         if let Some(CssValue::Keyword(k)) = get_non_special(map, prop) {
@@ -10508,8 +10511,8 @@ fn parse_border_shorthand(
     let mut border_bevel = None;
     for part in &parts {
         match *part {
-            "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset"
-            | "none" | "hidden" | "solid" => {
+            "dashed" | "dotted" | "double" | "groove" | "ridge" | "inset" | "outset" | "none"
+            | "hidden" | "solid" => {
                 let (style, bevel) = parse_border_style_keyword_with_bevel(part);
                 border_style = style;
                 border_bevel = bevel;
@@ -11599,6 +11602,7 @@ fn parse_gradient_color(val: &str) -> Option<Color> {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 

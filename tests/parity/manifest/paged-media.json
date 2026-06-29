@@ -640,7 +640,7 @@
     "file": "cases/paged-media/paged-named-page-margin-box.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-text-baseline"
@@ -1228,7 +1228,7 @@
     "file": "cases/paged-media/paged-page-counter-increment-two.html",
     "oracle": "chrome",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-text-baseline"
@@ -1264,7 +1264,7 @@
     "file": "cases/paged-media/paged-pages-counter-immutable.html",
     "oracle": "chrome",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-text-baseline"
@@ -1299,7 +1299,7 @@
     "file": "cases/paged-media/paged-running-named-page-margin-box.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline"
     ],
@@ -1421,7 +1421,7 @@
     "file": "cases/paged-media/paged-string-set-attr-start.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline"
     ],

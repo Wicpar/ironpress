@@ -326,7 +326,11 @@ fn preprocess_cascade_layers(css: &str) -> String {
 }
 
 fn record_layer_names(names: &str, layer_order: &mut Vec<String>) {
-    for name in names.split(',').map(str::trim).filter(|name| !name.is_empty()) {
+    for name in names
+        .split(',')
+        .map(str::trim)
+        .filter(|name| !name.is_empty())
+    {
         if !layer_order.iter().any(|known| known == name) {
             layer_order.push(name.to_string());
         }

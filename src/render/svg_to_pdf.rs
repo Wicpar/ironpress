@@ -5,11 +5,11 @@ use crate::parser::svg::{
     SvgPaint, SvgRadialGradient, SvgStyle, SvgTextAnchor, SvgTextContext, SvgTransform, SvgTree,
 };
 use crate::render::pdf::encode_pdf_text;
-use crate::render::shading::{push_axial_shading, push_radial_shading, ShadingEntry};
+use crate::render::shading::{ShadingEntry, push_axial_shading, push_radial_shading};
 use crate::render::svg_geometry::{
-    compute_raster_placement, compute_svg_placement, SvgPlacementRequest, SvgViewportBox,
+    SvgPlacementRequest, SvgViewportBox, compute_raster_placement, compute_svg_placement,
 };
-use crate::style::computed::{parse_font_stack, FontFamily};
+use crate::style::computed::{FontFamily, parse_font_stack};
 use std::fmt::Write as _;
 
 pub(crate) trait SvgImageObjectSink {
@@ -1853,9 +1853,9 @@ fn hex_encode(data: &[u8]) -> String {
 mod tests {
     use super::*;
     use crate::parser::svg::{
-        PathCommand, SvgClipPath, SvgClipPathUnits, SvgGradientStop, SvgGradientUnits,
-        SvgLinearGradient, SvgNode, SvgPaint, SvgClipRule, SvgPreserveAspectRatio, SvgStyle,
-        SvgTextContext, SvgTransform, SvgTree,
+        PathCommand, SvgClipPath, SvgClipPathUnits, SvgClipRule, SvgGradientStop, SvgGradientUnits,
+        SvgLinearGradient, SvgNode, SvgPaint, SvgPreserveAspectRatio, SvgStyle, SvgTextContext,
+        SvgTransform, SvgTree,
     };
     use std::sync::atomic::{AtomicUsize, Ordering};
 

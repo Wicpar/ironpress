@@ -106,9 +106,11 @@ fn remember_svg_defs(defs: &SvgDefs) {
     }
     let registry = SVG_DEFS_REGISTRY.get_or_init(|| std::sync::Mutex::new(SvgDefs::default()));
     if let Ok(mut stored) = registry.lock() {
-        stored
-            .gradients
-            .extend(defs.gradients.iter().map(|(id, val)| (id.clone(), val.clone())));
+        stored.gradients.extend(
+            defs.gradients
+                .iter()
+                .map(|(id, val)| (id.clone(), val.clone())),
+        );
         stored.radial_gradients.extend(
             defs.radial_gradients
                 .iter()
@@ -2700,6 +2702,7 @@ fn parse_num_list(s: &str) -> Vec<f32> {
 }
 
 #[cfg(test)]
+#[allow(clippy::field_reassign_with_default)]
 mod tests {
     use super::*;
 

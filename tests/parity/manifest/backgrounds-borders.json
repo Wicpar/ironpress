@@ -530,7 +530,7 @@
     "description": "border-image paints a linear-gradient source into a transparent physical border; catches engines that ignore border-image or fall back to a plain/transparent border.",
     "file": "cases/backgrounds-borders/border-image-gradient-slice.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",
@@ -548,7 +548,7 @@
     "description": "groove, ridge, inset, and outset render with 3D bevel polarity; catches unsupported keywords collapsed to flat solid borders.",
     "file": "cases/backgrounds-borders/border-style-3d-bevels.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",

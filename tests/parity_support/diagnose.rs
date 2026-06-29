@@ -37,7 +37,7 @@ use super::report::{FixtureResult, Status};
 
 /// The kind of defect a region/fixture exhibits. Serialized as its name so the
 /// report reads as text (e.g. `"GeometrySize"`).
-#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug)]
+#[derive(Serialize, Deserialize, Clone, Copy, PartialEq, Eq, Debug, Default)]
 pub(crate) enum ErrorClass {
     /// Reference paints, candidate is blank (feature absent / clipped).
     Missing,
@@ -54,6 +54,7 @@ pub(crate) enum ErrorClass {
     /// Opacity not composited (an α∈(0,1) explains ref while cand is opaque).
     AlphaCompositing,
     /// The only non-Match pixels are shared-edge AA — a measurement ceiling.
+    #[default]
     AaOnly,
 }
 
@@ -69,12 +70,6 @@ impl ErrorClass {
             ErrorClass::AlphaCompositing => "AlphaCompositing",
             ErrorClass::AaOnly => "AaOnly",
         }
-    }
-}
-
-impl Default for ErrorClass {
-    fn default() -> Self {
-        ErrorClass::AaOnly
     }
 }
 
@@ -573,12 +568,14 @@ fn region_modal_colors(
     cand: &RgbaImage,
     reference: &RgbaImage,
 ) -> Option<([u8; 3], [u8; 3], f64, f64)> {
+    type SampleSelector = fn(&([u8; 4], [u8; 4])) -> [u8; 3];
+
     let samples = sample_region_pairs(r, cand, reference, 4096);
     if samples.len() < 8 {
         return None;
     }
     let n = samples.len() as f64;
-    let modal = |sel: fn(&([u8; 4], [u8; 4])) -> [u8; 3]| -> ([u8; 3], f64) {
+    let modal = |sel: SampleSelector| -> ([u8; 3], f64) {
         let mut counts: BTreeMap<[u8; 3], u32> = BTreeMap::new();
         for s in &samples {
             // Quantise to 8-step buckets so AA fringe doesn't fragment the mode.
