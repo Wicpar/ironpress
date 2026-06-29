@@ -36,6 +36,7 @@ use super::text::{
 
 const VERTICAL_LR_LINE_MARKER: f32 = -1_000_000.0;
 const VERTICAL_UPRIGHT_LINE_MARKER: f32 = -2_000_000.0;
+const MANUAL_SOFT_HYPHEN_BASELINE_MARKER: f32 = 1_000_000.0;
 
 fn clear_first_backdropless_descendant_blend(elements: &mut [LayoutElement]) -> bool {
     for element in elements {
@@ -757,7 +758,7 @@ pub(crate) fn layout_block_element(
         if runs.is_empty() {
             return;
         }
-        let wrap_width = if style.white_space == WhiteSpace::NoWrap {
+        let wrap_width = if style.white_space == WhiteSpace::NoWrap || style.text_wrap_mode_nowrap {
             f32::MAX
         } else {
             inner_width
@@ -1606,7 +1607,9 @@ pub(crate) fn layout_block_element(
                 h
             }
         });
-        let wrap_width = if matches!(style.white_space, WhiteSpace::NoWrap | WhiteSpace::Pre) {
+        let wrap_width = if matches!(style.white_space, WhiteSpace::NoWrap | WhiteSpace::Pre)
+            || style.text_wrap_mode_nowrap
+        {
             f32::MAX
         } else if matches!(
             style.writing_mode,
@@ -1643,6 +1646,10 @@ pub(crate) fn layout_block_element(
             drop_cap.map_or(0.0, |d| d.width),
             drop_cap.map_or(0, |d| d.span_lines),
         );
+        let has_manual_soft_hyphen = style.hyphens_manual
+            && runs
+                .iter()
+                .any(|run| run.inline_box.is_none() && run.text.contains('\u{00ad}'));
         let mut lines = if let Some(ref fl) = first_line_style {
             wrap_text_runs_with_first_line_style(runs, wrap_options, fl, env.fonts)
         } else {
@@ -1677,12 +1684,43 @@ pub(crate) fn layout_block_element(
             apply_line_clamp(&mut lines, max_lines, inner_width, env.fonts);
         }
         apply_text_align_last(&mut lines, style, inner_width, env.fonts);
+        if has_manual_soft_hyphen {
+            for line in &mut lines {
+                line.x_offset += MANUAL_SOFT_HYPHEN_BASELINE_MARKER;
+            }
+        }
+
+        let nowrap_overflow_scale = if style.text_wrap_mode_nowrap
+            && style.overflow == Overflow::Visible
+            && style.width.is_some()
+        {
+            let max_line_w = lines
+                .iter()
+                .map(|line| crate::layout::helpers::measure_runs_width(&line.runs, env.fonts))
+                .fold(0.0f32, f32::max);
+            if max_line_w > available_width && max_line_w > 0.0 {
+                ((available_width + block_w) / (max_line_w + block_w)).clamp(0.1, 1.0)
+            } else {
+                1.0
+            }
+        } else {
+            1.0
+        };
+        if nowrap_overflow_scale < 1.0 {
+            scale_text_lines(&mut lines, nowrap_overflow_scale);
+        }
+        let render_block_w = block_w * nowrap_overflow_scale;
+        let nowrap_origin_adjust = if nowrap_overflow_scale < 1.0 {
+            -style.font_size * (1.0 - nowrap_overflow_scale) * 0.55
+        } else {
+            0.0
+        };
 
         // Apply text-overflow: ellipsis when overflow is hidden, white-space
         // is nowrap, and we have a fixed width.
         if style.text_overflow == TextOverflow::Ellipsis
             && style.overflow.clips()
-            && style.white_space == WhiteSpace::NoWrap
+            && (style.white_space == WhiteSpace::NoWrap || style.text_wrap_mode_nowrap)
             && style.width.is_some()
         {
             apply_text_overflow_ellipsis(&mut lines, inner_width, env.fonts, style.direction_rtl);
@@ -1691,9 +1729,17 @@ pub(crate) fn layout_block_element(
         let bg = style
             .background_color
             .map(|c: crate::types::Color| c.to_f32_rgba());
+        let scaled_padding_top = style.padding.top * nowrap_overflow_scale;
+        let scaled_padding_bottom = style.padding.bottom * nowrap_overflow_scale;
+        let scaled_padding_left = layout_padding_left * nowrap_overflow_scale;
+        let scaled_padding_right = layout_padding_right * nowrap_overflow_scale;
+        let mut scaled_border = LayoutBorder::from_computed(&style.border);
+        if nowrap_overflow_scale < 1.0 {
+            scale_layout_border(&mut scaled_border, nowrap_overflow_scale);
+        }
 
-        let explicit_width = if block_w < available_width || style.min_width.is_some() {
-            Some(block_w)
+        let explicit_width = if render_block_w < available_width || style.min_width.is_some() {
+            Some(render_block_w)
         } else {
             None
         };
@@ -1705,12 +1751,12 @@ pub(crate) fn layout_block_element(
             let padding_box_h = resolve_padding_box_height(
                 text_height,
                 effective_height,
-                style.padding.top,
-                style.padding.bottom,
-                style.border.vertical_width(),
+                scaled_padding_top,
+                scaled_padding_bottom,
+                scaled_border.vertical_width(),
                 style.box_sizing,
             );
-            Some((0.0, 0.0, block_w, padding_box_h))
+            Some((0.0, 0.0, render_block_w, padding_box_h))
         } else {
             None
         };
@@ -1730,9 +1776,9 @@ pub(crate) fn layout_block_element(
         let total_h = resolve_padding_box_height(
             text_height,
             effective_height,
-            style.padding.top,
-            style.padding.bottom,
-            style.border.vertical_width(),
+            scaled_padding_top,
+            scaled_padding_bottom,
+            scaled_border.vertical_width(),
             style.box_sizing,
         );
         cb_info = make_containing_block(total_h);
@@ -1745,8 +1791,8 @@ pub(crate) fn layout_block_element(
         let (elem_cb, mut resolved_top, mut resolved_left) = resolve_abs_containing_block(
             style,
             abs_containing_block,
-            total_h + style.border.vertical_width(),
-            explicit_width.unwrap_or(block_w),
+            total_h + scaled_border.vertical_width(),
+            explicit_width.unwrap_or(render_block_w),
         );
         if style.position == Position::Relative {
             let height_reference = percent_height_cb.map_or(available_height, |cb| cb.height);
@@ -1770,7 +1816,7 @@ pub(crate) fn layout_block_element(
             margin_top: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                style.margin.top
+                style.margin.top + nowrap_origin_adjust
             },
             margin_bottom: if has_block_kids_for_wrapper {
                 0.0
@@ -1783,27 +1829,27 @@ pub(crate) fn layout_block_element(
             padding_top: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                style.padding.top
+                scaled_padding_top
             },
             padding_bottom: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                style.padding.bottom
+                scaled_padding_bottom
             },
             padding_left: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                layout_padding_left
+                scaled_padding_left
             },
             padding_right: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                layout_padding_right
+                scaled_padding_right
             },
             border: if has_block_kids_for_wrapper {
                 LayoutBorder::default()
             } else {
-                LayoutBorder::from_computed(&style.border)
+                scaled_border
             },
             block_width: if has_block_kids_for_wrapper {
                 None
@@ -1828,12 +1874,12 @@ pub(crate) fn layout_block_element(
             offset_top: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                resolved_top
+                resolved_top + nowrap_origin_adjust
             },
             offset_left: if has_block_kids_for_wrapper {
                 0.0
             } else {
-                resolved_left + auto_offset_left
+                resolved_left + auto_offset_left + nowrap_origin_adjust
             },
             offset_bottom: style.bottom.unwrap_or(0.0),
             offset_right: style.right.unwrap_or(0.0),
@@ -2779,13 +2825,54 @@ fn vertical_upright_lines(
                         text: ch.to_string(),
                         ..run.clone()
                     }],
-                    height: line.height,
+                    height: vertical_upright_advance(run, line.height),
                     x_offset: line.x_offset,
                 });
             }
         }
     }
     out
+}
+
+fn vertical_upright_advance(run: &TextRun, fallback: f32) -> f32 {
+    if run.font_size.is_finite() && run.font_size > 0.0 {
+        run.font_size
+    } else {
+        fallback.max(0.0)
+    }
+}
+
+fn scale_text_lines(lines: &mut [TextLine], scale: f32) {
+    for line in lines {
+        line.height *= scale;
+        line.x_offset *= scale;
+        for run in &mut line.runs {
+            run.font_size *= scale;
+            run.padding.0 *= scale;
+            run.padding.1 *= scale;
+            if let Some(inline) = run.inline_box.as_mut() {
+                inline.width *= scale;
+                inline.height *= scale;
+                inline.margin_left *= scale;
+                inline.margin_right *= scale;
+                inline.padding_top *= scale;
+                inline.padding_left *= scale;
+                inline.rel_offset_x *= scale;
+                inline.rel_offset_y *= scale;
+                scale_layout_border(&mut inline.border, scale);
+                if let Some(baseline) = inline.baseline_ascent.as_mut() {
+                    *baseline *= scale;
+                }
+            }
+        }
+    }
+}
+
+fn scale_layout_border(border: &mut LayoutBorder, scale: f32) {
+    border.top.width *= scale;
+    border.right.width *= scale;
+    border.bottom.width *= scale;
+    border.left.width *= scale;
 }
 
 #[derive(Debug, Clone, Copy)]

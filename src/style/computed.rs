@@ -1600,6 +1600,7 @@ pub struct ComputedStyle {
     pub text_align_last: Option<TextAlign>,
     pub word_break_keep_all: bool,
     pub hyphens_manual: bool,
+    pub text_wrap_mode_nowrap: bool,
     /// CSS direction property (ltr/rtl), set from `dir` attribute or CSS.
     pub direction_rtl: bool,
     /// CSS `writing-mode` (css-writing-modes-4 §3.1). Inherited; initial
@@ -2068,6 +2069,7 @@ impl Default for ComputedStyle {
             text_align_last: None,
             word_break_keep_all: false,
             hyphens_manual: true,
+            text_wrap_mode_nowrap: false,
             direction_rtl: false,
             writing_mode: WritingMode::HorizontalTb,
             writing_mode_vertical_lr: false,
@@ -3082,7 +3084,7 @@ fn reset_to_initial(style: &mut ComputedStyle, property: &str) {
         "overflow-wrap" | "word-wrap" => style.overflow_wrap = default.overflow_wrap,
         "word-break" => style.word_break_keep_all = default.word_break_keep_all,
         "white-space-collapse" => style.white_space = default.white_space,
-        "text-wrap-mode" => style.white_space = default.white_space,
+        "text-wrap-mode" => style.text_wrap_mode_nowrap = default.text_wrap_mode_nowrap,
         "border-collapse" => style.border_collapse = default.border_collapse,
         "table-layout" => style.table_layout = default.table_layout,
         "border-spacing" => {
@@ -3306,7 +3308,7 @@ fn restore_from_parent(style: &mut ComputedStyle, property: &str, parent: &Compu
         "overflow-wrap" | "word-wrap" => style.overflow_wrap = parent.overflow_wrap,
         "word-break" => style.word_break_keep_all = parent.word_break_keep_all,
         "white-space-collapse" => style.white_space = parent.white_space,
-        "text-wrap-mode" => style.white_space = parent.white_space,
+        "text-wrap-mode" => style.text_wrap_mode_nowrap = parent.text_wrap_mode_nowrap,
         "empty-cells" => style.empty_cells = parent.empty_cells,
         "caption-side" => style.caption_side = parent.caption_side,
         "border-collapse" => style.border_collapse = parent.border_collapse,
@@ -5531,7 +5533,7 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
     if let Some(CssValue::Keyword(k)) = get_non_special(map, "text-wrap-mode")
         && k == "nowrap"
     {
-        style.white_space = WhiteSpace::NoWrap;
+        style.text_wrap_mode_nowrap = true;
     }
 
     // Letter-spacing

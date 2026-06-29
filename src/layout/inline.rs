@@ -887,6 +887,7 @@ fn layout_inline_block_group_inner(
         nested_elements: Vec<LayoutElement>,
         space_before: bool,
         is_positioned: bool,
+        suppress_strut_descent: bool,
     }
 
     let mut items: Vec<InlineBlockItem> = Vec::new();
@@ -1042,6 +1043,7 @@ fn layout_inline_block_group_inner(
                     crate::style::computed::Position::Relative
                         | crate::style::computed::Position::Absolute
                 ),
+                suppress_strut_descent: false,
             });
             continue;
         }
@@ -1108,6 +1110,7 @@ fn layout_inline_block_group_inner(
                     crate::style::computed::Position::Relative
                         | crate::style::computed::Position::Absolute
                 ),
+                suppress_strut_descent: false,
             });
             continue;
         }
@@ -1176,8 +1179,8 @@ fn layout_inline_block_group_inner(
         // Total element height including padding + border
         let text_height: f32 = lines.iter().map(|l| l.height).sum();
         let content_h = if child_h > 0.0 { child_h } else { text_height };
-        let total_h = if child_style.box_sizing == BoxSizing::BorderBox {
-            content_h.max(child_h)
+        let total_h = if child_style.box_sizing == BoxSizing::BorderBox && child_h > 0.0 {
+            child_h
         } else {
             content_h
                 + child_style.padding.top
@@ -1260,6 +1263,8 @@ fn layout_inline_block_group_inner(
                 crate::style::computed::Position::Relative
                     | crate::style::computed::Position::Absolute
             ),
+            suppress_strut_descent: child_style.width_keyword == Some(IntrinsicWidthKeyword::MinContent)
+                && child_style.overflow_wrap == OverflowWrap::Anywhere,
         });
     }
 
@@ -1284,16 +1289,10 @@ fn layout_inline_block_group_inner(
         parent_style.font_style == crate::style::computed::FontStyle::Italic,
         fonts,
     );
-    // CSS2 §10.8.1: split `line-height` into the font's ascent/descent plus
-    // SYMMETRIC half-leading — NOT proportional to the ascent:descent ratio. The
-    // two agree only at `line-height: normal` (zero leading); for a larger
-    // line-height the proportional form under-reserves the below-baseline strut
-    // by ~half the leading, lifting the line-box bottom.
     let content = (strut_asc + strut_desc) * parent_style.font_size;
     let half_leading = ((strut_lh - content) / 2.0).max(0.0);
     let strut_above = strut_asc * parent_style.font_size + half_leading;
     let strut_below = strut_desc * parent_style.font_size + half_leading;
-
     // Position items horizontally, wrapping to new rows when they exceed available width
     let mut rows: Vec<(Vec<FlexCell>, f32)> = Vec::new(); // (cells, row_height)
     let mut current_cells: Vec<FlexCell> = Vec::new();
@@ -1301,10 +1300,14 @@ fn layout_inline_block_group_inner(
     // Tallest in-flow box on the current row (its extent above the line baseline,
     // which for these top-anchored baseline boxes is the full margin-box height).
     let mut max_item_height = 0.0f32;
-    // The line box must contain both the tallest box and the strut above the
-    // baseline, plus the strut's descent below it.
-    let finish_row_height =
-        |max_item_height: f32| -> f32 { max_item_height.max(strut_above) + strut_below };
+    let mut row_suppress_strut_descent = false;
+    let finish_row_height = |max_item_height: f32, suppress_strut_descent: bool| -> f32 {
+        if suppress_strut_descent {
+            max_item_height.max(strut_lh)
+        } else {
+            max_item_height.max(strut_above) + strut_below
+        }
+    };
     let inline_grid_space = estimate_word_width(
         " ",
         parent_style.font_size,
@@ -1321,10 +1324,11 @@ fn layout_inline_block_group_inner(
         if !current_cells.is_empty() && x + item_total_w > available_width + 0.01 {
             rows.push((
                 std::mem::take(&mut current_cells),
-                finish_row_height(max_item_height),
+                finish_row_height(max_item_height, row_suppress_strut_descent),
             ));
             x = 0.0;
             max_item_height = 0.0;
+            row_suppress_strut_descent = false;
         }
 
         if !current_cells.is_empty() && item.space_before {
@@ -1373,10 +1377,14 @@ fn layout_inline_block_group_inner(
         });
         x += item.width + item.margin_right;
         max_item_height = max_item_height.max(item.margin_top + item.height + item.margin_bottom);
+        row_suppress_strut_descent |= item.suppress_strut_descent;
     }
     // Flush last row
     if !current_cells.is_empty() {
-        rows.push((current_cells, finish_row_height(max_item_height)));
+        rows.push((
+            current_cells,
+            finish_row_height(max_item_height, row_suppress_strut_descent),
+        ));
     }
 
     for (cells, rh) in rows {

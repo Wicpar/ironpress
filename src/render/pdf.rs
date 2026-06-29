@@ -2330,7 +2330,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     mix_blend_mode,
                     float,
                     position,
-                    offset_top: _,
+                    offset_top,
                     offset_left,
                     offset_bottom: _,
                     offset_right: _,
@@ -2408,7 +2408,11 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     };
                     // PDF y-axis is bottom-up.
                     // y_pos already includes absolute/relative offsets from pagination.
-                    let block_y = page_size.height - margin.top - y_pos;
+                    let block_y = if *position == Position::Static && *offset_top < 0.0 {
+                        page_size.height - margin.top - y_pos - offset_top
+                    } else {
+                        page_size.height - margin.top - y_pos
+                    };
 
                     // Use explicit block_width if set, otherwise available_width
                     let render_width = block_width.unwrap_or(available_width);
@@ -3228,8 +3232,19 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
 
                     let line_count = lines.len();
                     for (line_idx, line) in lines.iter().enumerate() {
-                        let metrics = line_box_metrics(line, custom_fonts);
+                        let metrics = if upright_vertical {
+                            upright_vertical_line_metrics(line, custom_fonts)
+                        } else {
+                            line_box_metrics(line, custom_fonts)
+                        };
                         text_y -= metrics.half_leading + metrics.ascender;
+                        let manual_soft_hyphen_baseline = line.x_offset >= 1_000_000.0;
+                        if manual_soft_hyphen_baseline {
+                            let font_size = crate::layout::text::line_primary_font_size(&line.runs);
+                            if font_size > 0.0 && line.height > font_size {
+                                text_y += (line.height - font_size) * 0.05;
+                            }
+                        }
                         let line_annotation_box = TextLineAnnotationBox {
                             top: text_y + metrics.ascender + metrics.half_leading,
                             bottom: text_y - metrics.descender - metrics.half_leading,
@@ -3271,13 +3286,22 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         // its inline content wraps beside the floated
                         // `::first-letter` (css-pseudo-4 §2.2 + css2 §9.5).
                         let mut line_inset = line.x_offset;
+                        if line_inset >= 1_000_000.0 {
+                            line_inset -= 1_000_000.0;
+                        }
                         if line_inset <= -1_000_000.0 {
                             line_inset = 0.0;
                         }
                         let text_x = match text_align {
                             TextAlign::Left | TextAlign::Justify => {
                                 if upright_vertical {
-                                    content_right - line_width + line_inset
+                                    let upright_box_width = line
+                                        .runs
+                                        .iter()
+                                        .find(|r| r.inline_box.is_none())
+                                        .map(run_line_height_for_vertical_align)
+                                        .unwrap_or(line.height);
+                                    content_right - (upright_box_width + line_width) / 2.0 + line_inset
                                 } else {
                                     padding_box_x + padding_left + first_line_indent + line_inset
                                 }
@@ -13393,6 +13417,48 @@ fn line_box_metrics(line: &TextLine, custom_fonts: &HashMap<String, TtfFont>) ->
     LineBoxMetrics {
         ascender: above,
         descender: below,
+        half_leading: 0.0,
+    }
+}
+
+fn upright_vertical_line_metrics(
+    line: &TextLine,
+    custom_fonts: &HashMap<String, TtfFont>,
+) -> LineBoxMetrics {
+    let (ascender, descender) = line
+        .runs
+        .iter()
+        .filter(|r| r.inline_box.is_none())
+        .filter(|r| !is_drop_cap_run(r))
+        .fold((0.0f32, 0.0f32), |(max_ascender, max_descender), run| {
+            let (ascender_ratio, descender_ratio) = crate::fonts::font_metrics_ratios(
+                &run.font_family,
+                run.bold,
+                run.italic,
+                custom_fonts,
+            );
+            (
+                max_ascender.max(ascender_ratio * run.font_size),
+                max_descender.max(descender_ratio * run.font_size),
+            )
+        });
+    if ascender + descender == 0.0 {
+        return line_box_metrics(line, custom_fonts);
+    }
+    let has_non_ascii_text = line.runs.iter().any(|r| {
+        r.inline_box.is_none()
+            && r.text
+                .chars()
+                .any(|ch| !ch.is_ascii() && !ch.is_whitespace())
+    });
+    let half_leading = if has_non_ascii_text {
+        (line.height - (ascender + descender)) / 2.0
+    } else {
+        ((line.height - (ascender + descender)) / 2.0).max(0.0)
+    };
+    LineBoxMetrics {
+        ascender: ascender + half_leading,
+        descender: descender + half_leading,
         half_leading: 0.0,
     }
 }
