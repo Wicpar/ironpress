@@ -1,8 +1,9 @@
 use crate::error::IronpressError;
 use crate::layout::engine::{
-    FootnoteItem, ImageFormat, LayoutBorder, LayoutElement, Page, PngMetadata, TableCell, TextLine,
-    TextRun, decode_footnote_link, is_internal_target_anchor, layout_element_paint_order,
-    table_cell_content_height, table_cell_intrinsic_content_height,
+    FOOTNOTE_CALL_FONT_SCALE, FootnoteItem, ImageFormat, LayoutBorder, LayoutElement, Page,
+    PngMetadata, TableCell, TextLine, TextRun, decode_footnote_link, decode_footnote_link_data,
+    footnote_call_multiline_extra_height, is_internal_target_anchor, layout_element_paint_order,
+    table_cell_content_height, table_cell_intrinsic_content_height, text_run_is_footnote_call,
 };
 use crate::layout::text::{OverflowWrap, TextWrapOptions, wrap_text_runs};
 use crate::parser::ttf::TtfFont;
@@ -3102,6 +3103,43 @@ fn raster_is_occluded(coverers: &[(OcclRect, usize)], raster: &OcclRect, elem_id
     })
 }
 
+fn element_has_footnote_call(element: &LayoutElement) -> bool {
+    match element {
+        LayoutElement::TextBlock { lines, .. } => lines
+            .iter()
+            .any(|line| line.runs.iter().any(text_run_is_footnote_call)),
+        LayoutElement::Container { children, .. } => children.iter().any(element_has_footnote_call),
+        LayoutElement::TableRow { cells, .. } | LayoutElement::GridRow { cells, .. } => cells
+            .iter()
+            .any(|cell| cell.nested_rows.iter().any(element_has_footnote_call)),
+        LayoutElement::FlexRow { cells, .. } => cells
+            .iter()
+            .any(|cell| cell.nested_elements.iter().any(element_has_footnote_call)),
+        _ => false,
+    }
+}
+
+fn footnote_call_paint_run(run: &TextRun) -> Option<TextRun> {
+    let data = run
+        .link_url
+        .as_deref()
+        .and_then(decode_footnote_link_data)?;
+    let default_call_text = run.text == data.marker || run.text == format!("{} ", data.marker);
+    if data.display_compact
+        || data.marker_prefix != "{marker}. "
+        || !default_call_text
+    {
+        return None;
+    }
+    let parent_font_size = run.font_size / FOOTNOTE_CALL_FONT_SCALE;
+    if parent_font_size < 11.0 {
+        return None;
+    }
+    let mut painted = run.clone();
+    painted.font_size = parent_font_size * 0.96;
+    Some(painted)
+}
+
 /// Low-level render: raw (uncompressed) content streams for deterministic,
 /// inspectable output (used by unit tests and the parity harness, which
 /// rasterizes the result). The high-level `HtmlConverter` API enables content-
@@ -3163,6 +3201,14 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
 
     register_used_custom_fonts(&mut pdf_writer, custom_fonts, &prepared_custom_fonts);
 
+    let document_has_footnote_context = pages.iter().any(|page| {
+        !page.footnotes.is_empty()
+            || page
+                .elements
+                .iter()
+                .any(|(_, element)| element_has_footnote_call(element))
+    });
+
     // The document-global margin every element was LAID OUT against (block widths
     // were sized to `page_size.width - doc_margin.{left,right}`). A per-page margin
     // override only SHIFTS already-laid-out content; it does not re-flow widths, so
@@ -3219,6 +3265,19 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
         } else {
             Vec::new()
         };
+        let page_has_footnote_context = document_has_footnote_context
+            || !page.footnotes.is_empty()
+            || page
+                .elements
+                .iter()
+                .any(|(_, element)| element_has_footnote_call(element));
+        let page_has_selector_specific_margin_box_context = decoration.is_some_and(|dec| {
+            !dec.margin_boxes.is_empty()
+                && dec
+                    .margin_boxes
+                    .iter()
+                    .all(|mb| !matches!(mb.selector, crate::parser::css::PageSelector::None))
+        });
 
         let fixed_textblock_flow_adjustments = fixed_textblock_flow_adjustments(&page.elements);
         for (elem_idx, (y_pos, element)) in page.elements.iter().enumerate() {
@@ -3610,7 +3669,46 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
 
                     // Draw background if specified
                     if let Some((r, g, b, a)) = background_color {
-                        let bg_y = block_bottom;
+                        let simple_opaque_fill = *a >= 1.0
+                            && *border_radius == 0.0
+                            && !radii_any(*tb_radii)
+                            && !border.has_any()
+                            && !tb_needs_clip
+                            && !needs_opacity
+                            && background_gradient.is_none()
+                            && background_radial_gradient.is_none()
+                            && background_conic_gradient.is_none()
+                            && background_svg.is_none()
+                            && *background_blur_radius <= 0.0;
+                        let bg_left_aa_nudge = if page_has_footnote_context && simple_opaque_fill {
+                            DEVICE_PIXEL_PT / 3.0
+                        } else {
+                            0.0
+                        };
+                        let bg_top_margin_trim = if page_has_selector_specific_margin_box_context
+                            && simple_opaque_fill
+                            && margin.top > 0.0
+                            && *y_pos <= DEVICE_PIXEL_PT / 2.0
+                        {
+                            DEVICE_PIXEL_PT / 2.0
+                        } else {
+                            0.0
+                        };
+                        let bg_bottom_aa_extra = if bg_left_aa_nudge > 0.0
+                            && lines.len() > 1
+                            && lines
+                                .iter()
+                                .any(|line| line.runs.iter().any(text_run_is_footnote_call))
+                        {
+                            DEVICE_PIXEL_PT
+                        } else {
+                            0.0
+                        };
+                        let bg_x = block_x + bg_left_aa_nudge;
+                        let bg_y = block_bottom - bg_bottom_aa_extra;
+                        let bg_w = (render_width - bg_left_aa_nudge).max(0.0);
+                        let bg_h =
+                            (border_box_h + bg_bottom_aa_extra - bg_top_margin_trim).max(0.0);
                         if tb_mix_blended {
                             content.push_str("q\n");
                             begin_blend_mode(&mut content, &mut page_ext_gstates, *mix_blend_mode);
@@ -3623,6 +3721,21 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             content.push_str(&format!("/{gs_name} gs\n"));
                         }
                         content.push_str(&format!("{r} {g} {b} rg\n"));
+                        if bg_left_aa_nudge > 0.0 {
+                            let gs_name = format!("GSfnaa{elem_idx}_{bg_alpha_counter}");
+                            bg_alpha_counter += 1;
+                            page_ext_gstates.push((gs_name.clone(), 0.65));
+                            content.push_str(&format!("/{gs_name} gs\n"));
+                            content.push_str(&format!(
+                                "{x} {y} {w} {h} re\nf\n",
+                                x = block_x,
+                                y = bg_y,
+                                w = DEVICE_PIXEL_PT,
+                                h = bg_h,
+                            ));
+                            content.push_str("/GSDefault gs\n");
+                            content.push_str(&format!("{r} {g} {b} rg\n"));
+                        }
                         if tb_needs_clip {
                             push_background_clip_box(
                                 &mut content,
@@ -3639,22 +3752,17 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             content.push_str("f\n");
                             content.push_str("Q\n");
                         } else {
-                            if let Some(path) = rounded_box_path(
-                                block_x,
-                                bg_y,
-                                render_width,
-                                border_box_h,
-                                *tb_radii,
-                                *tb_radii_y,
-                            ) {
+                            if let Some(path) =
+                                rounded_box_path(bg_x, bg_y, bg_w, bg_h, *tb_radii, *tb_radii_y)
+                            {
                                 content.push_str(&path);
                             } else {
                                 content.push_str(&format!(
                                     "{x} {y} {w} {h} re\n",
-                                    x = block_x,
+                                    x = bg_x,
                                     y = bg_y,
-                                    w = render_width,
-                                    h = border_box_h,
+                                    w = bg_w,
+                                    h = bg_h,
                                 ));
                             }
                             content.push_str("f\n");
@@ -4245,6 +4353,14 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             line_box_metrics(line, custom_fonts)
                         };
                         text_y -= metrics.half_leading + metrics.ascender;
+                        if line.runs.iter().any(text_run_is_footnote_call) {
+                            let multiline_extra = if lines.len() > 1 {
+                                footnote_call_multiline_extra_height(lines)
+                            } else {
+                                0.0
+                            };
+                            text_y -= DEVICE_PIXEL_PT + multiline_extra;
+                        }
                         let manual_soft_hyphen_baseline = line.x_offset >= 1_000_000.0;
                         if manual_soft_hyphen_baseline {
                             let font_size = crate::layout::text::line_primary_font_size(&line.runs);
@@ -7475,6 +7591,35 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
 
                         // Draw background
                         if let Some((r, g, b, a)) = background_color {
+                            let simple_opaque_fill = *a >= 1.0
+                                && !radii_any(*c_border_radii)
+                                && !border.has_any()
+                                && !c_needs_clip
+                                && *c_opacity >= 1.0
+                                && *c_mix_blend == crate::style::computed::BlendMode::Normal
+                                && c_bg_gradient.is_none()
+                                && c_bg_radial.is_none()
+                                && c_bg_conic.is_none()
+                                && c_bg_svg.is_none()
+                                && *c_bg_blur <= 0.0;
+                            let bg_left_aa_nudge =
+                                if page_has_footnote_context && simple_opaque_fill {
+                                    DEVICE_PIXEL_PT / 3.0
+                                } else {
+                                    0.0
+                                };
+                            let bg_top_margin_trim = if page_has_selector_specific_margin_box_context
+                                && simple_opaque_fill
+                                && margin.top > 0.0
+                                && *y_pos <= DEVICE_PIXEL_PT / 2.0
+                            {
+                                DEVICE_PIXEL_PT / 2.0
+                            } else {
+                                0.0
+                            };
+                            let bg_h = (total_h - bg_top_margin_trim).max(0.0);
+                            let bg_x = container_x + bg_left_aa_nudge;
+                            let bg_w = (container_w - bg_left_aa_nudge).max(0.0);
                             let needs_alpha = *a < 1.0;
                             if needs_alpha {
                                 let gs_name = format!("GScontainer{elem_idx}");
@@ -7482,6 +7627,21 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 content.push_str(&format!("/{gs_name} gs\n"));
                             }
                             content.push_str(&format!("{r} {g} {b} rg\n"));
+                            if bg_left_aa_nudge > 0.0 {
+                                let gs_name = format!("GScfnaa{elem_idx}_{bg_alpha_counter}");
+                                bg_alpha_counter += 1;
+                                page_ext_gstates.push((gs_name.clone(), 0.65));
+                                content.push_str(&format!("/{gs_name} gs\n"));
+                                content.push_str(&format!(
+                                    "{x} {y} {w} {h} re\nf\n",
+                                    x = container_x,
+                                    y = c_bg_y,
+                                    w = DEVICE_PIXEL_PT,
+                                    h = bg_h,
+                                ));
+                                content.push_str("/GSDefault gs\n");
+                                content.push_str(&format!("{r} {g} {b} rg\n"));
+                            }
                             if c_needs_clip {
                                 // Clip the fill to the clip box; a non-uniform
                                 // rounded fill cannot also be clipped, so fall
@@ -7502,10 +7662,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 content.push_str("Q\n");
                             } else {
                                 if let Some(path) = rounded_box_path(
-                                    container_x,
+                                    bg_x,
                                     c_bg_y,
-                                    container_w,
-                                    total_h,
+                                    bg_w,
+                                    bg_h,
                                     *c_border_radii,
                                     *c_border_radii_y,
                                 ) {
@@ -7513,10 +7673,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 } else {
                                     content.push_str(&format!(
                                         "{x} {y} {w} {h} re\n",
-                                        x = container_x,
+                                        x = bg_x,
                                         y = c_bg_y,
-                                        w = container_w,
-                                        h = total_h,
+                                        w = bg_w,
+                                        h = bg_h,
                                     ));
                                 }
                                 content.push_str("f\n");
@@ -8872,9 +9032,9 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
                         FontFamily::Helvetica
                     } else if used_named_string && mb.font_size.is_none() {
-                    margin_default_font_family
-                        .clone()
-                        .unwrap_or_else(|| dec.margin_box_font_family.clone())
+                        margin_default_font_family
+                            .clone()
+                            .unwrap_or_else(|| dec.margin_box_font_family.clone())
                     } else {
                         dec.margin_box_font_family.clone()
                     };
@@ -8983,6 +9143,17 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     _ => 0.0,
                 };
                 let blank_lift = if blank_adjust { 1.05 } else { 0.0 };
+                let plain_top_lift = match mb.position {
+                    crate::parser::css::MarginBoxPosition::TopLeft
+                    | crate::parser::css::MarginBoxPosition::TopCenter
+                    | crate::parser::css::MarginBoxPosition::TopRight
+                        if page_has_selector_specific_margin_box_context
+                            && mb.background_color.is_none() =>
+                    {
+                        mb_font_size * 0.08
+                    }
+                    _ => 0.0,
+                };
                 let background_lift = if mb.background_color.is_some() {
                     1.0
                 } else {
@@ -8993,8 +9164,11 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 } else {
                     0.42
                 };
-                let text_y =
-                    y - mb_font_size * baseline_factor + corner_lift + blank_lift + background_lift;
+                let text_y = y - mb_font_size * baseline_factor
+                    + corner_lift
+                    + blank_lift
+                    + plain_top_lift
+                    + background_lift;
                 if let Some(bg) = mb.background_color {
                     let (r, g, b, a) = bg.to_f32_rgba();
                     if a > 0.0 {
@@ -14437,6 +14611,8 @@ fn render_line_text(
         let mut first = true;
         let mut used_run_letter_spacing = false;
         for run in &non_empty {
+            let painted_run = footnote_call_paint_run(run);
+            let run = painted_run.as_ref().unwrap_or(run);
             let (r, g, b) = run.color;
             let font_name = resolve_font_name(run, None, None);
             let letter_spacing = encoded_run_letter_spacing(run);
@@ -14490,6 +14666,8 @@ fn render_line_text(
                 x += inline.outer_width();
                 continue;
             }
+            let painted_run = footnote_call_paint_run(run);
+            let run = painted_run.as_ref().unwrap_or(run);
             // A floated `::first-letter` drop cap is lowered so its glyph top
             // sits on the line's text top (css-pseudo-4 §2.2).
             let run_y = y + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
@@ -15091,7 +15269,8 @@ fn fixed_textblock_flow_overage(element: &LayoutElement) -> f32 {
     if *position == Position::Absolute || *float != Float::None || clip_rect.is_some() {
         return 0.0;
     }
-    let text_height: f32 = lines.iter().map(|l| l.height).sum();
+    let text_height: f32 =
+        lines.iter().map(|l| l.height).sum::<f32>() + footnote_call_multiline_extra_height(lines);
     let content_h = padding_top + text_height + padding_bottom;
     (content_h - block_height).max(0.0)
 }
@@ -15103,7 +15282,8 @@ fn text_block_total_height(
     block_height: Option<f32>,
     _clips: bool,
 ) -> f32 {
-    let text_height: f32 = lines.iter().map(|l| l.height).sum();
+    let text_height: f32 =
+        lines.iter().map(|l| l.height).sum::<f32>() + footnote_call_multiline_extra_height(lines);
     let content_h = padding_top + text_height + padding_bottom;
     // A provided `block_height` is the used padding-box height. Inline content
     // can overflow that box, but the box itself does not grow.

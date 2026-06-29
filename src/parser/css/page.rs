@@ -365,13 +365,6 @@ pub(crate) fn extract_page_rules(css: &str) -> Vec<PageRule> {
             }
             None => {}
         }
-        if selector != PageSelector::None && !margin_boxes.is_empty() {
-            page_rules.push(PageRule {
-                selector: PageSelector::None,
-                margin_boxes,
-                ..PageRule::default()
-            });
-        }
         remaining = &after_brace[close_pos + 1..];
     }
 

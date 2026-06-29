@@ -482,7 +482,8 @@ pub struct TextRun {
 
 const FOOTNOTE_LINK_PREFIX: &str = "ironpress-footnote:";
 const FOOTNOTE_LINK_SEPARATOR: char = '\u{1f}';
-pub(crate) const FOOTNOTE_CALL_FONT_SCALE: f32 = 0.96;
+pub(crate) const FOOTNOTE_CALL_FONT_SCALE: f32 = 0.80;
+const FOOTNOTE_CALL_LINE_RESERVE_SCALE: f32 = 0.96;
 const TARGET_ANCHOR_PREFIX: &str = "ironpress-target-anchor:";
 
 #[derive(Debug, Clone)]
@@ -556,6 +557,35 @@ pub(crate) fn decode_footnote_link_data(value: &str) -> Option<FootnoteLinkData>
         marker_color,
         display_compact,
     })
+}
+
+pub(crate) fn text_run_is_footnote_call(run: &TextRun) -> bool {
+    run.link_url
+        .as_deref()
+        .and_then(decode_footnote_link_data)
+        .is_some()
+}
+
+pub(crate) fn footnote_call_multiline_extra_height(lines: &[TextLine]) -> f32 {
+    if lines.len() <= 1
+        || !lines
+            .iter()
+            .any(|line| line.runs.iter().any(text_run_is_footnote_call))
+    {
+        return 0.0;
+    }
+    let parent_font_size = lines
+        .iter()
+        .flat_map(|line| &line.runs)
+        .filter(|run| !text_run_is_footnote_call(run))
+        .filter(|run| run.inline_box.is_none())
+        .filter(|run| !run.text.trim().is_empty())
+        .map(|run| run.font_size)
+        .fold(0.0f32, f32::max);
+    if parent_font_size <= 0.0 {
+        return 0.0;
+    }
+    parent_font_size * (FOOTNOTE_CALL_LINE_RESERVE_SCALE - FOOTNOTE_CALL_FONT_SCALE).max(0.0)
 }
 
 pub(crate) fn is_internal_target_anchor(value: &str) -> bool {

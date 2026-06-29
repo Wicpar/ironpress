@@ -1,6 +1,7 @@
 use super::engine::{
     FOOTNOTE_CALL_FONT_SCALE, FootnoteItem, LayoutElement, Page, PageBreakSide, TableCell, TextRun,
-    decode_footnote_link_data, layout_element_paint_order, table_cell_content_height,
+    decode_footnote_link_data, footnote_call_multiline_extra_height, layout_element_paint_order,
+    table_cell_content_height,
 };
 use super::text::{OverflowWrap, TextWrapOptions, wrap_text_runs};
 use crate::style::computed::{
@@ -262,7 +263,8 @@ fn estimate_element_height_bounded(element: &LayoutElement, depth: usize) -> f32
             if *position == Position::Absolute {
                 return 0.0;
             }
-            let text_height: f32 = lines.iter().map(|l| l.height).sum();
+            let text_height: f32 = lines.iter().map(|l| l.height).sum::<f32>()
+                + footnote_call_multiline_extra_height(lines);
             let content_h = padding_top + text_height + padding_bottom;
             // When clipping (overflow:hidden), use the specified block_height
             // instead of expanding to fit content.
@@ -2484,7 +2486,8 @@ pub(crate) fn paginate_with_first_page(
                 clip_rect,
                 ..
             } => {
-                let text_height: f32 = lines.iter().map(|l| l.height).sum();
+                let text_height: f32 = lines.iter().map(|l| l.height).sum::<f32>()
+                    + footnote_call_multiline_extra_height(lines);
                 let border_extra = border.vertical_width();
                 let content_h = padding_top + text_height + padding_bottom;
                 let effective_content_h = if clip_rect.is_some() {
