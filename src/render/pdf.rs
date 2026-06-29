@@ -6586,6 +6586,54 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             } // else (non-uniform borders)
                         }
 
+                        if c_mask_open {
+                            let aa = 0.24_f32;
+                            if border.top.paints()
+                                && border.top.style == BorderStyle::Solid
+                                && c_bt > 0.0
+                                && *c_pt > 0.0
+                            {
+                                let (r, g, b) = border.top.color;
+                                let a = begin_border_alpha(
+                                    &mut content,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                    (border.top.alpha * 0.13).min(1.0),
+                                );
+                                let y = container_y_top - c_bt - aa * 0.5;
+                                content.push_str(&format!(
+                                    "{r} {g} {b} rg\n{} {} {} {} re\nf\n",
+                                    container_x + c_bl,
+                                    y,
+                                    (container_w - c_bl - c_br).max(0.0),
+                                    aa
+                                ));
+                                end_border_alpha(&mut content, a);
+                            }
+                            if border.left.paints()
+                                && border.left.style == BorderStyle::Solid
+                                && c_bl > 0.0
+                                && *c_pl > 0.0
+                            {
+                                let (r, g, b) = border.left.color;
+                                let a = begin_border_alpha(
+                                    &mut content,
+                                    &mut page_ext_gstates,
+                                    &mut bg_alpha_counter,
+                                    (border.left.alpha * 0.13).min(1.0),
+                                );
+                                let x = container_x + c_bl - aa * 0.5;
+                                content.push_str(&format!(
+                                    "{r} {g} {b} rg\n{} {} {} {} re\nf\n",
+                                    x,
+                                    container_y_top - total_h + c_bb,
+                                    aa,
+                                    (total_h - c_bt - c_bb).max(0.0)
+                                ));
+                                end_border_alpha(&mut content, a);
+                            }
+                        }
+
                         // Draw outline (outside the border box, honouring
                         // `outline-offset`). Top-level containers previously dropped
                         // the outline entirely.
@@ -8179,6 +8227,18 @@ pub(crate) struct BoxMetrics {
     padding_right: f32,
     padding_top: f32,
     padding_bottom: f32,
+}
+
+#[derive(Clone, Copy)]
+struct MaskLayerPaintRect {
+    tile_x: f32,
+    tile_bottom: f32,
+    tile_w: f32,
+    tile_h: f32,
+    clip_left: f32,
+    clip_bottom: f32,
+    clip_w: f32,
+    clip_h: f32,
 }
 
 fn resolve_len_percent(v: LengthPercent, extent: f32) -> f32 {
@@ -16764,6 +16824,18 @@ impl PdfWriter {
                 return Some(gs);
             }
         }
+        if let MaskSource::Layers(layers) = source {
+            if let Some(gs) =
+                self.try_two_layer_exclude_mask_shading(layers, x, top_y, w, h, metrics)
+            {
+                return Some(gs);
+            }
+            if let Some(gs) =
+                self.try_single_radial_mask_layer_shading(layers, x, top_y, w, h, metrics)
+            {
+                return Some(gs);
+            }
+        }
         // Raster fallback for gradient masks (SVG masks take the vector path
         // above). Sample at ~1 per CSS pixel: gradient coverage is smooth so it
         // upscales without a hard edge, and the gradient's CSS-px geometry (center
@@ -16955,6 +17027,589 @@ impl PdfWriter {
         self.objects.push(format!(
             "{form_id} 0 obj\n<< /Type /XObject /Subtype /Form /FormType 1 /BBox [{x} {bottom_y} {x1} {top_y}] /Group << /Type /Group /S /Transparency /CS /DeviceRGB >> /Resources << /Shading << /{name} {sh_id} 0 R >> >> /Length {len} >>\nstream\n",
             name = entry.name,
+            len = group_bytes.len(),
+        ));
+        self.binary_objects.insert(form_id, group_bytes);
+        let gs_name = format!("GSmask{form_id}");
+        self.soft_mask_gstates.push((gs_name.clone(), form_id));
+        Some(gs_name)
+    }
+
+    fn try_two_layer_exclude_mask_shading(
+        &mut self,
+        layers: &[MaskLayer],
+        x: f32,
+        top_y: f32,
+        w: f32,
+        h: f32,
+        metrics: BoxMetrics,
+    ) -> Option<String> {
+        let [top, bottom] = layers else {
+            return None;
+        };
+        if top.composite != MaskComposite::Exclude {
+            return None;
+        }
+        if layers.iter().any(|layer| {
+            !matches!(
+                layer.layer_box.repeat.unwrap_or(BackgroundRepeat::Repeat),
+                BackgroundRepeat::NoRepeat
+            )
+        }) {
+            return None;
+        }
+
+        let resolve_axis = |value: f32, is_percent: bool, extent: f32| {
+            if is_percent {
+                extent * value / 100.0
+            } else {
+                value
+            }
+        };
+        let layer_rects = |layer: &MaskLayer| -> Option<MaskLayerPaintRect> {
+                let (origin_x, origin_y, origin_w, origin_h) =
+                    mask_box_rect_pts(w, h, metrics, layer.origin);
+                let (clip_x, clip_y, clip_w, clip_h) =
+                    mask_box_rect_pts(w, h, metrics, layer.clip);
+                let (tile_w, tile_h) = match layer.layer_box.size {
+                    Some(BackgroundSize::Explicit {
+                        width,
+                        height,
+                        width_is_percent,
+                        height_is_percent,
+                    }) => (
+                        resolve_axis(width, width_is_percent, origin_w),
+                        height.map_or(origin_h, |v| {
+                            resolve_axis(v, height_is_percent, origin_h)
+                        }),
+                    ),
+                    Some(BackgroundSize::ExplicitAuto {
+                        width: Some(width),
+                        height,
+                        width_is_percent,
+                        height_is_percent,
+                    }) => (
+                        resolve_axis(width, width_is_percent, origin_w),
+                        height.map_or(origin_h, |v| {
+                            resolve_axis(v, height_is_percent, origin_h)
+                        }),
+                    ),
+                    Some(BackgroundSize::ExplicitAuto {
+                        width: None,
+                        height: Some(height),
+                        height_is_percent,
+                        ..
+                    }) => (origin_w, resolve_axis(height, height_is_percent, origin_h)),
+                    _ => (origin_w, origin_h),
+                };
+                if !(tile_w > 0.0 && tile_h > 0.0 && clip_w > 0.0 && clip_h > 0.0) {
+                    return None;
+                }
+                let (offset_x, offset_y) = match layer.layer_box.position {
+                    Some(pos) => (
+                        if pos.x_is_percent {
+                            (origin_w - tile_w) * pos.x
+                        } else {
+                            pos.x
+                        },
+                        if pos.y_is_percent {
+                            (origin_h - tile_h) * pos.y
+                        } else {
+                            pos.y
+                        },
+                    ),
+                    None => (0.0, 0.0),
+                };
+                let tile_x = x + origin_x + offset_x;
+                let tile_top = top_y - origin_y - offset_y;
+                let tile_bottom = tile_top - tile_h;
+                let clip_left = x + clip_x;
+                let clip_top = top_y - clip_y;
+                let clip_bottom = clip_top - clip_h;
+                Some(MaskLayerPaintRect {
+                    tile_x,
+                    tile_bottom,
+                    tile_w,
+                    tile_h,
+                    clip_left,
+                    clip_bottom,
+                    clip_w,
+                    clip_h,
+                })
+            };
+
+        let mut shadings = Vec::new();
+        let mut counter = 0usize;
+        let mut paint_layer = |content: &mut String, layer: &MaskLayer| -> Option<()> {
+            let MaskLayerPaintRect {
+                tile_x,
+                tile_bottom,
+                tile_w,
+                tile_h,
+                clip_left,
+                clip_bottom,
+                clip_w,
+                clip_h,
+            } = layer_rects(layer)?;
+            match &layer.source {
+                MaskLayerSource::Linear(lg) => {
+                    if lg.stops.len() < 2 {
+                        return None;
+                    }
+                    let basis = linear_gradient_line_length(lg.angle, tile_w, tile_h);
+                    let resolved = resolve_gradient_stop_positions(&lg.stops, basis);
+                    let base: Vec<(f32, (f32, f32, f32))> = resolved
+                        .iter()
+                        .map(|s| {
+                            let c = s.color;
+                            let rgba = (
+                                f32::from(c.r) / 255.0,
+                                f32::from(c.g) / 255.0,
+                                f32::from(c.b) / 255.0,
+                                f32::from(c.a) / 255.0,
+                            );
+                            let gray = f32::from(coverage_byte(rgba, layer.mode)) / 255.0;
+                            (s.position, (gray, gray, gray))
+                        })
+                        .collect();
+                    let gray_stops = base
+                        .iter()
+                        .map(|(position, (gray, _, _))| (*position, *gray))
+                        .collect::<Vec<_>>();
+                    let hard_stop = gray_stops
+                        .windows(2)
+                        .enumerate()
+                        .find(|(_, pair)| {
+                            (pair[1].0 - pair[0].0).abs() <= 1e-5
+                                && (pair[1].1 - pair[0].1).abs() > 1e-5
+                        })
+                        .map(|(idx, pair)| {
+                            let start_gray = pair[0].1;
+                            let end_gray = pair[1].1;
+                            (idx, pair[0].0.clamp(0.0, 1.0), start_gray, end_gray)
+                        });
+                    if let Some((idx, boundary, start_gray, end_gray)) = hard_stop {
+                        let is_binary = gray_stops[..=idx]
+                            .iter()
+                            .all(|(_, gray)| (*gray - start_gray).abs() <= 1e-5)
+                            && gray_stops[idx + 1..]
+                                .iter()
+                                .all(|(_, gray)| (*gray - end_gray).abs() <= 1e-5);
+                        let angle = lg.angle.rem_euclid(360.0);
+                        let angle_is = |target: f32| {
+                            let delta = (angle - target).abs();
+                            delta.min(360.0 - delta) <= 1e-3
+                        };
+                        if is_binary
+                            && (angle_is(0.0)
+                                || angle_is(90.0)
+                                || angle_is(180.0)
+                                || angle_is(270.0))
+                        {
+                            let mut rects = String::new();
+                            let mut fill_rect =
+                                |gray: f32, rx: f32, ry: f32, rw: f32, rh: f32| {
+                                    if gray > 1e-6 && rw > 0.0 && rh > 0.0 {
+                                        rects.push_str(&format!(
+                                            "{gray} {gray} {gray} rg\n{rx} {ry} {rw} {rh} re f\n"
+                                        ));
+                                    }
+                                };
+                            content.push_str(&format!(
+                                "q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\n{tile_x} {tile_bottom} {tile_w} {tile_h} re W n\n"
+                            ));
+                            if angle_is(90.0) {
+                                let left_w = tile_w * boundary;
+                                fill_rect(start_gray, tile_x, tile_bottom, left_w, tile_h);
+                                fill_rect(
+                                    end_gray,
+                                    tile_x + left_w,
+                                    tile_bottom,
+                                    tile_w - left_w,
+                                    tile_h,
+                                );
+                            } else if angle_is(270.0) {
+                                let right_w = tile_w * boundary;
+                                fill_rect(
+                                    start_gray,
+                                    tile_x + tile_w - right_w,
+                                    tile_bottom,
+                                    right_w,
+                                    tile_h,
+                                );
+                                fill_rect(
+                                    end_gray,
+                                    tile_x,
+                                    tile_bottom,
+                                    tile_w - right_w,
+                                    tile_h,
+                                );
+                            } else if angle_is(0.0) {
+                                let bottom_h = tile_h * boundary;
+                                fill_rect(start_gray, tile_x, tile_bottom, tile_w, bottom_h);
+                                fill_rect(
+                                    end_gray,
+                                    tile_x,
+                                    tile_bottom + bottom_h,
+                                    tile_w,
+                                    tile_h - bottom_h,
+                                );
+                            } else {
+                                let top_h = tile_h * boundary;
+                                fill_rect(
+                                    start_gray,
+                                    tile_x,
+                                    tile_bottom + tile_h - top_h,
+                                    tile_w,
+                                    top_h,
+                                );
+                                fill_rect(
+                                    end_gray,
+                                    tile_x,
+                                    tile_bottom,
+                                    tile_w,
+                                    tile_h - top_h,
+                                );
+                            }
+                            content.push_str(&rects);
+                            content.push_str("Q\n");
+                            return Some(());
+                        }
+                    }
+                    let stops = if lg.repeating {
+                        repeat_stops_to_unit(&base)
+                    } else {
+                        base
+                    };
+                    content.push_str(&format!(
+                        "q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\n"
+                    ));
+                    render_linear_gradient_tile(
+                        content,
+                        lg.angle,
+                        tile_x,
+                        tile_bottom,
+                        tile_w,
+                        tile_h,
+                        &stops,
+                        &mut shadings,
+                        &mut counter,
+                    );
+                    content.push_str("Q\n");
+                }
+                MaskLayerSource::Radial(rg) => {
+                    if rg.repeating || rg.stops.len() < 2 {
+                        return None;
+                    }
+                    let off_x = rg.center.0.resolve(tile_w);
+                    let off_y = rg.center.1.resolve(tile_h);
+                    let cx = tile_x + off_x;
+                    let cy = tile_bottom + (tile_h - off_y);
+                    let near_x = off_x.min(tile_w - off_x).abs();
+                    let far_x = off_x.max(tile_w - off_x).abs();
+                    let near_y = off_y.min(tile_h - off_y).abs();
+                    let far_y = off_y.max(tile_h - off_y).abs();
+                    let base_radius = match rg.shape {
+                        RadialShape::Circle => rg.radius.unwrap_or_else(|| match rg.extent {
+                            RadialExtent::ClosestSide => near_x.min(near_y),
+                            RadialExtent::FarthestSide => far_x.max(far_y),
+                            RadialExtent::ClosestCorner => (near_x * near_x + near_y * near_y)
+                                .sqrt(),
+                            RadialExtent::FarthestCorner => {
+                                (far_x * far_x + far_y * far_y).sqrt()
+                            }
+                        }),
+                        RadialShape::Ellipse => return None,
+                    };
+                    if base_radius <= 0.0 {
+                        return None;
+                    }
+                    let mut absolute_stops = Vec::with_capacity(rg.stops.len());
+                    let mut last = 0.0_f32;
+                    let mut shading_radius = base_radius;
+                    for stop in &rg.stops {
+                        let mut distance = stop.position * base_radius + stop.position_length;
+                        if distance < last {
+                            distance = last;
+                        }
+                        last = distance;
+                        shading_radius = shading_radius.max(distance);
+                        let c = stop.color;
+                        let rgba = (
+                            f32::from(c.r) / 255.0,
+                            f32::from(c.g) / 255.0,
+                            f32::from(c.b) / 255.0,
+                            f32::from(c.a) / 255.0,
+                        );
+                        let gray = f32::from(coverage_byte(rgba, layer.mode)) / 255.0;
+                        absolute_stops.push((distance, (gray, gray, gray)));
+                    }
+                    if shading_radius <= 0.0 {
+                        return None;
+                    }
+                    let stops = absolute_stops
+                        .into_iter()
+                        .map(|(distance, color)| {
+                            ((distance / shading_radius).clamp(0.0, 1.0), color)
+                        })
+                        .collect::<Vec<_>>();
+                    let name = push_radial_shading(
+                        &mut shadings,
+                        &mut counter,
+                        [cx, cy, 0.0, cx, cy, shading_radius],
+                        stops,
+                    );
+                    content.push_str(&format!(
+                        "q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\n{tile_x} {tile_bottom} {tile_w} {tile_h} re W n\n/{name} sh\nQ\n"
+                    ));
+                }
+                _ => return None,
+            }
+            Some(())
+        };
+
+        let mut group = String::new();
+        paint_layer(&mut group, bottom)?;
+        group.push_str("q\n/MaskLayerExclude gs\n");
+        paint_layer(&mut group, top)?;
+        group.push_str("Q\n");
+
+        let mut shading_resources = Vec::new();
+        for entry in shadings {
+            let function_str = build_shading_function(&entry.stops);
+            let sh_id = self.next_id();
+            if entry.shading_type == 2 {
+                self.objects.push(format!(
+                    "{sh_id} 0 obj\n<< /ShadingType 2 /ColorSpace /DeviceRGB /Coords [{} {} {} {}] /Function {function_str} /Extend [true true] >>\nendobj",
+                    entry.coords[0], entry.coords[1], entry.coords[2], entry.coords[3],
+                ));
+            } else {
+                self.objects.push(format!(
+                    "{sh_id} 0 obj\n<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [{} {} {} {} {} {}] /Function {function_str} /Extend [true true] >>\nendobj",
+                    entry.coords[0],
+                    entry.coords[1],
+                    entry.coords[2],
+                    entry.coords[3],
+                    entry.coords[4],
+                    entry.coords[5],
+                ));
+            }
+            shading_resources.push(format!("/{} {sh_id} 0 R", entry.name));
+        }
+        if shading_resources.is_empty() {
+            return None;
+        }
+
+        let blend_id = self.next_id();
+        self.objects.push(format!(
+            "{blend_id} 0 obj\n<< /Type /ExtGState /BM /Exclusion /ca 1 /CA 1 >>\nendobj"
+        ));
+        let bottom_y = top_y - h;
+        let x1 = x + w;
+        let group_bytes = group.into_bytes();
+        let form_id = self.next_id();
+        self.objects.push(format!(
+            "{form_id} 0 obj\n<< /Type /XObject /Subtype /Form /FormType 1 /BBox [{x} {bottom_y} {x1} {top_y}] /Group << /Type /Group /S /Transparency /CS /DeviceRGB /I true /K false >> /Resources << /Shading << {shading_entries} >> /ExtGState << /MaskLayerExclude {blend_id} 0 R >> >> /Length {len} >>\nstream\n",
+            shading_entries = shading_resources.join(" "),
+            len = group_bytes.len(),
+        ));
+        self.binary_objects.insert(form_id, group_bytes);
+        let gs_name = format!("GSmask{form_id}");
+        self.soft_mask_gstates.push((gs_name.clone(), form_id));
+        Some(gs_name)
+    }
+
+    fn try_single_radial_mask_layer_shading(
+        &mut self,
+        layers: &[MaskLayer],
+        x: f32,
+        top_y: f32,
+        w: f32,
+        h: f32,
+        metrics: BoxMetrics,
+    ) -> Option<String> {
+        let [layer] = layers else {
+            return None;
+        };
+        if layer.composite != MaskComposite::Add
+            || !matches!(
+                layer.layer_box.repeat.unwrap_or(BackgroundRepeat::Repeat),
+                BackgroundRepeat::NoRepeat
+            )
+        {
+            return None;
+        }
+        let MaskLayerSource::Radial(rg) = &layer.source else {
+            return None;
+        };
+        if rg.repeating || rg.stops.len() < 2 {
+            return None;
+        }
+
+        let (origin_x, origin_y, origin_w, origin_h) =
+            mask_box_rect_pts(w, h, metrics, layer.origin);
+        let (clip_x, clip_y, clip_w, clip_h) = mask_box_rect_pts(w, h, metrics, layer.clip);
+        let resolve_axis = |value: f32, is_percent: bool, extent: f32| {
+            if is_percent {
+                extent * value / 100.0
+            } else {
+                value
+            }
+        };
+        let (tile_w, tile_h) = match layer.layer_box.size {
+            Some(BackgroundSize::Explicit {
+                width,
+                height,
+                width_is_percent,
+                height_is_percent,
+            }) => (
+                resolve_axis(width, width_is_percent, origin_w),
+                height.map_or(origin_h, |v| resolve_axis(v, height_is_percent, origin_h)),
+            ),
+            None | Some(BackgroundSize::Auto) => (origin_w, origin_h),
+            _ => return None,
+        };
+        if !(tile_w > 0.0 && tile_h > 0.0) {
+            return None;
+        }
+        let (offset_x, offset_y) = match layer.layer_box.position {
+            Some(pos) => (
+                if pos.x_is_percent {
+                    (origin_w - tile_w) * pos.x
+                } else {
+                    pos.x
+                },
+                if pos.y_is_percent {
+                    (origin_h - tile_h) * pos.y
+                } else {
+                    pos.y
+                },
+            ),
+            None => (0.0, 0.0),
+        };
+
+        let tile_x = x + origin_x + offset_x;
+        let tile_top = top_y - origin_y - offset_y;
+        let tile_bottom = tile_top - tile_h;
+        let clip_left = x + clip_x;
+        let clip_top = top_y - clip_y;
+        let clip_bottom = clip_top - clip_h;
+
+        let off_x = rg.center.0.resolve(tile_w);
+        let off_y = rg.center.1.resolve(tile_h);
+        let cx = tile_x + off_x;
+        let cy = tile_bottom + (tile_h - off_y);
+        let near_x = off_x.min(tile_w - off_x).abs();
+        let far_x = off_x.max(tile_w - off_x).abs();
+        let near_y = off_y.min(tile_h - off_y).abs();
+        let far_y = off_y.max(tile_h - off_y).abs();
+        let base_radius = match rg.shape {
+            RadialShape::Circle => rg.radius.unwrap_or_else(|| match rg.extent {
+                RadialExtent::ClosestSide => near_x.min(near_y),
+                RadialExtent::FarthestSide => far_x.max(far_y),
+                RadialExtent::ClosestCorner => (near_x * near_x + near_y * near_y).sqrt(),
+                RadialExtent::FarthestCorner => (far_x * far_x + far_y * far_y).sqrt(),
+            }),
+            RadialShape::Ellipse => return None,
+        };
+        if base_radius <= 0.0 {
+            return None;
+        }
+
+        let mut absolute_stops = Vec::with_capacity(rg.stops.len());
+        let mut last = 0.0_f32;
+        let mut shading_radius = base_radius;
+        for stop in &rg.stops {
+            let mut distance = stop.position * base_radius + stop.position_length;
+            if distance < last {
+                distance = last;
+            }
+            last = distance;
+            shading_radius = shading_radius.max(distance);
+            let c = stop.color;
+            let rgba = (
+                f32::from(c.r) / 255.0,
+                f32::from(c.g) / 255.0,
+                f32::from(c.b) / 255.0,
+                f32::from(c.a) / 255.0,
+            );
+            let gray = f32::from(coverage_byte(rgba, layer.mode)) / 255.0;
+            absolute_stops.push((distance, (gray, gray, gray)));
+        }
+        if shading_radius <= 0.0 {
+            return None;
+        }
+        let stops = absolute_stops
+            .into_iter()
+            .map(|(distance, color)| ((distance / shading_radius).clamp(0.0, 1.0), color))
+            .collect::<Vec<_>>();
+        let transparent_tail = stops
+            .last()
+            .map(|(_, (r, g, b))| *r <= 1e-6 && *g <= 1e-6 && *b <= 1e-6)
+            .unwrap_or(false);
+        let center_inside_tile =
+            off_x > 1e-4 && off_y > 1e-4 && off_x < tile_w - 1e-4 && off_y < tile_h - 1e-4;
+
+        let mut shadings = Vec::new();
+        let mut counter = 0usize;
+        let name = push_radial_shading(
+            &mut shadings,
+            &mut counter,
+            [cx, cy, 0.0, cx, cy, shading_radius],
+            stops,
+        );
+        let entry = shadings.into_iter().next()?;
+        let function_str = build_shading_function(&entry.stops);
+        let sh_id = self.next_id();
+        self.objects.push(format!(
+            "{sh_id} 0 obj\n<< /ShadingType 3 /ColorSpace /DeviceRGB /Coords [{} {} {} {} {} {}] /Function {function_str} /Extend [true true] >>\nendobj",
+            entry.coords[0],
+            entry.coords[1],
+            entry.coords[2],
+            entry.coords[3],
+            entry.coords[4],
+            entry.coords[5],
+        ));
+
+        let bottom_y = top_y - h;
+        let x1 = x + w;
+        let group = if transparent_tail && center_inside_tile {
+            format!("q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\n/{name} sh\nQ\n")
+        } else if transparent_tail {
+            let mut group = format!(
+                "q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\nq\n{tile_x} {tile_bottom} {tile_w} {tile_h} re W n\n/{name} sh\nQ\n"
+            );
+            let strip = 0.75;
+            if off_x <= 1e-4 {
+                let strip_x = tile_x + tile_w - strip;
+                group.push_str(&format!(
+                    "0 0 0 rg\n{} {} {} {} re f\n",
+                    strip_x,
+                    clip_bottom,
+                    (clip_left + clip_w - strip_x).max(strip),
+                    (tile_top - clip_bottom).max(strip)
+                ));
+            }
+            if off_x >= tile_w - 1e-4 {
+                group.push_str(&format!(
+                    "0 0 0 rg\n{} {} {} {} re f\n",
+                    clip_left,
+                    clip_bottom,
+                    (tile_x + strip - clip_left).max(strip),
+                    (tile_top - clip_bottom).max(strip)
+                ));
+            }
+            group.push_str("Q\n");
+            group
+        } else {
+            format!(
+                "q\n{clip_left} {clip_bottom} {clip_w} {clip_h} re W n\n{tile_x} {tile_bottom} {tile_w} {tile_h} re W n\n/{name} sh\nQ\n"
+            )
+        };
+        let group_bytes = group.into_bytes();
+        let form_id = self.next_id();
+        self.objects.push(format!(
+            "{form_id} 0 obj\n<< /Type /XObject /Subtype /Form /FormType 1 /BBox [{x} {bottom_y} {x1} {top_y}] /Group << /Type /Group /S /Transparency /CS /DeviceRGB >> /Resources << /Shading << /{name} {sh_id} 0 R >> >> /Length {len} >>\nstream\n",
             len = group_bytes.len(),
         ));
         self.binary_objects.insert(form_id, group_bytes);
