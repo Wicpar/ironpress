@@ -1261,6 +1261,7 @@ fn resolve_fixed_table_columns(
         .iter()
         .map(|width| width.map(|specified| specified.resolve(table_width)))
         .collect();
+    let mut min_col_widths: Vec<f32> = vec![0.0; num_cols];
 
     if let Some(first_row) = rows.first() {
         let mut row_ancestors = table_ancestors.to_vec();
@@ -1340,12 +1341,9 @@ fn resolve_fixed_table_columns(
 
             if let Some(width) = resolve_cell_track_width(cell_el, &cell_style, table_width) {
                 apply_cell_width_to_columns(&mut col_widths, col_pos, colspan, width);
-            } else if colspan == 1 && col_pos < col_widths.len() {
+            } else if colspan == 1 && col_pos < min_col_widths.len() {
                 let border_min = cell_style.border.horizontal_width() + cell_style.font_size * 0.25;
-                if border_min > 0.0 {
-                    col_widths[col_pos] =
-                        Some(col_widths[col_pos].map_or(border_min, |w| w.max(border_min)));
-                }
+                min_col_widths[col_pos] = min_col_widths[col_pos].max(border_min);
             }
 
             col_pos = col_pos.saturating_add(colspan);
@@ -1356,13 +1354,25 @@ fn resolve_fixed_table_columns(
     }
 
     let assigned_width: f32 = col_widths.iter().flatten().copied().sum();
-    let unresolved_count = col_widths.iter().filter(|width| width.is_none()).count();
-    if unresolved_count > 0 {
+    let unresolved_columns: Vec<usize> = col_widths
+        .iter()
+        .enumerate()
+        .filter_map(|(idx, width)| width.is_none().then_some(idx))
+        .collect();
+    if !unresolved_columns.is_empty() {
         let remaining_width = (table_width - assigned_width).max(0.0);
-        let default_width = remaining_width / unresolved_count as f32;
-        for width in &mut col_widths {
-            if width.is_none() {
-                *width = Some(default_width);
+        let min_total: f32 = unresolved_columns
+            .iter()
+            .map(|idx| min_col_widths[*idx])
+            .sum();
+        let extra_per_column = if remaining_width > min_total {
+            (remaining_width - min_total) / unresolved_columns.len() as f32
+        } else {
+            0.0
+        };
+        for idx in unresolved_columns {
+            if let Some(width) = col_widths.get_mut(idx) {
+                *width = Some(min_col_widths[idx] + extra_per_column);
             }
         }
     }

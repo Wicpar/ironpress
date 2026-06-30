@@ -1,0 +1,35 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@page{size:460px 190px;margin:0}
+html{font-family:ParitySans;line-height:1.5}
+*{margin:0;box-sizing:border-box}
+body{background:#fff}
+body{padding:20px}
+.outer{table-layout:fixed;width:360px;border-collapse:collapse}
+.outer>tbody>tr>td{border:2px solid #111827;padding:10px;vertical-align:top;background:#f8fafc}
+.fill{table-layout:fixed;width:100%;border-collapse:collapse}
+.fill th,.fill td{border:2px solid #2563eb;padding:4px;font-size:12px;line-height:1.4;text-align:left}
+.fill th{background:#dbeafe;white-space:nowrap}
+.fill td{background:#dcfce7;overflow-wrap:anywhere}
+.marker{height:92px;background:#fca5a5}
+</style>
+</head>
+<body>
+<table class="outer">
+<colgroup><col style="width:260px"><col style="width:100px"></colgroup>
+<tr>
+<td>
+<table class="fill">
+<colgroup><col style="width:90px"><col></colgroup>
+<tr><th>Nested label</th><td>value stays inside the fixed parent cell</td></tr>
+<tr><th>Second row</th><td>normal wrapping</td></tr>
+</table>
+</td>
+<td><div class="marker"></div></td>
+</tr>
+</table>
+</body>
+</html>

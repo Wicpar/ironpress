@@ -1,0 +1,45 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@page{size:600px 180px;margin:0}
+html{font-family:ParitySans;line-height:1.5}
+*{margin:0;box-sizing:border-box}
+body{background:#fff}
+body{padding:18px}
+.certificate{table-layout:fixed;width:560px;border-collapse:collapse}
+.certificate>tbody>tr>td{padding:10px;vertical-align:top}
+.content{table-layout:fixed;width:100%;border-collapse:collapse}
+.content th,.content td{padding:0 16px 6px 0;font-size:10px;line-height:1.35;vertical-align:top}
+.content th{text-align:left;font-weight:700}
+.content td.author-entry__cell{padding:0 16px 6px 0}
+.author-details{table-layout:fixed;width:100%;border-collapse:collapse}
+.author-details th,.author-details td{height:24px;padding:4px;font-size:12px;line-height:16px;text-align:left;vertical-align:top}
+.author-details th{width:120px;font-weight:700;white-space:nowrap;background:#dbeafe}
+.author-details__value{overflow-wrap:anywhere;background:#dcfce7}
+.side{height:120px}
+</style>
+</head>
+<body>
+<table class="certificate">
+<colgroup><col style="width:70%"><col style="width:30%"></colgroup>
+<tr>
+<td>
+<table class="content">
+<colgroup><col style="width:130px"><col></colgroup>
+<tr><th colspan="2">Authors</th></tr>
+<tr class="author-entry"><td class="author-entry__cell" colspan="2">
+<table class="author-details">
+<colgroup><col style="width:120px"><col></colgroup>
+<tr><th>Name</th><td class="author-details__value">Jean Dupont</td></tr>
+<tr><th>Email</th><td class="author-details__value">jean.dupont@example.com</td></tr>
+</table>
+</td></tr>
+</table>
+</td>
+<td><div class="side"></div></td>
+</tr>
+</table>
+</body>
+</html>

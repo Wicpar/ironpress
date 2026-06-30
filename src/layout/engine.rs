@@ -11970,8 +11970,8 @@ mod tests {
             col_widths
         );
         assert!(
-            (ratio - (90.0 / 93.0)).abs() < 0.02,
-            "first-row cell width should seed proportional fixed-layout redistribution, got {:?}",
+            (ratio - (90.0 / 300.0)).abs() < 0.02,
+            "first-row cell width should stay fixed while unresolved columns take the remaining width, got {:?}",
             col_widths
         );
     }
@@ -12003,8 +12003,8 @@ mod tests {
             col_widths
         );
         assert!(
-            (ratio - (90.0 / 93.0)).abs() < 0.02,
-            "absolute <col> width should seed proportional fixed-layout redistribution, got {:?}",
+            (ratio - (90.0 / 300.0)).abs() < 0.02,
+            "absolute <col> width should stay fixed while unresolved columns take the remaining width, got {:?}",
             col_widths
         );
     }
@@ -12029,8 +12029,8 @@ mod tests {
             widths
         );
         assert!(
-            (ratio - (40.0 / 43.0)).abs() < 0.02,
-            "2em should resolve against the colgroup font-size before proportional redistribution, got {:?}",
+            (ratio - (40.0 / 200.0)).abs() < 0.02,
+            "2em should resolve against the colgroup font-size and leave the remaining width for unresolved columns, got {:?}",
             widths
         );
     }
@@ -12055,8 +12055,8 @@ mod tests {
             widths
         );
         assert!(
-            (ratio - (25.0 / 28.0)).abs() < 0.02,
-            "calc(1em + 5pt) should use the colgroup font-size before proportional redistribution, got {:?}",
+            (ratio - (25.0 / 200.0)).abs() < 0.02,
+            "calc(1em + 5pt) should use the colgroup font-size and leave the remaining width for unresolved columns, got {:?}",
             widths
         );
     }

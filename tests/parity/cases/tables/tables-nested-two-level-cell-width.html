@@ -1,0 +1,44 @@
+<!doctype html>
+<html>
+<head>
+<meta charset="utf-8">
+<style>
+@page{size:620px 300px;margin:0}
+html{font-family:ParitySans;line-height:1.5}
+*{margin:0;box-sizing:border-box}
+body{background:#fff}
+body{padding:20px}
+.outer{table-layout:fixed;width:560px;border-collapse:collapse}
+.outer>tbody>tr>td{padding:10px;vertical-align:top}
+.mid{table-layout:fixed;width:100%;border-collapse:collapse}
+.mid th,.mid td{padding:6px;font-size:12px;line-height:1.4;text-align:left;vertical-align:top}
+.mid th{white-space:nowrap}
+.inner{table-layout:fixed;width:100%;border-collapse:separate;border-spacing:0}
+.inner th,.inner td{padding:3px 4px;font-size:12px;line-height:1.35;text-align:left}
+.inner th{white-space:nowrap}
+.inner td{overflow-wrap:anywhere}
+.aside{height:188px;background:#fde68a}
+</style>
+</head>
+<body>
+<table class="outer">
+<colgroup><col style="width:420px"><col style="width:140px"></colgroup>
+<tr>
+<td>
+<table class="mid">
+<colgroup><col style="width:150px"><col></colgroup>
+<tr><th>Middle label</th><td>middle table uses the outer cell width</td></tr>
+<tr><th>Deep details</th><td>
+<table class="inner">
+<colgroup><col style="width:90px"><col></colgroup>
+<tr><th>Deep name</th><td>Nested Value With Several Words</td></tr>
+<tr><th>Deep email</th><td>deep.value@example.com</td></tr>
+</table>
+</td></tr>
+</table>
+</td>
+<td><div class="aside"></div></td>
+</tr>
+</table>
+</body>
+</html>

@@ -1561,6 +1561,60 @@
     "partial_threshold_pct": 10.0
   },
   {
+    "id": "tables-nested-cell-colgroup-width",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "nested-cell-colgroup-width",
+    "description": "A certificate-shaped nested table inside a colspan table cell resolves fixed colgroup widths against the cell content width, leaving the value column beside the labels.",
+    "file": "cases/tables/tables-nested-cell-colgroup-width.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-text-baseline"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-nested-width-percent-cell",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "nested-width-percent-cell",
+    "description": "A width:100% fixed-layout table nested inside a fixed-width cell resolves to that cell's content width, not the outer table or page width.",
+    "file": "cases/tables/tables-nested-width-percent-cell.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-text-baseline"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-nested-two-level-cell-width",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "nested-two-level-cell-width",
+    "description": "A two-level table nesting path resolves each table's fixed columns and width:100% against its immediate parent cell.",
+    "file": "cases/tables/tables-nested-two-level-cell-width.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-text-baseline"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
     "id": "tables-cell-img-width-auto-intrinsic",
     "category": "tables",
     "feature": "table-cell-children",
