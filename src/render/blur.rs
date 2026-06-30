@@ -19,7 +19,7 @@ use crate::layout::engine::{ImageFormat, LayoutBorder, RasterImageAsset};
 
 /// Points per CSS pixel (1px = 0.75pt). `blur_radius` is stored in points.
 const PT_PER_PX: f32 = 0.75;
-const IMAGE_BLUR_SIGMA_SCALE: f32 = 0.95;
+const IMAGE_BLUR_SIGMA_SCALE: f32 = 0.97;
 const INSET_SPREAD_SHADOW_SIGMA_SCALE: f32 = 1.22;
 const INSET_SHADOW_ALPHA_SCALE: f32 = 0.932;
 const INSET_SHADOW_ALPHA_CUTOFF: f32 = 0.07;
@@ -869,14 +869,18 @@ pub(crate) fn blur_image_buffer(
     let s = filter_dpi_scale(filter_dpi);
     let dev_w = (display_w_pt / PT_PER_PX * s).round().max(1.0) as u32;
     let dev_h = (display_h_pt / PT_PER_PX * s).round().max(1.0) as u32;
-    let upscaled =
-        image::imageops::resize(source, dev_w, dev_h, image::imageops::FilterType::Nearest);
+    let upscaled = resize_nearest_center(source, dev_w, dev_h);
 
     let sigma = (blur_radius_pt / PT_PER_PX) * s * IMAGE_BLUR_SIGMA_SCALE;
     let pad = pad_pixels(sigma);
     let mut padded = image::RgbaImage::new(dev_w + 2 * pad, dev_h + 2 * pad);
     image::imageops::replace(&mut padded, &upscaled, pad as i64, pad as i64);
-    let blurred = blur_premultiplied(&padded, sigma);
+    let mut blurred = blur_premultiplied(&padded, sigma);
+    for px in blurred.pixels_mut() {
+        if px[3] <= 1 {
+            *px = image::Rgba([0, 0, 0, 0]);
+        }
+    }
 
     let overflow_pt = pad as f32 / s * PT_PER_PX;
     Some((blurred, overflow_pt))
@@ -886,6 +890,24 @@ pub(crate) fn blur_image_buffer(
 pub(crate) fn raster_from_buffer(buf: image::RgbaImage, overflow_pt: f32) -> Option<BlurredRaster> {
     let asset = rgba_to_png_alpha_asset(buf)?;
     Some(BlurredRaster { asset, overflow_pt })
+}
+
+fn resize_nearest_center(source: &image::RgbaImage, width: u32, height: u32) -> image::RgbaImage {
+    let (sw, sh) = (source.width(), source.height());
+    let mut out = image::RgbaImage::new(width, height);
+    if sw == 0 || sh == 0 || width == 0 || height == 0 {
+        return out;
+    }
+    for y in 0..height {
+        let sy = (((y as f32 + 0.5) * sh as f32 / height as f32).floor() as u32)
+            .min(sh.saturating_sub(1));
+        for x in 0..width {
+            let sx = (((x as f32 + 0.5) * sw as f32 / width as f32).floor() as u32)
+                .min(sw.saturating_sub(1));
+            out.put_pixel(x, y, *source.get_pixel(sx, sy));
+        }
+    }
+    out
 }
 
 /// Blur an already-painted RGBA buffer and return the padded pixels. Unlike
@@ -982,6 +1004,8 @@ pub(crate) struct SvgTurbulenceDisplacement {
     pub seed: i32,
     /// feDisplacementMap scale in SVG user units (CSS px for these filters).
     pub scale: f32,
+    pub x_channel: usize,
+    pub y_channel: usize,
     /// Symmetric source-graphic overflow in SVG user units.
     pub overflow: f32,
 }
@@ -1028,26 +1052,28 @@ pub(crate) fn turbulence_displacement_rect(
     let disp_scale = spec.scale * scale;
     for y in 0..px_h {
         for x in 0..px_w {
-            let user_x = x as f64 / scale as f64 + view_x;
-            let user_y = y as f64 / scale as f64 + view_y;
-            let r = noise.turbulence_channel(
-                0,
+            let user_x = (x as f64 + 0.5) / scale as f64 + view_x;
+            let user_y = (y as f64 + 0.5) / scale as f64 + view_y;
+            let x_channel = noise.turbulence_channel(
+                spec.x_channel,
                 user_x,
                 user_y,
                 spec.base_frequency_x,
                 spec.base_frequency_y,
                 spec.num_octaves,
             );
-            let g = noise.turbulence_channel(
-                1,
+            let y_channel = noise.turbulence_channel(
+                spec.y_channel,
                 user_x,
                 user_y,
                 spec.base_frequency_x,
                 spec.base_frequency_y,
                 spec.num_octaves,
             );
-            let sx = x as i32 + ((r as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
-            let sy = y as i32 + ((g as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
+            let sx =
+                x as i32 + ((x_channel as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
+            let sy =
+                y as i32 + ((y_channel as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
             if sx >= 0 && sy >= 0 && sx < px_w as i32 && sy < px_h as i32 {
                 out.put_pixel(x, y, *source.get_pixel(sx as u32, sy as u32));
             }

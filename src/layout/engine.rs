@@ -3586,6 +3586,8 @@ fn svg_turbulence_displacement_spec(
     let mut seed = 0_i32;
     let mut saw_turbulence = false;
     let mut scale = None;
+    let mut x_channel = 0_usize;
+    let mut y_channel = 3_usize;
     for child in &filter_el.children {
         let DomNode::Element(el) = child else {
             continue;
@@ -3619,6 +3621,8 @@ fn svg_turbulence_displacement_spec(
                 .attributes
                 .get("scale")
                 .and_then(|value| value.trim().parse::<f32>().ok());
+            x_channel = svg_displacement_channel(el.attributes.get("xChannelSelector"));
+            y_channel = svg_displacement_channel(el.attributes.get("yChannelSelector"));
             break;
         }
     }
@@ -3629,8 +3633,19 @@ fn svg_turbulence_displacement_spec(
         num_octaves,
         seed,
         scale,
+        x_channel,
+        y_channel,
         overflow,
     })
+}
+
+fn svg_displacement_channel(value: Option<&String>) -> usize {
+    match value.map(|value| value.trim()) {
+        Some(value) if value.eq_ignore_ascii_case("G") => 1,
+        Some(value) if value.eq_ignore_ascii_case("B") => 2,
+        Some(value) if value.eq_ignore_ascii_case("A") => 3,
+        _ => 0,
+    }
 }
 
 /// Flatten a list of DOM nodes into layout elements.

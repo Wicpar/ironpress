@@ -19504,6 +19504,7 @@ impl PdfWriter {
             None
         };
 
+        let has_alpha_stream = alpha_stream.is_some();
         let alpha_id = alpha_stream.map(|stream| {
             let id = self.next_id();
             let header = format!(
@@ -19522,7 +19523,8 @@ impl PdfWriter {
         // embeds a semi-transparent photo (DCTDecode colour + soft mask). Lossy, so
         // gated to images large enough to be worth re-encoding (small synthetic
         // PNGs stay lossless Flate). DeviceGray and small images keep Flate.
-        let jpeg_color = (decoded.color_space == "/DeviceRGB"
+        let jpeg_color = (!has_alpha_stream
+            && decoded.color_space == "/DeviceRGB"
             && should_try_lossy_png_reencode(decoded.width, decoded.height, raw_png.len()))
         .then(|| {
             encode_rgb_as_jpeg(
