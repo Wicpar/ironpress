@@ -707,6 +707,38 @@ fn border_inset_path(
     }
 }
 
+#[allow(clippy::too_many_arguments)]
+fn push_border_ring_clip(
+    content: &mut String,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    radii: [f32; 4],
+    radii_y: [f32; 4],
+    border_width: f32,
+) {
+    let ix = x + border_width;
+    let iy = y + border_width;
+    let iw = (w - 2.0 * border_width).max(0.0);
+    let ih = (h - 2.0 * border_width).max(0.0);
+    let inner = radii.map(|r| (r - border_width).max(0.0));
+    let inner_y = radii_y.map(|r| (r - border_width).max(0.0));
+
+    content.push_str("q\n");
+    if let Some(path) = rounded_box_path(x, y, w, h, radii, radii_y) {
+        content.push_str(&path);
+    } else {
+        content.push_str(&format!("{x} {y} {w} {h} re\n"));
+    }
+    if let Some(path) = rounded_box_path(ix, iy, iw, ih, inner, inner_y) {
+        content.push_str(&path);
+    } else {
+        content.push_str(&format!("{ix} {iy} {iw} {ih} re\n"));
+    }
+    content.push_str("W* n\n");
+}
+
 /// Emit a PDF clip path for CSS `overflow: hidden`/`clip`/`scroll`/`auto`.
 ///
 /// CSS clips overflow at the PADDING box: the border box `(x, y, w, h)`
@@ -996,13 +1028,18 @@ fn paint_uniform_border(
             paint_dotted_border_circles(content, x, y, w, h, bw);
         }
     } else {
+        let clips_to_border_ring = (side.style == crate::style::computed::BorderStyle::Dashed
+            || side.style == crate::style::computed::BorderStyle::Dotted)
+            && (radii_any(radii) || radii_any(radii_y));
+        if clips_to_border_ring {
+            push_border_ring_clip(content, x, y, w, h, radii, radii_y, bw);
+        }
         if side.style == crate::style::computed::BorderStyle::Dashed
             && (radii_any(radii) || radii_any(radii_y))
         {
-            let dash = (bw * 1.85).max(1.0);
-            let gap = (bw * 1.15).max(1.0);
-            let phase = bw * 0.62;
-            content.push_str(&format!("[{dash} {gap}] {phase} d\n"));
+            let dash = (bw * 2.0).max(1.0);
+            let gap = (bw * 0.84).max(1.0);
+            content.push_str(&format!("[{dash} {gap}] 0 d\n"));
         } else {
             content.push_str(&dash_pattern_for_style(side.style, bw));
         }
@@ -1010,6 +1047,9 @@ fn paint_uniform_border(
         content.push_str(&border_inset_path(x, y, w, h, radii, radii_y, bw / 2.0));
         content.push_str("S\n");
         content.push_str(reset_dash_pattern(side.style));
+        if clips_to_border_ring {
+            content.push_str("Q\n");
+        }
     }
     end_border_alpha(content, a);
 }
@@ -1312,13 +1352,33 @@ fn paint_miter_border(
     // border boundaries by center sampling, not by a 50% vector antialias row.
     // Nudge only those half-pixel ties so axis-aligned miter edges snap the same
     // way while diagonal miter seams remain antialiased.
-    let snap_half_pixel_ties = [&border.top, &border.right, &border.bottom, &border.left]
+    let equal_painted_widths = [border.top.width, border.right.width, border.bottom.width]
+        .iter()
+        .all(|width| (*width - border.left.width).abs() < 0.01);
+    let all_opaque = [&border.top, &border.right, &border.bottom, &border.left]
         .iter()
         .all(|s| {
-            s.width <= 0.0
-                || s.style == crate::style::computed::BorderStyle::None
-                || s.alpha >= 0.999
+            s.width > 0.0
+                && s.style != crate::style::computed::BorderStyle::None
+                && s.alpha >= 0.999
         });
+    let colors = [
+        border.top.color,
+        border.right.color,
+        border.bottom.color,
+        border.left.color,
+    ];
+    let all_colors_distinct =
+        (0..colors.len()).all(|i| ((i + 1)..colors.len()).all(|j| colors[i] != colors[j]));
+    let equal_width_color_miter = equal_painted_widths && all_opaque && all_colors_distinct;
+    let snap_half_pixel_ties = !equal_width_color_miter
+        && [&border.top, &border.right, &border.bottom, &border.left]
+            .iter()
+            .all(|s| {
+                s.width <= 0.0
+                    || s.style == crate::style::computed::BorderStyle::None
+                    || s.alpha >= 0.999
+            });
     let tie = |width: f32| {
         if !snap_half_pixel_ties {
             return 0.0;
@@ -1331,8 +1391,19 @@ fn paint_miter_border(
             0.0
         }
     };
+    const DEVICE_PT: f32 = 72.0 / 300.0;
+    let outer_bleed = if equal_width_color_miter {
+        DEVICE_PT / 2.0
+    } else {
+        0.0
+    };
     // Outer corners.
-    let (ol, or_, ob, ot) = (x, x + w, y, y + h); // left,right,bottom,top edges
+    let (ol, or_, ob, ot) = (
+        x - outer_bleed,
+        x + w + outer_bleed,
+        y - outer_bleed,
+        y + h + outer_bleed,
+    ); // left,right,bottom,top edges
     // Inner corners (padding box edges).
     let (il, ir, ib, it) = (
         x + l - tie(l),
@@ -15290,8 +15361,8 @@ fn push_line_text_clip(
                     (0.0, -embolden),
                     (-embolden, embolden),
                     (embolden, embolden),
-                    (-embolden * 2.0, embolden),
                     (0.0, embolden * 2.0),
+                    (-embolden * 1.5, embolden),
                 ];
                 let offset_count = if faux_bold { offsets.len() } else { 1 };
                 for (dx, dy) in offsets.iter().take(offset_count) {
