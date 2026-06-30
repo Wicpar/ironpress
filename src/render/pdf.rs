@@ -9594,6 +9594,7 @@ fn letter_spacing_extra(letter_spacing: f32, glyph_count: usize) -> f32 {
 }
 
 const RUN_LETTER_SPACING_MARKER: f32 = -40_000.0;
+const INITIAL_LETTER_DROP_CAP_MARKER: f32 = -8_500.0;
 
 fn encoded_run_letter_spacing(run: &TextRun) -> f32 {
     if run.border_radius < -30_000.0 {
@@ -9742,7 +9743,9 @@ fn decoration_offset(run: &TextRun) -> f32 {
     } else {
         0.0
     };
-    if run.border_radius <= -10_000.0 && run.border_radius > -20_000.0 {
+    if (run.border_radius - INITIAL_LETTER_DROP_CAP_MARKER).abs() < f32::EPSILON {
+        thickness_adjust
+    } else if run.border_radius <= -10_000.0 && run.border_radius > -20_000.0 {
         (-run.border_radius - 10_000.0) * 0.65 + thickness_adjust
     } else if run.border_radius < 0.0 && run.border_radius > -10_000.0 {
         -run.border_radius * 0.65 + thickness_adjust
@@ -9867,7 +9870,7 @@ fn push_text_emphasis_dots(
     let (r, g, b) = color;
     let text_y = text_y + text_emphasis_baseline_shift(run);
     let cy = text_y + run_glyph_top(run, custom_fonts) + run.font_size * 0.3;
-    let radius = (run.font_size * 0.0715).max(1.0);
+    let radius = (run.font_size * 0.073).max(1.0);
     let center_adjust = run.font_size * 0.022;
     let mut cx = x;
     content.push_str(&format!("{r} {g} {b} rg\n"));
@@ -9892,6 +9895,9 @@ fn push_text_emphasis_dots(
 fn estimate_run_width_with_fonts(run: &TextRun, custom_fonts: &HashMap<String, TtfFont>) -> f32 {
     if let Some(inline) = run.inline_box.as_deref() {
         return inline.outer_width();
+    }
+    if let Some((_, width)) = drop_cap_ink_bounds(run, custom_fonts) {
+        return width;
     }
     if let Some(width) = crate::text::measure_text_width(
         &run.text,
@@ -11708,11 +11714,13 @@ fn render_container_children(
                                 line_text_top(line, custom_fonts),
                                 custom_fonts,
                             );
+                        let (paint_x, visual_width) = drop_cap_ink_bounds(run, custom_fonts)
+                            .map_or((lx, None), |(left, width)| (lx - left, Some(width)));
                         let rw = if *tb_bg_blur > 0.0
                             && render_text_shadow_blur(
                                 content,
                                 run,
-                                lx,
+                                paint_x,
                                 run_y,
                                 *tb_bg_blur * 2.0,
                                 (run.color.0, run.color.1, run.color.2, 1.0),
@@ -11720,12 +11728,12 @@ fn render_container_children(
                                 pdf_writer,
                                 page_images,
                             ) {
-                            estimate_run_width_with_fonts(run, custom_fonts)
+                            visual_width.unwrap_or_else(|| estimate_run_width_with_fonts(run, custom_fonts))
                         } else {
                             render_run_text(
                                 content,
                                 run,
-                                lx,
+                                paint_x,
                                 run_y,
                                 crate::layout::text::line_primary_font_size(&merged),
                                 custom_fonts,
@@ -11740,7 +11748,7 @@ fn render_container_children(
                         } else {
                             *tb_letter_spacing
                         };
-                        lx += rw
+                        lx += visual_width.unwrap_or(rw)
                             + letter_spacing_extra(
                                 advance_letter_spacing,
                                 run.text.chars().count(),
@@ -14322,7 +14330,7 @@ fn render_run_text(
 
 const TEXT_SHADOW_FAUX_BOLD_STROKE_SCALE: f32 = 1.075;
 const TEXT_SHADOW_VECTOR_X_ADJUST_PT: f32 = -0.16;
-const TEXT_SHADOW_DECORATION_Y_ADJUST_PT: f32 = -0.16;
+const TEXT_SHADOW_DECORATION_Y_ADJUST_PT: f32 = 0.56;
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::collapsible_if)]
@@ -14554,7 +14562,8 @@ fn render_run_text_with_faux_bold(
         && b < 0.2
         && run.line_height_factor.is_finite()
         && run.line_height_factor < 0.9;
-    let faux_bold = allow_faux_bold && synthetic_custom_bold && !suppress_dark_low_line_faux_bold;
+    let faux_bold =
+        allow_faux_bold && synthetic_custom_bold && !suppress_dark_low_line_faux_bold;
     if faux_bold {
         content.push_str(&format!("{r} {g} {b} RG\n"));
         let stroke_ratio = if synthetic_weight_900 {
@@ -14970,10 +14979,12 @@ fn render_line_text(
             // A floated `::first-letter` drop cap is lowered so its glyph top
             // sits on the line's text top (css-pseudo-4 §2.2).
             let run_y = y + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
+            let (paint_x, visual_width) = drop_cap_ink_bounds(run, custom_fonts)
+                .map_or((x, None), |(left, width)| (x - left, Some(width)));
             let run_width = render_run_text_with_faux_bold(
                 content,
                 run,
-                x,
+                paint_x,
                 run_y,
                 parent_font_size,
                 custom_fonts,
@@ -14988,7 +14999,7 @@ fn render_line_text(
                 pdf_writer,
                 page_images,
             );
-            x += run_width;
+            x += visual_width.unwrap_or(run_width);
         }
     }
 }
@@ -15201,6 +15212,30 @@ fn run_glyph_top(run: &TextRun, custom_fonts: &HashMap<String, TtfFont>) -> f32 
     let (ascender_ratio, _) =
         crate::fonts::font_metrics_ratios(&run.font_family, run.bold, run.italic, custom_fonts);
     ascender_ratio * run.font_size
+}
+
+fn drop_cap_ink_bounds(run: &TextRun, custom_fonts: &HashMap<String, TtfFont>) -> Option<(f32, f32)> {
+    if !is_drop_cap_run(run) {
+        return None;
+    }
+    if (run.border_radius - INITIAL_LETTER_DROP_CAP_MARKER).abs() >= f32::EPSILON {
+        return None;
+    }
+    let ch = run.text.chars().find(|ch| !ch.is_whitespace())?;
+    let FontFamily::Custom(family) = &run.font_family else {
+        return None;
+    };
+    let (_, font) = crate::system_fonts::find_font(custom_fonts, family, run.bold, run.italic)?;
+    let face = rustybuzz::ttf_parser::Face::parse(&font.data, 0).ok()?;
+    let glyph = face.glyph_index(ch)?;
+    let bbox = face.glyph_bounding_box(glyph)?;
+    if font.units_per_em == 0 {
+        return None;
+    }
+    let scale = run.font_size / f32::from(font.units_per_em);
+    let left = f32::from(bbox.x_min) * scale;
+    let ink_width = (f32::from(bbox.x_max) - f32::from(bbox.x_min)).max(0.0) * scale;
+    Some((left, ink_width + run.font_size * 0.035))
 }
 
 /// Extra baseline offset (PDF up-positive) for a drop-cap run so its glyph TOP

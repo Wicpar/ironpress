@@ -363,6 +363,7 @@ fn decoration_radius(style: &ComputedStyle, background: Option<(f32, f32, f32, f
 }
 
 const RUN_LETTER_SPACING_MARKER: f32 = -40_000.0;
+const INITIAL_LETTER_DROP_CAP_MARKER: f32 = -8_500.0;
 
 fn encoded_run_letter_spacing(run: &TextRun) -> f32 {
     if run.border_radius < -30_000.0 {
@@ -376,8 +377,38 @@ fn letter_spacing_extra_for_text(run: &TextRun, text: &str) -> f32 {
     encoded_run_letter_spacing(run) * text.chars().count().saturating_sub(1) as f32
 }
 
+fn drop_cap_ink_width_for_text(
+    text: &str,
+    run: &TextRun,
+    fonts: &HashMap<String, TtfFont>,
+) -> Option<f32> {
+    if !is_drop_cap_marker_run(run) {
+        return None;
+    }
+    if (run.border_radius - INITIAL_LETTER_DROP_CAP_MARKER).abs() >= f32::EPSILON {
+        return None;
+    }
+    let ch = text.chars().find(|ch| !ch.is_whitespace())?;
+    let FontFamily::Custom(family) = &run.font_family else {
+        return None;
+    };
+    let (_, font) = crate::system_fonts::find_font(fonts, family, run.bold, run.italic)?;
+    let face = rustybuzz::ttf_parser::Face::parse(&font.data, 0).ok()?;
+    let glyph = face.glyph_index(ch)?;
+    let bbox = face.glyph_bounding_box(glyph)?;
+    if font.units_per_em == 0 {
+        return None;
+    }
+    let scale = run.font_size / f32::from(font.units_per_em);
+    let ink_width = (f32::from(bbox.x_max) - f32::from(bbox.x_min)).max(0.0) * scale;
+    Some(ink_width + run.font_size * 0.035)
+}
+
 fn estimate_text_width_for_run(text: &str, run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
     let measured_text = target_placeholder_measure_text(text);
+    if let Some(width) = drop_cap_ink_width_for_text(&measured_text, run, fonts) {
+        return width + letter_spacing_extra_for_text(run, &measured_text);
+    }
     estimate_word_width(
         &measured_text,
         run.font_size,

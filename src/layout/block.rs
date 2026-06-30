@@ -3,8 +3,8 @@ use crate::parser::dom::{DomNode, ElementNode, HtmlTag};
 use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
     BackgroundClip, BackgroundOrigin, BackgroundPosition, BackgroundRepeat, BackgroundSize,
-    BoxSizing, Clear, ComputedStyle, Display, Float, Overflow, Position, TextAlign, TextOverflow,
-    VerticalAlign, Visibility, WhiteSpace, compute_style_with_context,
+    BoxSizing, Clear, ComputedStyle, Display, Float, FontFamily, Overflow, Position, TextAlign,
+    TextOverflow, VerticalAlign, Visibility, WhiteSpace, compute_style_with_context,
 };
 use std::collections::HashMap;
 
@@ -80,6 +80,69 @@ fn clear_first_backdropless_descendant_blend(elements: &mut [LayoutElement]) -> 
         }
     }
     false
+}
+
+fn first_initial_letter_char(runs: &[TextRun]) -> Option<char> {
+    runs.iter()
+        .filter(|run| run.inline_box.is_none())
+        .flat_map(|run| run.text.chars())
+        .find(|ch| !ch.is_whitespace())
+}
+
+const INITIAL_LETTER_DROP_CAP_MARKER: f32 = -8_500.0;
+
+fn glyph_top_ratio_for_initial_letter(
+    style: &ComputedStyle,
+    fonts: &HashMap<String, TtfFont>,
+    ch: Option<char>,
+) -> Option<f32> {
+    let FontFamily::Custom(family) = resolve_style_font_family(style, fonts) else {
+        return None;
+    };
+    let (bold, italic) = (style.font_weight.is_bold(), style.font_style == crate::style::computed::FontStyle::Italic);
+    let (_, font) = crate::system_fonts::find_font(fonts, &family, bold, italic)?;
+    ch.and_then(|c| font.glyph_top_ratio(c))
+        .or_else(|| font.glyph_top_ratio('H'))
+        .filter(|ratio| *ratio > 0.0)
+}
+
+fn initial_letter_font_size(
+    style: &ComputedStyle,
+    block_font_size: f32,
+    block_line_height: f32,
+    size: f32,
+    ch: Option<char>,
+    fonts: &HashMap<String, TtfFont>,
+) -> f32 {
+    let Some(cap_ratio) = glyph_top_ratio_for_initial_letter(style, fonts, ch) else {
+        return block_line_height * size;
+    };
+    let normal_cap_height = cap_ratio * block_font_size;
+    (((size - 1.0).max(0.0) * block_line_height) + normal_cap_height) / cap_ratio
+}
+
+fn drop_cap_ink_width_from_runs(runs: &[TextRun], fonts: &HashMap<String, TtfFont>) -> Option<f32> {
+    let run = runs.iter().find(|run| {
+        run.inline_box.is_none()
+            && (run.border_radius - INITIAL_LETTER_DROP_CAP_MARKER).abs() < f32::EPSILON
+            && run.line_height_factor.is_finite()
+            && run.line_height_factor < 0.9
+            && run.text.chars().filter(|ch| !ch.is_whitespace()).count() <= 1
+    })?;
+    let ch = run.text.chars().find(|ch| !ch.is_whitespace())?;
+    let FontFamily::Custom(family) = &run.font_family else {
+        return None;
+    };
+    let (_, font) = crate::system_fonts::find_font(fonts, family, run.bold, run.italic)?;
+    let face = rustybuzz::ttf_parser::Face::parse(&font.data, 0).ok()?;
+    let glyph = face.glyph_index(ch)?;
+    let bbox = face.glyph_bounding_box(glyph)?;
+    if font.units_per_em == 0 {
+        return None;
+    }
+    let scale = run.font_size / f32::from(font.units_per_em);
+    let ink_width = (f32::from(bbox.x_max) - f32::from(bbox.x_min)).max(0.0) * scale;
+    Some(ink_width + run.font_size * 0.035)
 }
 
 fn restyle_runs_for_first_line_wrap(
@@ -1576,12 +1639,20 @@ pub(crate) fn layout_block_element(
     let mut drop_cap: Option<crate::layout::helpers::DropCap> = None;
     if let Some(ref fl) = first_letter_style {
         let block_line_height = style.font_size * resolved_line_height_factor(style, env.fonts);
+        let initial_letter_char = first_initial_letter_char(&runs);
         let initial_letter_style;
         let fl = if fl.initial_letter > 1.0 {
             initial_letter_style = {
                 let mut s = fl.clone();
                 s.float = Float::Left;
-                s.font_size = block_line_height * fl.initial_letter;
+                s.font_size = initial_letter_font_size(
+                    &s,
+                    style.font_size,
+                    block_line_height,
+                    fl.initial_letter,
+                    initial_letter_char,
+                    env.fonts,
+                );
                 s
             };
             &initial_letter_style
@@ -1594,7 +1665,29 @@ pub(crate) fn layout_block_element(
             env.fonts,
             block_line_height,
         );
+        if first_letter_style
+            .as_ref()
+            .is_some_and(|style| style.initial_letter > 1.0)
+            && drop_cap.is_some()
+            && let Some(run) = runs.iter_mut().find(|run| {
+                run.inline_box.is_none()
+                    && run.line_height_factor.is_finite()
+                    && run.line_height_factor < 0.9
+                    && run.text.chars().filter(|ch| !ch.is_whitespace()).count() <= 1
+            })
+        {
+            run.border_radius = INITIAL_LETTER_DROP_CAP_MARKER;
+        }
     }
+    let drop_cap_width = drop_cap.as_ref().map_or(0.0, |d| {
+        drop_cap_ink_width_from_runs(&runs, env.fonts).unwrap_or(d.width)
+    });
+    let drop_cap_lines = drop_cap.as_ref().map_or(0, |d| {
+        first_letter_style
+            .as_ref()
+            .filter(|fl| fl.initial_letter > 1.0)
+            .map_or(d.span_lines, |fl| fl.initial_letter.round().max(1.0) as usize)
+    });
 
     let had_text_runs = runs.iter().any(|r| !r.text.trim().is_empty());
     let has_inline_box_runs = runs.iter().any(|r| r.inline_box.is_some());
@@ -1677,8 +1770,8 @@ pub(crate) fn layout_block_element(
         // A `::first-letter { float: left }` drop cap reserves a left
         // exclusion on the lines it overlaps (css-pseudo-4 §2.2 + css2 §9.5).
         .with_drop_cap(
-            drop_cap.map_or(0.0, |d| d.width),
-            drop_cap.map_or(0, |d| d.span_lines),
+            drop_cap_width,
+            drop_cap_lines,
         );
         let has_manual_soft_hyphen = style.hyphens_manual
             && runs
