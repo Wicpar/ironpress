@@ -220,8 +220,11 @@ impl StyleMap {
 
 fn capture_background_layer_source(key: &str, value: &CssValue) {
     let kind = match key {
-        "background-image" | "background-svg" | "background-gradient"
-        | "background-radial-gradient" | "background-conic-gradient" => key,
+        "background-image"
+        | "background-svg"
+        | "background-gradient"
+        | "background-radial-gradient"
+        | "background-conic-gradient" => key,
         _ => return,
     };
     let CssValue::Keyword(raw) = value else {
@@ -235,7 +238,10 @@ fn capture_background_layer_source(key: &str, value: &CssValue) {
 }
 
 fn captured_background_layer_sources(slots: &str) -> Option<String> {
-    let layer_count = slots.split(',').filter(|slot| !slot.trim().is_empty()).count();
+    let layer_count = slots
+        .split(',')
+        .filter(|slot| !slot.trim().is_empty())
+        .count();
     if layer_count <= 1 {
         return None;
     }

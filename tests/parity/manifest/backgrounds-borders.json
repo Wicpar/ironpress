@@ -825,7 +825,7 @@
     "description": "Comma-separated background-origin values position two image layers from different boxes; catches implementations with one origin for all layers.",
     "file": "cases/backgrounds-borders/background-origin-list-matching.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",
@@ -844,7 +844,7 @@
     "description": "Comma-separated background-clip values clip only the top layer to content-box over a blue border-box layer; catches single-clip implementations.",
     "file": "cases/backgrounds-borders/background-clip-list-matching.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",
@@ -954,7 +954,7 @@
     "description": "The background shorthand accepts multiple image layers plus a final background color; catches one-layer parsers that drop a tile or the color.",
     "file": "cases/backgrounds-borders/background-shorthand-multiple-layers-color.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-image-render",
@@ -1009,7 +1009,7 @@
     "description": "Comma-separated background-blend-mode values keep the top red tile normal while multiplying the bottom blue layer into the yellow color; catches one global blend mode.",
     "file": "cases/backgrounds-borders/background-blend-mode-list-matching.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-image-render",

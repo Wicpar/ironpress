@@ -7333,7 +7333,8 @@ fn synthesize_simple_multi_background_svg(map: &StyleMap, style: &mut ComputedSt
     let Some((border_width, border_height)) = style_background_border_box_size(style) else {
         return;
     };
-    let Some(svg) = build_simple_multi_background_svg(map, style, &sources, border_width, border_height)
+    let Some(svg) =
+        build_simple_multi_background_svg(map, style, &sources, border_width, border_height)
     else {
         return;
     };
@@ -7371,7 +7372,9 @@ fn parse_background_layer_sources(map: &StyleMap) -> Option<Vec<SimpleBackground
                 sources.push(SimpleBackgroundLayerSource::Image(value.to_string()));
             }
             "background-gradient" => {
-                sources.push(SimpleBackgroundLayerSource::Linear(parse_linear_gradient(value)?));
+                sources.push(SimpleBackgroundLayerSource::Linear(parse_linear_gradient(
+                    value,
+                )?));
             }
             _ => return None,
         }
@@ -7483,7 +7486,8 @@ fn build_simple_multi_background_svg(
                     return None;
                 }
                 let grad_id = format!("bggrad{rev_idx}");
-                let (x1, y1, x2, y2) = linear_gradient_svg_line(gradient.angle, x, y, size.0, size.1);
+                let (x1, y1, x2, y2) =
+                    linear_gradient_svg_line(gradient.angle, x, y, size.0, size.1);
                 defs.push_str(&format!(
                     r#"<linearGradient id="{grad_id}" gradientUnits="userSpaceOnUse" x1="{x1}" y1="{y1}" x2="{x2}" y2="{y2}">"#,
                     x1 = fmt_svg_num(x1),
@@ -7532,11 +7536,17 @@ fn background_layer_origin_rect(
 ) -> Option<CssBoxRect> {
     let origin = get_non_special(map, "background-origin")
         .and_then(|v| match v {
-            CssValue::Keyword(k) => nth_layer_value(k, index).map(|part| parse_background_origin_value(&part)),
+            CssValue::Keyword(k) => {
+                nth_layer_value(k, index).map(|part| parse_background_origin_value(&part))
+            }
             _ => None,
         })
         .unwrap_or(style.background_origin);
-    Some(css_box_rect_for_background_origin(origin, style, border_rect))
+    Some(css_box_rect_for_background_origin(
+        origin,
+        style,
+        border_rect,
+    ))
 }
 
 fn background_layer_clip_rect(
@@ -7548,7 +7558,9 @@ fn background_layer_clip_rect(
     let clip = get_non_special(map, "background-clip")
         .or_else(|| get_non_special(map, "-webkit-background-clip"))
         .and_then(|v| match v {
-            CssValue::Keyword(k) => nth_layer_value(k, index).map(|part| parse_background_clip_value(&part)),
+            CssValue::Keyword(k) => {
+                nth_layer_value(k, index).map(|part| parse_background_clip_value(&part))
+            }
             _ => None,
         })
         .unwrap_or(style.background_clip);
@@ -7596,14 +7608,18 @@ fn css_content_box_rect(style: &ComputedStyle, border_rect: CssBoxRect) -> CssBo
 
 fn background_layer_size(map: &StyleMap, index: usize) -> Option<BackgroundSize> {
     get_non_special(map, "background-size").and_then(|v| match v {
-        CssValue::Keyword(k) => nth_layer_value(k, index).map(|part| parse_background_size_value(&part)),
+        CssValue::Keyword(k) => {
+            nth_layer_value(k, index).map(|part| parse_background_size_value(&part))
+        }
         _ => None,
     })
 }
 
 fn background_layer_position(map: &StyleMap, index: usize) -> Option<BackgroundPosition> {
     get_non_special(map, "background-position").and_then(|v| match v {
-        CssValue::Keyword(k) => nth_layer_value(k, index).and_then(|part| parse_background_position(&part)),
+        CssValue::Keyword(k) => {
+            nth_layer_value(k, index).and_then(|part| parse_background_position(&part))
+        }
         _ => None,
     })
 }
@@ -7717,7 +7733,12 @@ fn linear_gradient_svg_line(
     let half = (width * dx.abs() + height * dy.abs()) / 2.0;
     let cx = x + width / 2.0;
     let cy = y + height / 2.0;
-    (cx - dx * half, cy - dy * half, cx + dx * half, cy + dy * half)
+    (
+        cx - dx * half,
+        cy - dy * half,
+        cx + dx * half,
+        cy + dy * half,
+    )
 }
 
 fn color_to_svg_hex(color: Color) -> String {

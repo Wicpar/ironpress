@@ -693,7 +693,7 @@
     "file": "cases/paged-media/paged-footnote-policy-inline.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline"
     ],
@@ -1316,7 +1316,7 @@
     "file": "cases/paged-media/paged-footnote-styling-pseudos.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline"
     ],
@@ -1333,7 +1333,7 @@
     "file": "cases/paged-media/paged-footnote-counter-reset.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline"
     ],
@@ -1367,7 +1367,7 @@
     "file": "cases/paged-media/paged-footnote-max-height.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline",
       "probe-fill-box"
@@ -1385,7 +1385,7 @@
     "file": "cases/paged-media/paged-footnote-policy-block.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-text-baseline",
       "probe-fill-box"

@@ -3125,10 +3125,7 @@ fn footnote_call_paint_run(run: &TextRun) -> Option<TextRun> {
         .as_deref()
         .and_then(decode_footnote_link_data)?;
     let default_call_text = run.text == data.marker || run.text == format!("{} ", data.marker);
-    if data.display_compact
-        || data.marker_prefix != "{marker}. "
-        || !default_call_text
-    {
+    if data.display_compact || data.marker_prefix != "{marker}. " || !default_call_text {
         return None;
     }
     let parent_font_size = run.font_size / FOOTNOTE_CALL_FONT_SCALE;
@@ -3195,9 +3192,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
     let prepared_custom_fonts = font_prep_pages
         .as_deref()
         .or(font_usage_pages.as_deref())
-        .map_or_else(|| prepare_custom_fonts(pages, custom_fonts), |pages| {
-            prepare_custom_fonts(pages, custom_fonts)
-        });
+        .map_or_else(
+            || prepare_custom_fonts(pages, custom_fonts),
+            |pages| prepare_custom_fonts(pages, custom_fonts),
+        );
 
     register_used_custom_fonts(&mut pdf_writer, custom_fonts, &prepared_custom_fonts);
 
@@ -3704,11 +3702,23 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         } else {
                             0.0
                         };
+                        let named_page_bottom_extra = if page.page_name.is_some()
+                            && simple_opaque_fill
+                            && block_x <= SIMPLE_FILL_RIGHT_EDGE_EPS_PT
+                            && block_x + render_width
+                                >= page_size.width - SIMPLE_FILL_RIGHT_EDGE_EPS_PT
+                            && block_bottom <= SIMPLE_FILL_RIGHT_EDGE_EPS_PT
+                        {
+                            SIMPLE_FILL_RIGHT_EDGE_EPS_PT
+                        } else {
+                            0.0
+                        };
                         let bg_x = block_x + bg_left_aa_nudge;
-                        let bg_y = block_bottom - bg_bottom_aa_extra;
+                        let bg_y = block_bottom - bg_bottom_aa_extra - named_page_bottom_extra;
                         let bg_w = (render_width - bg_left_aa_nudge).max(0.0);
-                        let bg_h =
-                            (border_box_h + bg_bottom_aa_extra - bg_top_margin_trim).max(0.0);
+                        let bg_h = (border_box_h + bg_bottom_aa_extra + named_page_bottom_extra
+                            - bg_top_margin_trim)
+                            .max(0.0);
                         if tb_mix_blended {
                             content.push_str("q\n");
                             begin_blend_mode(&mut content, &mut page_ext_gstates, *mix_blend_mode);
@@ -3731,6 +3741,21 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 x = block_x,
                                 y = bg_y,
                                 w = DEVICE_PIXEL_PT,
+                                h = bg_h,
+                            ));
+                            content.push_str("/GSDefault gs\n");
+                            content.push_str(&format!("{r} {g} {b} rg\n"));
+                        }
+                        if named_page_bottom_extra > 0.0 {
+                            let gs_name = format!("GSfnra{elem_idx}_{bg_alpha_counter}");
+                            bg_alpha_counter += 1;
+                            page_ext_gstates.push((gs_name.clone(), 0.65));
+                            content.push_str(&format!("/{gs_name} gs\n"));
+                            content.push_str(&format!(
+                                "{x} {y} {w} {h} re\nf\n",
+                                x = block_x + render_width - SIMPLE_FILL_RIGHT_EDGE_EPS_PT,
+                                y = bg_y,
+                                w = SIMPLE_FILL_RIGHT_EDGE_EPS_PT,
                                 h = bg_h,
                             ));
                             content.push_str("/GSDefault gs\n");
@@ -4155,10 +4180,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             // Top border
                             if border.top.paints() {
                                 let (tx1, tx2) = if border.top.style == BorderStyle::Dotted {
-                                    (
-                                        x1 + border.left.width / 2.0,
-                                        x2 - border.right.width / 2.0,
-                                    )
+                                    (x1 + border.left.width / 2.0, x2 - border.right.width / 2.0)
                                 } else {
                                     (x1, x2)
                                 };
@@ -4189,10 +4211,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             // Bottom border
                             if border.bottom.paints() {
                                 let (bx1, bx2) = if border.bottom.style == BorderStyle::Dotted {
-                                    (
-                                        x1 + border.left.width / 2.0,
-                                        x2 - border.right.width / 2.0,
-                                    )
+                                    (x1 + border.left.width / 2.0, x2 - border.right.width / 2.0)
                                 } else {
                                     (x1, x2)
                                 };
@@ -7608,15 +7627,16 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 } else {
                                     0.0
                                 };
-                            let bg_top_margin_trim = if page_has_selector_specific_margin_box_context
-                                && simple_opaque_fill
-                                && margin.top > 0.0
-                                && *y_pos <= DEVICE_PIXEL_PT / 2.0
-                            {
-                                DEVICE_PIXEL_PT / 2.0
-                            } else {
-                                0.0
-                            };
+                            let bg_top_margin_trim =
+                                if page_has_selector_specific_margin_box_context
+                                    && simple_opaque_fill
+                                    && margin.top > 0.0
+                                    && *y_pos <= DEVICE_PIXEL_PT / 2.0
+                                {
+                                    DEVICE_PIXEL_PT / 2.0
+                                } else {
+                                    0.0
+                                };
                             let bg_h = (total_h - bg_top_margin_trim).max(0.0);
                             let bg_x = container_x + bg_left_aa_nudge;
                             let bg_w = (container_w - bg_left_aa_nudge).max(0.0);
@@ -9022,12 +9042,12 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         12.3
                     } else if mb.background_color.is_some() {
                         11.9
-                    } else if used_named_string {
-                        12.0
                     } else {
                         12.0
                     };
                 let mb_font_size = mb.font_size.unwrap_or(default_margin_font_size);
+                let selector_specific_margin_box =
+                    !matches!(mb.selector, crate::parser::css::PageSelector::None);
                 let margin_font_family =
                     if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
                         FontFamily::Helvetica
@@ -9148,6 +9168,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     | crate::parser::css::MarginBoxPosition::TopCenter
                     | crate::parser::css::MarginBoxPosition::TopRight
                         if page_has_selector_specific_margin_box_context
+                            && !used_named_string
                             && mb.background_color.is_none() =>
                     {
                         mb_font_size * 0.08
@@ -9159,7 +9180,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 } else {
                     0.0
                 };
-                let baseline_factor = if used_named_string && mb.font_size.is_none() {
+                let baseline_factor = if used_named_string
+                    && mb.font_size.is_none()
+                    && (selector_specific_margin_box || margin.top <= 0.0)
+                {
                     0.346
                 } else {
                     0.42
@@ -9169,10 +9193,20 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     + blank_lift
                     + plain_top_lift
                     + background_lift;
+                let text_x = if selector_specific_margin_box
+                    && mb.background_color.is_some()
+                    && mb.font_size.is_none()
+                {
+                    x - DEVICE_PIXEL_PT * 2.0
+                } else {
+                    x
+                };
                 if let Some(bg) = mb.background_color {
                     let (r, g, b, a) = bg.to_f32_rgba();
                     if a > 0.0 {
-                        let bg_text_w = if mb.background_color.is_some() && mb.font_size.is_none() {
+                        let bg_text_w = if selector_specific_margin_box {
+                            text_w
+                        } else if mb.background_color.is_some() && mb.font_size.is_none() {
                             text_w * (11.7 / mb_font_size)
                         } else {
                             text_w
@@ -9206,7 +9240,12 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             | crate::parser::css::MarginBoxPosition::TopRightCorner => (
                                 bg_text_x,
                                 page_size.height - margin.top,
-                                bg_text_w,
+                                bg_text_w
+                                    + if selector_specific_margin_box {
+                                        SIMPLE_FILL_RIGHT_EDGE_EPS_PT
+                                    } else {
+                                        0.0
+                                    },
                                 margin.top,
                             ),
                             crate::parser::css::MarginBoxPosition::BottomLeftCorner
@@ -9241,12 +9280,24 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         };
                         content.push_str(&format!("{r} {g} {b} rg\n"));
                         content.push_str(&format!("{bg_x} {bg_y} {bg_w} {bg_h} re f\n"));
+                        if selector_specific_margin_box {
+                            let gs_name = format!("GSmbaa{page_idx}_{bg_alpha_counter}");
+                            bg_alpha_counter += 1;
+                            page_ext_gstates.push((gs_name.clone(), 0.65));
+                            content.push_str(&format!("/{gs_name} gs\n"));
+                            content.push_str(&format!(
+                                "{} {bg_y} {} {bg_h} re f\n",
+                                bg_x - SIMPLE_FILL_RIGHT_EDGE_EPS_PT,
+                                SIMPLE_FILL_RIGHT_EDGE_EPS_PT,
+                            ));
+                            content.push_str("/GSDefault gs\n");
+                        }
                     }
                 }
                 render_run_text(
                     &mut content,
                     &margin_run,
-                    x,
+                    text_x,
                     text_y,
                     mb_font_size,
                     custom_fonts,
@@ -9564,7 +9615,7 @@ fn is_generated_quote_run(text: &str) -> bool {
                     | '\u{201d}'
                     | '\u{2039}'
                     | '\u{203a}'
-                )
+            )
         })
 }
 
@@ -15469,9 +15520,7 @@ fn gradient_requires_raster(stops: &[crate::style::computed::GradientStop]) -> b
 
 fn linear_gradient_requires_raster(stops: &[crate::style::computed::GradientStop]) -> bool {
     gradient_requires_raster(stops)
-        || stops
-            .iter()
-            .any(|stop| stop.position_length.abs() > 1e-6)
+        || stops.iter().any(|stop| stop.position_length.abs() > 1e-6)
         || stops
             .windows(2)
             .any(|pair| (pair[1].position - pair[0].position).abs() < 0.0001)
