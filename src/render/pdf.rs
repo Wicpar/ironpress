@@ -10143,6 +10143,31 @@ fn format_pdf_number(value: f32) -> String {
     }
 }
 
+fn sfnt_has_table(data: &[u8], tag: &[u8; 4]) -> bool {
+    let base = if data.len() >= 16 && &data[0..4] == b"ttcf" {
+        let first_offset = u32::from_be_bytes([data[12], data[13], data[14], data[15]]) as usize;
+        if first_offset >= data.len() {
+            return false;
+        }
+        first_offset
+    } else {
+        0
+    };
+    if data.len() < base + 12 {
+        return false;
+    }
+    let num_tables = u16::from_be_bytes([data[base + 4], data[base + 5]]) as usize;
+    let dir_end = base + 12 + num_tables.saturating_mul(16);
+    if dir_end > data.len() {
+        return false;
+    }
+    (0..num_tables).any(|i| &data[base + 12 + i * 16..base + 16 + i * 16] == tag)
+}
+
+fn sfnt_has_cff_outlines(data: &[u8]) -> bool {
+    sfnt_has_table(data, b"CFF ") || sfnt_has_table(data, b"CFF2")
+}
+
 fn append_positioned_shaped_text(content: &mut String, render: ShapedTextRender<'_>) {
     let mut cursor_x = render.origin.x;
     let last_idx = render.shaped.glyphs.len().saturating_sub(1);
@@ -14477,12 +14502,7 @@ fn render_run_text_with_faux_bold(
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
 ) -> f32 {
-    let (mut r, mut g, mut b) = run.color;
-    if decoration_is_emphasis(run) || run.text.chars().any(is_cjk_codepoint) {
-        r = (r - 0.05).max(0.0);
-        g = (g - 0.05).max(0.0);
-        b = (b - 0.05).max(0.0);
-    }
+    let (r, g, b) = run.color;
     let letter_spacing = encoded_run_letter_spacing(run);
     let synthetic_weight_900 = run.background_color.is_none()
         && run.padding.1 == crate::style::computed::FONT_RUN_MARK_SYNTHETIC_WEIGHT_900;
@@ -20635,6 +20655,27 @@ impl PdfWriter {
     ) -> String {
         let resource_name = sanitize_pdf_name(name);
         let base_font_name = &prepared_font.base_font_name;
+        let cff_outlines = sfnt_has_cff_outlines(&prepared_font.font_data);
+        let font_file_key = if cff_outlines {
+            "FontFile3"
+        } else {
+            "FontFile2"
+        };
+        let font_stream_subtype = if cff_outlines {
+            " /Subtype /OpenType"
+        } else {
+            ""
+        };
+        let cid_font_subtype = if cff_outlines {
+            "CIDFontType0"
+        } else {
+            "CIDFontType2"
+        };
+        let cid_to_gid_map = if cff_outlines {
+            ""
+        } else {
+            " /CIDToGIDMap /Identity"
+        };
 
         // 1. Font stream: embed the prepared font data and compress the stream
         // to avoid paying the full raw TTF size in the PDF.
@@ -20642,13 +20683,13 @@ impl PdfWriter {
         let compressed_data = flate_compress(&prepared_font.font_data);
         let header = if let Some(ref compressed_data) = compressed_data {
             format!(
-                "{stream_id} 0 obj\n<< /Filter /FlateDecode /Length {} /Length1 {} >>\nstream\n",
+                "{stream_id} 0 obj\n<<{font_stream_subtype} /Filter /FlateDecode /Length {} /Length1 {} >>\nstream\n",
                 compressed_data.len(),
                 prepared_font.font_data.len(),
             )
         } else {
             format!(
-                "{stream_id} 0 obj\n<< /Length {} /Length1 {} >>\nstream\n",
+                "{stream_id} 0 obj\n<<{font_stream_subtype} /Length {} /Length1 {} >>\nstream\n",
                 prepared_font.font_data.len(),
                 prepared_font.font_data.len(),
             )
@@ -20671,7 +20712,7 @@ impl PdfWriter {
             (ttf.bbox[3] as i32 * 1000) / ttf.units_per_em as i32,
         ];
         self.objects.push(format!(
-            "{descriptor_id} 0 obj\n<< /Type /FontDescriptor /FontName /{base_font_name} /Flags {flags} /FontBBox [{b0} {b1} {b2} {b3}] /Ascent {ascent} /Descent {descent} /ItalicAngle 0 /CapHeight {ascent} /StemV 80 /FontFile2 {stream_id} 0 R >>\nendobj",
+            "{descriptor_id} 0 obj\n<< /Type /FontDescriptor /FontName /{base_font_name} /Flags {flags} /FontBBox [{b0} {b1} {b2} {b3}] /Ascent {ascent} /Descent {descent} /ItalicAngle 0 /CapHeight {ascent} /StemV 80 /{font_file_key} {stream_id} 0 R >>\nendobj",
             flags = ttf.flags,
             b0 = bbox_pdf[0],
             b1 = bbox_pdf[1],
@@ -20694,7 +20735,7 @@ impl PdfWriter {
         // 4. CID descendant font object
         let cid_font_id = self.next_id();
         self.objects.push(format!(
-            "{cid_font_id} 0 obj\n<< /Type /Font /Subtype /CIDFontType2 /BaseFont /{base_font_name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor {descriptor_id} 0 R /CIDToGIDMap /Identity /W [0 [{widths_str}]] >>\nendobj",
+            "{cid_font_id} 0 obj\n<< /Type /Font /Subtype /{cid_font_subtype} /BaseFont /{base_font_name} /CIDSystemInfo << /Registry (Adobe) /Ordering (Identity) /Supplement 0 >> /FontDescriptor {descriptor_id} 0 R{cid_to_gid_map} /W [0 [{widths_str}]] >>\nendobj",
         ));
 
         // 5. ToUnicode CMap so text stays searchable/selectable.
