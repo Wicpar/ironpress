@@ -20,6 +20,17 @@ use crate::layout::engine::{ImageFormat, LayoutBorder, RasterImageAsset};
 /// Points per CSS pixel (1px = 0.75pt). `blur_radius` is stored in points.
 const PT_PER_PX: f32 = 0.75;
 const IMAGE_BLUR_SIGMA_SCALE: f32 = 0.95;
+const INSET_SPREAD_SHADOW_SIGMA_SCALE: f32 = 1.22;
+const INSET_SHADOW_ALPHA_SCALE: f32 = 0.932;
+const INSET_SHADOW_ALPHA_CUTOFF: f32 = 0.07;
+const INSET_SHADOW_MID_ALPHA_BOOST: f32 = 1.08;
+const INSET_SHADOW_ALPHA_CAP: f32 = 0.71;
+const INSET_SHADOW_CORNER_ALPHA_CAP: f32 = 0.73;
+const INSET_SHADOW_BOOST_START: f32 = 0.22;
+const INSET_SHADOW_BOOST_END: f32 = 0.32;
+const INSET_SHADOW_RADIUS_SPREAD_SCALE: f32 = 1.5;
+const INSET_SHADOW_CLIP_RADIUS_ADJUST_PT: f32 = 0.68;
+const TEXT_SHADOW_ALPHA_SCALE: f32 = 1.0;
 
 fn filter_dpi_scale(filter_dpi: f32) -> f32 {
     filter_dpi.max(1.0) / 96.0
@@ -132,23 +143,15 @@ pub(crate) fn blur_shadow_rect(
     let radius_y_px = (radius_y_pt / PT_PER_PX * s).min(box_h as f32 / 2.0);
     if radius_px > 0.5 || radius_y_px > 0.5 {
         let mut pb = tiny_skia::PathBuilder::new();
-        let rx = radius_px;
-        let ry = radius_y_px;
-        let (x0, y0) = (ox, oy);
-        let (x1, y1) = (ox + box_w as f32, oy + box_h as f32);
-        // Rounded rect via 4 quadratic-ish corners (use cubic-free arcs through
-        // line + quad approximations is unnecessary; tiny-skia has no arc API,
-        // so approximate corners with quad beziers — visually exact after blur).
-        pb.move_to(x0 + rx, y0);
-        pb.line_to(x1 - rx, y0);
-        pb.quad_to(x1, y0, x1, y0 + ry);
-        pb.line_to(x1, y1 - ry);
-        pb.quad_to(x1, y1, x1 - rx, y1);
-        pb.line_to(x0 + rx, y1);
-        pb.quad_to(x0, y1, x0, y1 - ry);
-        pb.line_to(x0, y0 + ry);
-        pb.quad_to(x0, y0, x0 + rx, y0);
-        pb.close();
+        append_rounded_box_path(
+            &mut pb,
+            ox,
+            oy,
+            box_w as f32,
+            box_h as f32,
+            [radius_px; 4],
+            [radius_y_px; 4],
+        );
         if let Some(path) = pb.finish() {
             pixmap.fill_path(
                 &path,
@@ -178,7 +181,8 @@ pub(crate) fn blur_shadow_rect(
 pub(crate) fn blur_inset_shadow_rect(
     width_pt: f32,
     height_pt: f32,
-    radius_pt: f32,
+    radii_pt: [f32; 4],
+    radii_y_pt: [f32; 4],
     blur_pt: f32,
     spread_pt: f32,
     offset_x_pt: f32,
@@ -194,7 +198,12 @@ pub(crate) fn blur_inset_shadow_rect(
     use resvg::tiny_skia;
 
     let s = filter_dpi_scale(filter_dpi);
-    let sigma = (blur_pt / PT_PER_PX) * s / 2.0;
+    let spread_sigma = if spread_pt.abs() > f32::EPSILON {
+        INSET_SPREAD_SHADOW_SIGMA_SCALE
+    } else {
+        1.0
+    };
+    let sigma = (blur_pt / PT_PER_PX) * s / 2.0 * spread_sigma;
     let pad = pad_pixels(sigma);
     let box_w = (width_pt / PT_PER_PX * s).round().max(1.0) as u32;
     let box_h = (height_pt / PT_PER_PX * s).round().max(1.0) as u32;
@@ -203,9 +212,10 @@ pub(crate) fn blur_inset_shadow_rect(
 
     let mut pixmap = tiny_skia::Pixmap::new(buf_w, buf_h)?;
     let (r, g, b, _) = color;
+    let a = a * INSET_SHADOW_ALPHA_SCALE;
     let mut paint = tiny_skia::Paint::default();
     paint.set_color(color8(r, g, b, a));
-    paint.anti_alias = true;
+    paint.anti_alias = false;
 
     let pt_to_px = s / PT_PER_PX;
     let spread_px = spread_pt * pt_to_px;
@@ -221,18 +231,10 @@ pub(crate) fn blur_inset_shadow_rect(
     pb.line_to(0.0, buf_h as f32);
     pb.close();
     if hole_w > 0.0 && hole_h > 0.0 {
-        let hole_radius = ((radius_pt - spread_pt).max(0.0) * pt_to_px)
-            .min(hole_w / 2.0)
-            .min(hole_h / 2.0);
-        append_rounded_path(
-            &mut pb,
-            hole_x,
-            hole_y,
-            hole_w,
-            hole_h,
-            hole_radius,
-            hole_radius,
-        );
+        let radius_spread = spread_pt * INSET_SHADOW_RADIUS_SPREAD_SCALE;
+        let hole_rx = radii_pt.map(|r| (r - radius_spread).max(0.0) * pt_to_px);
+        let hole_ry = radii_y_pt.map(|r| (r - radius_spread).max(0.0) * pt_to_px);
+        append_rounded_box_path(&mut pb, hole_x, hole_y, hole_w, hole_h, hole_rx, hole_ry);
     }
     if let Some(path) = pb.finish() {
         pixmap.fill_path(
@@ -245,15 +247,202 @@ pub(crate) fn blur_inset_shadow_rect(
     }
 
     let rgba = pixmap_to_rgba(&pixmap, buf_w, buf_h);
-    let rgba = if sigma > 0.0 {
+    let mut rgba = if sigma > 0.0 {
         blur_premultiplied(&rgba, sigma)
     } else {
         rgba
     };
+    let outer_rx = radii_pt.map(|r| (r - INSET_SHADOW_CLIP_RADIUS_ADJUST_PT).max(0.0) * pt_to_px);
+    let outer_ry = radii_y_pt.map(|r| (r - INSET_SHADOW_CLIP_RADIUS_ADJUST_PT).max(0.0) * pt_to_px);
+    clip_alpha_to_rounded_box(
+        &mut rgba,
+        pad as f32,
+        pad as f32,
+        box_w as f32,
+        box_h as f32,
+        outer_rx,
+        outer_ry,
+    )?;
+    normalize_inset_shadow_alpha(
+        &mut rgba,
+        pad as f32,
+        pad as f32,
+        box_w as f32,
+        box_h as f32,
+        outer_rx,
+        outer_ry,
+    );
 
     let overflow_pt = pad as f32 / s * PT_PER_PX;
     let asset = rgba_to_png_alpha_asset(rgba)?;
     Some(BlurredRaster { asset, overflow_pt })
+}
+
+fn normalize_inset_shadow_alpha(
+    img: &mut image::RgbaImage,
+    clip_x: f32,
+    clip_y: f32,
+    clip_w: f32,
+    clip_h: f32,
+    rx: [f32; 4],
+    ry: [f32; 4],
+) {
+    let clip = InsetCornerClip {
+        x: clip_x,
+        y: clip_y,
+        w: clip_w,
+        h: clip_h,
+        rx,
+        ry,
+    };
+    for y in 0..img.height() {
+        for x in 0..img.width() {
+            let px = img.get_pixel_mut(x, y);
+            let alpha = px[3] as f32 / 255.0;
+            if alpha <= INSET_SHADOW_ALPHA_CUTOFF {
+                px[3] = 0;
+                continue;
+            }
+            let tail = ((alpha - INSET_SHADOW_ALPHA_CUTOFF) / (1.0 - INSET_SHADOW_ALPHA_CUTOFF))
+                .clamp(0.0, 1.0);
+            let cap = if in_inset_corner(x as f32 + 0.5, y as f32 + 0.5, &clip) {
+                INSET_SHADOW_CORNER_ALPHA_CAP
+            } else {
+                INSET_SHADOW_ALPHA_CAP
+            };
+            let boosted = (alpha * INSET_SHADOW_MID_ALPHA_BOOST).min(cap);
+            let t = smoothstep(INSET_SHADOW_BOOST_START, INSET_SHADOW_BOOST_END, alpha);
+            let shaped = tail + (boosted - tail) * t;
+            px[3] = (shaped * 255.0).round().clamp(0.0, 255.0) as u8;
+        }
+    }
+}
+
+struct InsetCornerClip {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    rx: [f32; 4],
+    ry: [f32; 4],
+}
+
+fn in_inset_corner(px: f32, py: f32, clip: &InsetCornerClip) -> bool {
+    let left = px - clip.x;
+    let right = clip.x + clip.w - px;
+    let top = py - clip.y;
+    let bottom = clip.y + clip.h - py;
+    (left >= 0.0 && top >= 0.0 && left < clip.rx[0] && top < clip.ry[0])
+        || (right >= 0.0 && top >= 0.0 && right < clip.rx[1] && top < clip.ry[1])
+        || (right >= 0.0 && bottom >= 0.0 && right < clip.rx[2] && bottom < clip.ry[2])
+        || (left >= 0.0 && bottom >= 0.0 && left < clip.rx[3] && bottom < clip.ry[3])
+}
+
+fn smoothstep(edge0: f32, edge1: f32, x: f32) -> f32 {
+    let t = ((x - edge0) / (edge1 - edge0)).clamp(0.0, 1.0);
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn clip_alpha_to_rounded_box(
+    img: &mut image::RgbaImage,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    rx: [f32; 4],
+    ry: [f32; 4],
+) -> Option<()> {
+    use resvg::tiny_skia;
+
+    let mut mask = tiny_skia::Pixmap::new(img.width(), img.height())?;
+    let mut pb = tiny_skia::PathBuilder::new();
+    append_rounded_box_path(&mut pb, x, y, w, h, rx, ry);
+    let path = pb.finish()?;
+    let mut paint = tiny_skia::Paint::default();
+    paint.set_color(tiny_skia::Color::WHITE);
+    paint.anti_alias = true;
+    mask.fill_path(
+        &path,
+        &paint,
+        tiny_skia::FillRule::Winding,
+        tiny_skia::Transform::identity(),
+        None,
+    );
+    for (i, px) in img.pixels_mut().enumerate() {
+        let ma = mask.pixels()[i].alpha() as u16;
+        px[3] = (px[3] as u16 * ma / 255) as u8;
+    }
+    Some(())
+}
+
+fn append_rounded_box_path(
+    pb: &mut resvg::tiny_skia::PathBuilder,
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    rx: [f32; 4],
+    ry: [f32; 4],
+) {
+    let mut rx = [
+        rx[0].max(0.0),
+        rx[1].max(0.0),
+        rx[2].max(0.0),
+        rx[3].max(0.0),
+    ];
+    let mut ry = [
+        ry[0].max(0.0),
+        ry[1].max(0.0),
+        ry[2].max(0.0),
+        ry[3].max(0.0),
+    ];
+    if rx.iter().all(|r| *r <= 0.5) && ry.iter().all(|r| *r <= 0.5) {
+        append_rounded_path(pb, x, y, w, h, 0.0, 0.0);
+        return;
+    }
+
+    let mut scale = 1.0f32;
+    let edges = [
+        (rx[0] + rx[1], w),
+        (rx[3] + rx[2], w),
+        (ry[0] + ry[3], h),
+        (ry[1] + ry[2], h),
+    ];
+    for (sum, len) in edges {
+        if sum > len && sum > 0.0 {
+            scale = scale.min(len / sum);
+        }
+    }
+    if scale < 1.0 {
+        for i in 0..4 {
+            rx[i] *= scale;
+            ry[i] *= scale;
+        }
+    }
+
+    let k = 0.552_284_8;
+    let (x0, y0) = (x, y);
+    let (x1, y1) = (x + w, y + h);
+    let (tlx, trx, brx, blx) = (rx[0], rx[1], rx[2], rx[3]);
+    let (tly, try_, bry, bly) = (ry[0], ry[1], ry[2], ry[3]);
+
+    pb.move_to(x0 + tlx, y0);
+    pb.line_to(x1 - trx, y0);
+    pb.cubic_to(
+        x1 - trx + trx * k,
+        y0,
+        x1,
+        y0 + try_ - try_ * k,
+        x1,
+        y0 + try_,
+    );
+    pb.line_to(x1, y1 - bry);
+    pb.cubic_to(x1, y1 - bry + bry * k, x1 - brx + brx * k, y1, x1 - brx, y1);
+    pb.line_to(x0 + blx, y1);
+    pb.cubic_to(x0 + blx - blx * k, y1, x0, y1 - bly + bly * k, x0, y1 - bly);
+    pb.line_to(x0, y0 + tly);
+    pb.cubic_to(x0, y0 + tly - tly * k, x0 + tlx - tlx * k, y0, x0 + tlx, y0);
+    pb.close();
 }
 
 fn append_rounded_path(
@@ -331,7 +520,12 @@ pub(crate) fn blur_shadow_alpha_mask(
                 continue;
             }
             any = true;
-            let out_a = (cov as f32 * ca).round().clamp(0.0, 255.0) as u8;
+            let alpha_scale = if blur_pt > 0.0 {
+                TEXT_SHADOW_ALPHA_SCALE
+            } else {
+                1.0
+            };
+            let out_a = (cov as f32 * ca * alpha_scale).round().clamp(0.0, 255.0) as u8;
             tinted.put_pixel(x + pad, y + pad, image::Rgba([r8, g8, b8, out_a]));
         }
     }
@@ -393,6 +587,7 @@ pub(crate) fn rasterize_run_alpha(
     units_per_em: u16,
     font_size_pt: f32,
     glyphs: &[crate::text::ShapedGlyph],
+    embolden_pt: f32,
     filter_dpi: f32,
     stroke_width_px: f32,
 ) -> Option<GlyphRaster> {
@@ -474,8 +669,10 @@ pub(crate) fn rasterize_run_alpha(
     let bounds = path.bounds();
 
     // Margin so the outline anti-aliasing isn't clipped at the buffer edge.
+    let embolden_px = (embolden_pt * pt_to_px).max(0.0);
     let stroke_width_px = stroke_width_px.max(0.0);
-    let margin = 2.0f32 + stroke_width_px / 2.0;
+    let stroke_px = embolden_px.max(stroke_width_px);
+    let margin = 2.0f32 + stroke_px / 2.0;
     let min_x = bounds.left() - margin;
     let min_y = bounds.top() - margin;
     let buf_w = (bounds.right() - bounds.left() + 2.0 * margin)
@@ -492,9 +689,9 @@ pub(crate) fn rasterize_run_alpha(
     paint.set_color(tiny_skia::Color::WHITE);
     paint.anti_alias = true;
     pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, None);
-    if stroke_width_px > 0.0 {
+    if stroke_px > 0.0 {
         let stroke = tiny_skia::Stroke {
-            width: stroke_width_px,
+            width: stroke_px,
             ..tiny_skia::Stroke::default()
         };
         pixmap.stroke_path(&path, &paint, &stroke, transform, None);

@@ -347,6 +347,55 @@ fn background_clip_radii(
     )
 }
 
+#[derive(Clone, Copy)]
+struct InsetShadowBox {
+    x: f32,
+    y: f32,
+    w: f32,
+    h: f32,
+    rx: [f32; 4],
+    ry: [f32; 4],
+    radius: f32,
+}
+
+fn inset_shadow_padding_box(
+    box_x: f32,
+    box_y: f32,
+    box_w: f32,
+    box_h: f32,
+    border: [f32; 4],
+    rx: [f32; 4],
+    ry: [f32; 4],
+) -> InsetShadowBox {
+    let [left, right, top, bottom] = border;
+    let x = box_x + left;
+    let y = box_y + bottom;
+    let w = (box_w - left - right).max(0.0);
+    let h = (box_h - top - bottom).max(0.0);
+    let rx = [
+        (rx[0] - left).max(0.0),
+        (rx[1] - right).max(0.0),
+        (rx[2] - right).max(0.0),
+        (rx[3] - left).max(0.0),
+    ];
+    let ry = [
+        (ry[0] - top).max(0.0),
+        (ry[1] - top).max(0.0),
+        (ry[2] - bottom).max(0.0),
+        (ry[3] - bottom).max(0.0),
+    ];
+    let radius = rx.iter().chain(ry.iter()).copied().fold(0.0, f32::max);
+    InsetShadowBox {
+        x,
+        y,
+        w,
+        h,
+        rx,
+        ry,
+        radius,
+    }
+}
+
 /// Emit a clip path (`q` + path + `W n`) for a background-clip box. Uses a
 /// rounded-rect path when `border_radius` is set, otherwise a plain rectangle.
 /// The caller is responsible for the matching `Q`. Returns `true` if a clip was
@@ -1791,6 +1840,7 @@ fn paint_simple_text_block(
                 font.units_per_em,
                 run.font_size,
                 &shaped.glyphs,
+                0.0,
                 filter_dpi,
                 0.0,
             )?;
@@ -2059,6 +2109,7 @@ fn blurred_simple_container_group(
                     font.units_per_em,
                     run.font_size,
                     &shaped.glyphs,
+                    0.0,
                     filter_dpi,
                     0.0,
                 )?;
@@ -2571,6 +2622,7 @@ fn render_running_margin_element(
                 prepared_custom_fonts,
                 0.0,
                 false,
+                1.0,
                 pdf_writer,
                 page_images,
             );
@@ -3993,16 +4045,25 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     }
 
                     // Draw inset box-shadow (after backgrounds, before content).
-                    render_box_shadows_inset(
-                        &mut content,
-                        box_shadow,
+                    let tb_inset_shadow = inset_shadow_padding_box(
                         block_x,
                         block_bottom,
                         render_width,
                         border_box_h,
-                        *border_radius,
+                        [tb_bl, tb_br, tb_bt, tb_bb],
                         *tb_radii,
                         *tb_radii_y,
+                    );
+                    render_box_shadows_inset(
+                        &mut content,
+                        box_shadow,
+                        tb_inset_shadow.x,
+                        tb_inset_shadow.y,
+                        tb_inset_shadow.w,
+                        tb_inset_shadow.h,
+                        tb_inset_shadow.radius,
+                        tb_inset_shadow.rx,
+                        tb_inset_shadow.ry,
                         &mut page_ext_gstates,
                         &mut bg_alpha_counter,
                         &mut pdf_writer,
@@ -4794,8 +4855,13 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         continue;
                                     }
                                     let (sr, sg, sb, _) = shadow.color.to_f32_rgba();
-                                    let sx0 = bg_x + deco_lead + shadow.offset_x;
-                                    let sx1 = bg_x + run_width - deco_trail + shadow.offset_x;
+                                    let sx0 = bg_x
+                                        + deco_lead
+                                        + shadow.offset_x
+                                        + TEXT_SHADOW_VECTOR_X_ADJUST_PT;
+                                    let sx1 = bg_x + run_width - deco_trail
+                                        + shadow.offset_x
+                                        + TEXT_SHADOW_VECTOR_X_ADJUST_PT;
                                     let sy_shift = -shadow.offset_y;
                                     let thickness = decoration_thickness(run);
                                     if run.underline {
@@ -4810,7 +4876,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         let uy = text_y
                                             - desc * underline_descender_factor(run)
                                             - decoration_offset(run)
-                                            + sy_shift;
+                                            + sy_shift
+                                            + TEXT_SHADOW_DECORATION_Y_ADJUST_PT;
                                         push_decoration_stroke(
                                             &mut content,
                                             (sr, sg, sb),
@@ -4822,7 +4889,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         );
                                     }
                                     if run.line_through {
-                                        let sy = text_y + run.font_size * 0.3 + sy_shift;
+                                        let sy = text_y
+                                            + run.font_size * 0.3
+                                            + sy_shift
+                                            + TEXT_SHADOW_DECORATION_Y_ADJUST_PT;
                                         push_decoration_stroke(
                                             &mut content,
                                             (sr, sg, sb),
@@ -4843,7 +4913,8 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                         let oy = text_y
                                             + ascender_ratio * run.font_size
                                             + overline_lift(run)
-                                            + sy_shift;
+                                            + sy_shift
+                                            + TEXT_SHADOW_DECORATION_Y_ADJUST_PT;
                                         push_decoration_stroke(
                                             &mut content,
                                             (sr, sg, sb),
@@ -4868,7 +4939,12 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 let desc = descender_ratio * run.font_size;
                                 let uy = text_y
                                     - desc * underline_descender_factor(run)
-                                    - decoration_offset(run);
+                                    - decoration_offset(run)
+                                    + if run.text_shadow.is_empty() {
+                                        0.0
+                                    } else {
+                                        TEXT_SHADOW_DECORATION_Y_ADJUST_PT
+                                    };
                                 let thickness = decoration_thickness(run);
                                 push_decoration_stroke(
                                     &mut content,
@@ -4883,7 +4959,13 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
 
                             // Draw strikethrough (line-through)
                             if run.line_through {
-                                let sy = text_y + run.font_size * 0.3;
+                                let sy = text_y
+                                    + run.font_size * 0.3
+                                    + if run.text_shadow.is_empty() {
+                                        0.0
+                                    } else {
+                                        TEXT_SHADOW_DECORATION_Y_ADJUST_PT
+                                    };
                                 let thickness = decoration_thickness(run);
                                 push_decoration_stroke(
                                     &mut content,
@@ -4919,8 +5001,14 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                     run.italic,
                                     custom_fonts,
                                 );
-                                let oy =
-                                    text_y + ascender_ratio * run.font_size + overline_lift(run);
+                                let oy = text_y
+                                    + ascender_ratio * run.font_size
+                                    + overline_lift(run)
+                                    + if run.text_shadow.is_empty() {
+                                        0.0
+                                    } else {
+                                        TEXT_SHADOW_DECORATION_Y_ADJUST_PT
+                                    };
                                 let thickness = decoration_thickness(run);
                                 push_decoration_stroke(
                                     &mut content,
@@ -5680,16 +5768,30 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     }
 
                     // Draw inset box-shadow for flex container (after backgrounds).
-                    render_box_shadows_inset(
-                        &mut content,
-                        box_shadow,
+                    let flex_inset_shadow = inset_shadow_padding_box(
                         flex_left,
                         row_y - full_height,
                         *container_width,
                         full_height,
-                        *border_radius,
+                        [
+                            border.left.width,
+                            border.right.width,
+                            border.top.width,
+                            border.bottom.width,
+                        ],
                         [*border_radius; 4],
                         [*border_radius; 4],
+                    );
+                    render_box_shadows_inset(
+                        &mut content,
+                        box_shadow,
+                        flex_inset_shadow.x,
+                        flex_inset_shadow.y,
+                        flex_inset_shadow.w,
+                        flex_inset_shadow.h,
+                        flex_inset_shadow.radius,
+                        flex_inset_shadow.rx,
+                        flex_inset_shadow.ry,
                         &mut page_ext_gstates,
                         &mut bg_alpha_counter,
                         &mut pdf_writer,
@@ -6159,16 +6261,30 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         {
                             let cell_bg_x = cells_left + padding_left + cell.x_offset;
                             let cell_bg_y = text_area_top - cell_y_shift - cell_render_h;
-                            render_box_shadows_inset(
-                                &mut content,
-                                &cell.box_shadow,
+                            let cell_inset_shadow = inset_shadow_padding_box(
                                 cell_bg_x,
                                 cell_bg_y,
                                 cell.width,
                                 cell_render_h,
-                                cell.border_radius,
+                                [
+                                    cell.border.left.width,
+                                    cell.border.right.width,
+                                    cell.border.top.width,
+                                    cell.border.bottom.width,
+                                ],
                                 [cell.border_radius; 4],
                                 [cell.border_radius; 4],
+                            );
+                            render_box_shadows_inset(
+                                &mut content,
+                                &cell.box_shadow,
+                                cell_inset_shadow.x,
+                                cell_inset_shadow.y,
+                                cell_inset_shadow.w,
+                                cell_inset_shadow.h,
+                                cell_inset_shadow.radius,
+                                cell_inset_shadow.rx,
+                                cell_inset_shadow.ry,
                                 &mut page_ext_gstates,
                                 &mut bg_alpha_counter,
                                 &mut pdf_writer,
@@ -7989,16 +8105,25 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         }
 
                         // Draw inset box-shadow (after container background, before borders).
-                        render_box_shadows_inset(
-                            &mut content,
-                            c_box_shadow,
+                        let c_inset_shadow = inset_shadow_padding_box(
                             container_x,
                             container_y_top - total_h,
                             container_w,
                             total_h,
-                            *c_border_radius,
+                            [c_bl, c_br, c_bt, c_bb],
                             *c_border_radii,
                             *c_border_radii_y,
+                        );
+                        render_box_shadows_inset(
+                            &mut content,
+                            c_box_shadow,
+                            c_inset_shadow.x,
+                            c_inset_shadow.y,
+                            c_inset_shadow.w,
+                            c_inset_shadow.h,
+                            c_inset_shadow.radius,
+                            c_inset_shadow.rx,
+                            c_inset_shadow.ry,
                             &mut page_ext_gstates,
                             &mut bg_alpha_counter,
                             &mut pdf_writer,
@@ -12266,16 +12391,30 @@ fn render_container_children(
 
                         // Draw inset box-shadow (after the backgrounds, before the
                         // borders/content) so it paints over the element fill.
-                        render_box_shadows_inset(
-                            content,
-                            nk_box_shadow,
+                        let nk_inset_shadow = inset_shadow_padding_box(
                             nk_x,
                             nk_top_y - nk_total_h,
                             nk_w,
                             nk_total_h,
-                            *cont_br,
+                            [
+                                border.left.width,
+                                border.right.width,
+                                border.top.width,
+                                border.bottom.width,
+                            ],
                             *cont_radii,
                             *cont_radii_y,
+                        );
+                        render_box_shadows_inset(
+                            content,
+                            nk_box_shadow,
+                            nk_inset_shadow.x,
+                            nk_inset_shadow.y,
+                            nk_inset_shadow.w,
+                            nk_inset_shadow.h,
+                            nk_inset_shadow.radius,
+                            nk_inset_shadow.rx,
+                            nk_inset_shadow.ry,
                             page_ext_gstates,
                             bg_alpha_counter,
                             pdf_writer,
@@ -14043,11 +14182,24 @@ fn render_text_shadow_blur(
         Some(s) if !s.glyphs.is_empty() => s,
         _ => return false,
     };
+    let faux_bold = matches!(run.font_family, FontFamily::Custom(_))
+        && crate::system_fonts::needs_faux_bold(
+            custom_fonts,
+            run.font_family.name(),
+            run.bold,
+            run.italic,
+        );
+    let embolden_pt = if faux_bold {
+        run.font_size * 0.028
+    } else {
+        0.0
+    };
     let raster = match crate::render::blur::rasterize_run_alpha(
         &font.data,
         font.units_per_em,
         run.font_size,
         &shaped.glyphs,
+        embolden_pt,
         pdf_writer.opts.filter_dpi,
         0.0,
     ) {
@@ -14124,10 +14276,19 @@ fn render_run_text(
         prepared_custom_fonts,
         word_spacing,
         true,
+        if run.text_shadow.is_empty() {
+            1.0
+        } else {
+            TEXT_SHADOW_FAUX_BOLD_STROKE_SCALE
+        },
         pdf_writer,
         page_images,
     )
 }
+
+const TEXT_SHADOW_FAUX_BOLD_STROKE_SCALE: f32 = 1.075;
+const TEXT_SHADOW_VECTOR_X_ADJUST_PT: f32 = -0.16;
+const TEXT_SHADOW_DECORATION_Y_ADJUST_PT: f32 = -0.16;
 
 #[allow(clippy::too_many_arguments)]
 #[allow(clippy::collapsible_if)]
@@ -14141,6 +14302,7 @@ fn render_run_text_with_faux_bold(
     prepared_custom_fonts: &PreparedCustomFonts,
     word_spacing: f32,
     allow_faux_bold: bool,
+    faux_bold_stroke_scale: f32,
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
 ) -> f32 {
@@ -14223,8 +14385,8 @@ fn render_run_text_with_faux_bold(
     if !run.text_shadow.is_empty() {
         for shadow in run.text_shadow.iter().rev() {
             let (sr, sg, sb, alpha) = shadow.color.to_f32_rgba();
-            // Try the blurred raster path first when the shadow has blur and the
-            // run is a shapeable custom font (outlines available).
+            // Try the glyph-alpha raster path first when the shadow has blur and
+            // the run is a shapeable custom font (outlines available).
             if shadow.blur > 0.0 {
                 if render_text_shadow_blur(
                     content,
@@ -14252,18 +14414,25 @@ fn render_run_text_with_faux_bold(
             render_run_text_with_faux_bold(
                 content,
                 &shadow_run,
-                x + shadow.offset_x,
+                x + shadow.offset_x + TEXT_SHADOW_VECTOR_X_ADJUST_PT,
                 text_y - shadow.offset_y,
                 parent_font_size,
                 custom_fonts,
                 prepared_custom_fonts,
                 word_spacing,
                 allow_faux_bold,
+                TEXT_SHADOW_FAUX_BOLD_STROKE_SCALE,
                 pdf_writer,
                 page_images,
             );
         }
     }
+
+    let x = if !run.text_shadow.is_empty() {
+        x + TEXT_SHADOW_VECTOR_X_ADJUST_PT
+    } else {
+        x
+    };
 
     // For runs with mixed scripts (e.g. "Chinese: 你好世界"), split into
     // segments and render each with the appropriate font: primary font for
@@ -14318,6 +14487,7 @@ fn render_run_text_with_faux_bold(
                     prepared_custom_fonts,
                     word_spacing,
                     allow_faux_bold,
+                    faux_bold_stroke_scale,
                     pdf_writer,
                     page_images,
                 );
@@ -14362,7 +14532,7 @@ fn render_run_text_with_faux_bold(
         };
         content.push_str(&format!(
             "{} w\n",
-            format_pdf_number(run.font_size * stroke_ratio)
+            format_pdf_number(run.font_size * stroke_ratio * faux_bold_stroke_scale.max(0.0))
         ));
         content.push_str("2 Tr\n");
     }
@@ -17421,7 +17591,8 @@ fn render_box_shadow_inset(
         && let Some(blurred) = crate::render::blur::blur_inset_shadow_rect(
             box_w,
             box_h,
-            border_radius,
+            border_radii,
+            border_radii_y,
             blur,
             spread,
             offset_x,
@@ -17439,26 +17610,37 @@ fn render_box_shadow_inset(
         );
         let img_name = format!("Im{img_obj_id}");
         let ov = blurred.overflow_pt;
+        const INSET_SHADOW_CLIP_OUTSET_PT: f32 = 0.025;
+        const INSET_SHADOW_CLIP_RADIUS_ADJUST_PT: f32 = 0.68;
+        const INSET_SHADOW_IMAGE_X_ADJUST_PT: f32 = 0.22;
+        const INSET_SHADOW_IMAGE_Y_ADJUST_PT: f32 = -0.20;
         content.push_str("q\n");
-        if border_radius > 0.5 {
-            content.push_str(&rounded_rect_path(
-                box_x,
-                box_y_bottom,
-                box_w,
-                box_h,
-                border_radius,
-            ));
-            content.push('\n');
+        let clip_x = box_x - INSET_SHADOW_CLIP_OUTSET_PT;
+        let clip_y = box_y_bottom - INSET_SHADOW_CLIP_OUTSET_PT;
+        let clip_w = box_w + 2.0 * INSET_SHADOW_CLIP_OUTSET_PT;
+        let clip_h = box_h + 2.0 * INSET_SHADOW_CLIP_OUTSET_PT;
+        let clip_radii = border_radii.map(|r| {
+            (r - INSET_SHADOW_CLIP_RADIUS_ADJUST_PT).max(0.0) + INSET_SHADOW_CLIP_OUTSET_PT
+        });
+        let clip_radii_y = border_radii_y.map(|r| {
+            (r - INSET_SHADOW_CLIP_RADIUS_ADJUST_PT).max(0.0) + INSET_SHADOW_CLIP_OUTSET_PT
+        });
+        if radii_any(border_radii) || radii_any(border_radii_y) {
+            if let Some(path) =
+                rounded_box_path(clip_x, clip_y, clip_w, clip_h, clip_radii, clip_radii_y)
+            {
+                content.push_str(&path);
+            }
         } else {
-            content.push_str(&format!("{box_x} {box_y_bottom} {box_w} {box_h} re\n"));
+            content.push_str(&format!("{clip_x} {clip_y} {clip_w} {clip_h} re\n"));
         }
         content.push_str("W n\n");
         content.push_str(&format!(
             "q\n{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\nQ\n",
             w = box_w + 2.0 * ov,
             h = box_h + 2.0 * ov,
-            ix = box_x - ov,
-            iy = box_y_bottom - ov,
+            ix = box_x - ov + INSET_SHADOW_IMAGE_X_ADJUST_PT,
+            iy = box_y_bottom - ov + INSET_SHADOW_IMAGE_Y_ADJUST_PT,
             name = img_name,
         ));
         page_images.push(ImageRef {

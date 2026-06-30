@@ -3258,6 +3258,7 @@ fn paint_filter_text_lines(
                 font.units_per_em,
                 run.font_size,
                 &shaped.glyphs,
+                0.0,
                 FILTER_GROUP_RASTER_DPI,
                 stroke_width_px,
             )?;
