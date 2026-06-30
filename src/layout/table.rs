@@ -3498,7 +3498,8 @@ fn collect_table_cell_content_inner(
                         element_sibling_count,
                         &mut inner_env,
                     );
-                } else if el.tag == HtmlTag::Svg
+                } else if el.tag == HtmlTag::Img
+                    || el.tag == HtmlTag::Svg
                     || (recurse_blocks
                         && style.display != Display::Inline
                         && el.tag != HtmlTag::Br

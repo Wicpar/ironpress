@@ -1113,6 +1113,210 @@ pub(super) fn render_nested_layout_elements(
                     );
                 }
             }
+            LayoutElement::Image {
+                image,
+                width: img_w,
+                height: img_h,
+                object_fit,
+                object_position,
+                background_color,
+                border,
+                blur_overflow,
+                src_crop,
+                ..
+            } => {
+                let box_top = planned_element.top_y;
+                let box_bottom = box_top - *img_h;
+                let img_x = planned_element.origin_x;
+
+                if *blur_overflow > 0.0 {
+                    let img_obj_id = ctx.text.pdf_writer.add_image_object(
+                        &image.data,
+                        image.source_width,
+                        image.source_height,
+                        image.format,
+                        image.png_metadata.as_ref(),
+                    );
+                    let img_name = format!("Im{img_obj_id}");
+                    let ov = *blur_overflow;
+                    content.push_str(&format!(
+                        "q\n{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\n",
+                        w = *img_w + 2.0 * ov,
+                        h = *img_h + 2.0 * ov,
+                        ix = img_x - ov,
+                        iy = box_bottom - ov,
+                        name = img_name,
+                    ));
+                    ctx.text.page_images.push(ImageRef {
+                        name: img_name,
+                        obj_id: img_obj_id,
+                    });
+                    continue;
+                }
+
+                if let Some((br, bg, bb, ba)) = background_color
+                    && *ba > 0.0
+                {
+                    let bg_w = if !border.has_any() {
+                        (*img_w - DEVICE_PIXEL_PT).max(0.0)
+                    } else {
+                        *img_w
+                    };
+                    content.push_str(&format!(
+                        "{br} {bg} {bb} rg\n{img_x} {box_bottom} {bg_w} {} re\nf\n",
+                        *img_h,
+                    ));
+                }
+
+                let content_x = img_x + border.left.width;
+                let content_bottom = box_bottom + border.bottom.width;
+                let content_top = box_top - border.top.width;
+                let content_w = (*img_w - border.horizontal_width()).max(0.0);
+                let paint_content_w = if !border.has_any() {
+                    (content_w - DEVICE_PIXEL_PT).max(0.0)
+                } else {
+                    content_w
+                };
+                let content_h = (*img_h - border.vertical_width()).max(0.0);
+                let sliced =
+                    src_crop.and_then(|c| crate::layout::images::crop_raster_asset(image, c));
+                let img = sliced.as_ref().unwrap_or(image);
+                let placement = crate::layout::images::compute_image_placement(
+                    paint_content_w,
+                    content_h,
+                    img.source_width,
+                    img.source_height,
+                    *object_fit,
+                    *object_position,
+                );
+                let img_obj_id = ctx.text.pdf_writer.add_source_image_object(
+                    &img.data,
+                    img.source_width,
+                    img.source_height,
+                    img.format,
+                    img.png_metadata.as_ref(),
+                    placement.width,
+                    placement.height,
+                );
+                let img_name = format!("Im{img_obj_id}");
+                content.push_str("q\n");
+                if placement.clip {
+                    content.push_str(&format!(
+                        "{content_x} {content_bottom} {paint_content_w} {content_h} re\nW n\n",
+                    ));
+                }
+                content.push_str(&format!(
+                    "{w} 0 0 {h} {ix} {iy} cm\n/{name} Do\nQ\n",
+                    w = placement.width,
+                    h = placement.height,
+                    ix = content_x + placement.offset_x,
+                    iy = content_top - placement.offset_y - placement.height,
+                    name = img_name,
+                ));
+                ctx.text.page_images.push(ImageRef {
+                    name: img_name,
+                    obj_id: img_obj_id,
+                });
+                draw_image_border(
+                    content,
+                    img_x,
+                    box_bottom,
+                    *img_w,
+                    *img_h,
+                    border,
+                    ctx.page_ext_gstates,
+                    ctx.bg_alpha_counter,
+                );
+            }
+            LayoutElement::Svg {
+                tree,
+                width: svg_w,
+                height: svg_h,
+                background_color,
+                mix_blend_mode,
+                border,
+                ..
+            } => {
+                let svg_x = planned_element.origin_x;
+                let svg_y = planned_element.top_y - *svg_h;
+
+                if let Some((br, bg, bb, ba)) = background_color
+                    && *ba > 0.0
+                {
+                    content.push_str(&format!(
+                        "{br} {bg} {bb} rg\n{svg_x} {svg_y} {} {} re\nf\n",
+                        *svg_w, *svg_h,
+                    ));
+                }
+
+                let content_x = svg_x + border.left.width;
+                let content_y = svg_y + border.bottom.width;
+                let content_w = (*svg_w - border.horizontal_width()).max(0.0);
+                let content_h = (*svg_h - border.vertical_width()).max(0.0);
+                let svg_blended = *mix_blend_mode != crate::style::computed::BlendMode::Normal;
+
+                content.push_str("q\n");
+                if svg_blended {
+                    begin_blend_mode(content, ctx.page_ext_gstates, *mix_blend_mode);
+                }
+                content.push_str(&format!(
+                    "1 0 0 -1 {} {} cm\n",
+                    content_x,
+                    content_y + content_h
+                ));
+                if let Some(placement) = crate::render::svg_geometry::compute_svg_placement(
+                    tree,
+                    crate::render::svg_geometry::SvgPlacementRequest::from_rect(
+                        0.0,
+                        0.0,
+                        content_w,
+                        content_h,
+                        tree.preserve_aspect_ratio,
+                    ),
+                ) {
+                    content.push_str("q\n");
+                    content.push_str(&placement.viewport.clip_path());
+                    content.push_str(&format!(
+                        "{sx} 0 0 {sy} {tx} {ty} cm\n",
+                        sx = placement.scale_x,
+                        sy = placement.scale_y,
+                        tx = placement.translate_x,
+                        ty = placement.translate_y,
+                    ));
+                    {
+                        let mut image_sink = SvgPageImageSink {
+                            pdf_writer: &mut *ctx.text.pdf_writer,
+                            page_images: &mut *ctx.text.page_images,
+                        };
+                        let mut resources = crate::render::svg_to_pdf::SvgPdfResources {
+                            shadings: ctx.shadings,
+                            shading_counter: ctx.shading_counter,
+                            ext_gstates: Some(ctx.page_ext_gstates),
+                            image_sink: Some(&mut image_sink),
+                            custom_fonts: Some(ctx.text.custom_fonts),
+                            prepared_custom_fonts: Some(ctx.text.prepared_custom_fonts),
+                        };
+                        crate::render::svg_to_pdf::render_svg_tree_with_resources(
+                            tree,
+                            content,
+                            &mut resources,
+                        );
+                    }
+                    content.push_str("Q\n");
+                }
+                content.push_str("Q\n");
+
+                draw_image_border(
+                    content,
+                    svg_x,
+                    svg_y,
+                    *svg_w,
+                    *svg_h,
+                    border,
+                    ctx.page_ext_gstates,
+                    ctx.bg_alpha_counter,
+                );
+            }
             _ => {}
         }
     }
@@ -1250,6 +1454,31 @@ pub(super) fn plan_nested_layout_elements(
                         - *margin_bottom;
                     cursor_y = base_top_y - box_h - *margin_bottom;
                 }
+            }
+            LayoutElement::Image {
+                height,
+                flow_extra_bottom,
+                margin_top,
+                margin_bottom,
+                ..
+            }
+            | LayoutElement::Svg {
+                height,
+                flow_extra_bottom,
+                margin_top,
+                margin_bottom,
+                ..
+            } => {
+                let top_y = cursor_y - *margin_top;
+                planned.push(PlannedNestedElement {
+                    element,
+                    source_index: element_idx,
+                    origin_x: frame.origin_x,
+                    top_y,
+                    available_width: frame.available_width,
+                    blur_canvas_box: None,
+                });
+                cursor_y = top_y - *height - *flow_extra_bottom - *margin_bottom;
             }
             _ => {}
         }

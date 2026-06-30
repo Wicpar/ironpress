@@ -563,6 +563,27 @@
     "partial_threshold_pct": 10.0
   },
   {
+    "id": "images-replaced-img-in-table-cell",
+    "category": "images-replaced",
+    "feature": "img",
+    "subfeature": "img-inside-table-cell",
+    "description": "An SVG img replaced element inside a bordered table cell paints at its laid-out size; catches table-cell paint walkers that lay out but drop replaced-image children.",
+    "file": "cases/images-replaced/images-replaced-img-in-table-cell.html",
+    "weight": 1,
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "sanitize": true,
+    "floor_pct": 1.0,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-image-render",
+      "tables-basic-grid"
+    ],
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
     "id": "svg-inline-gradient-clip-path",
     "category": "images-replaced",
     "feature": "inline-svg",

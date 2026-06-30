@@ -489,6 +489,7 @@
   "grid-x-background-gradient": "8525b35a5ad1aeb55852e6d4ec30ae56826af1cfb92534a3754a566eb739c80e",
   "grid-x-flexbox-nested": "c4c6a6610d5c431a28ab8b2f441bdcc0c76a46b29ab7f8c5323f3d08cbfcfc2c",
   "html-background-suppresses-body-canvas": "d294abd3f668b1dc628b3475d7a0c71f7c15da43a181dcbe54d7e245b76d7a31",
+  "images-replaced-img-in-table-cell": "bf81799df4eb264c47b928f9b72746cfb4f74248136823282a260a9be60c1c65",
   "img-aspect-ratio-box": "c07ac715c830525b08ae037c07119fb9c3525274a070053a93debdb2764903d6",
   "img-border": "6aee51145e34fa35de7ebbd7ef566bfcc77a0f13f6a812eb7063dff953f1a09b",
   "img-data-uri-intrinsic": "c8eccbe6f45d32225fd486831faeabae0fc4c663ddd16b6375c84db868b02e3f",
