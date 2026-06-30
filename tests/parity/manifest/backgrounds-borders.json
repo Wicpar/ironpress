@@ -807,7 +807,7 @@
       "background-clip",
       "border-radius"
     ],
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",
@@ -1085,7 +1085,7 @@
     "description": "border-color four-value shorthand assigns a distinct color to each side; catches single-color shorthand parsing.",
     "file": "cases/backgrounds-borders/border-color-four-value-shorthand.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",
