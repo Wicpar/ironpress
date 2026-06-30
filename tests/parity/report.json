@@ -7,10 +7,10 @@
     "pdftoppm_available": true
   },
   "overall": {
-    "score_pct": 98.34,
-    "pass": 1246,
+    "score_pct": 98.82,
+    "pass": 1252,
     "partial": 0,
-    "fail": 21,
+    "fail": 15,
     "unknown": 0,
     "total": 1267,
     "scored_ratio_pct": 100.0
@@ -13894,11 +13894,11 @@
     },
     {
       "category": "block-box-model",
-      "score_pct": 100.0,
+      "score_pct": 95.38,
       "counts": {
-        "pass": 57,
+        "pass": 62,
         "partial": 0,
-        "fail": 0,
+        "fail": 3,
         "unknown": 0
       },
       "features": [
@@ -14306,6 +14306,1688 @@
                   "concern": "Appearance",
                   "headline": "raster appearance: color 0.00% interiorΔE 0.00",
                   "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            }
+          ]
+        },
+        {
+          "feature": "deep-nesting",
+          "score_pct": 62.5,
+          "counts": {
+            "pass": 5,
+            "partial": 0,
+            "fail": 3,
+            "unknown": 0
+          },
+          "fixtures": [
+            {
+              "id": "deep-block-absolute-containing-chain",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "absolute-containing-block-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "PASS",
+              "diff_pct": 0.0003,
+              "weight": 1.0,
+              "description": "An absolutely positioned block is nested three static ancestors below a positioned outer block and must resolve offsets against the positioned ancestor, not its DOM parent.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-border-box"
+              ],
+              "expected_support": "implemented",
+              "oracle": "chrome",
+              "attribution": "",
+              "html_sha256": "9b3306976871dcbe798dc9d25b903a2d8c136030a39eaf74639c72ef94b34172",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [],
+                "headline": "fill recolour ΔRGB(-6,-10,-9) (ΔE 2.9)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    -6,
+                    -10,
+                    -9
+                  ],
+                  "delta_e": 2.9020265756804924,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 1.0
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.00css",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.00% interiorΔE 0.00",
+                  "magnitude": 0.0003262600161824968
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-effects-subtree",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "opacity-transform-shadow-subtree",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "PASS",
+              "diff_pct": 0.0445,
+              "weight": 1.0,
+              "description": "A nested block subtree with opacity, transform, and box-shadow contains two more decorated descendants; catches effect-group painting being lost or applied to the wrong depth.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-border-box"
+              ],
+              "expected_support": "implemented",
+              "oracle": "chrome",
+              "attribution": "",
+              "html_sha256": "70773e9053877fd001bb151cdf9902f0f3b90c446d6ebc08402c35c84c737446",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [],
+                "headline": "fill recolour ΔRGB(-17,-19,-25) (ΔE 6.6)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    -17,
+                    -19,
+                    -25
+                  ],
+                  "delta_e": 6.595146128910666,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      280.32,
+                      46.72,
+                      284.8,
+                      51.2
+                    ],
+                    "area_pct": 0.004730770234646204,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -17,
+                      -22,
+                      -27
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-17,-22,-27) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      280.32,
+                      150.72,
+                      284.8,
+                      155.2
+                    ],
+                    "area_pct": 0.004730770234646204,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -8,
+                      -17,
+                      -21
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-8,-17,-21) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      265.6,
+                      62.4,
+                      269.12,
+                      65.92
+                    ],
+                    "area_pct": 0.003751990186098713,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -28,
+                      -19,
+                      -11
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-28,-19,-11) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      101.76,
+                      75.2,
+                      105.28,
+                      78.72
+                    ],
+                    "area_pct": 0.003751990186098713,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -17,
+                      -19,
+                      -28
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-17,-19,-28) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      252.8,
+                      75.2,
+                      256.32,
+                      78.72
+                    ],
+                    "area_pct": 0.003751990186098713,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -17,
+                      -19,
+                      -32
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-17,-19,-32) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      101.76,
+                      123.2,
+                      105.28,
+                      126.72
+                    ],
+                    "area_pct": 0.003751990186098713,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -20,
+                      -19,
+                      -28
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": 0.84,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-20,-19,-28) (ΔE 0.0)"
+                  }
+                ],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 1.0
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.00css",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.04% interiorΔE 0.00",
+                  "magnitude": 0.044534492208910814
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-margin-collapse-chain",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "margin-collapse-through-ancestors",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "PASS",
+              "diff_pct": 0.0,
+              "weight": 1.0,
+              "description": "A leaf top margin collapses through three unbordered block ancestors to the parent; the white gap before the red leaf catches engines that keep the margin inside the blue parent background.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow"
+              ],
+              "expected_support": "implemented",
+              "oracle": "chrome",
+              "attribution": "",
+              "html_sha256": "bb00afc5dcfc5e62570fb542dfd6d89bba6846e0f5185db4ed9dc6ade19a3f17",
+              "diagnosis": {
+                "primary_class": "AaOnly",
+                "secondary": [],
+                "headline": "differences confined to glyph AA edges — measurement ceiling, not a bug",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    0,
+                    0,
+                    0
+                  ],
+                  "delta_e": 0.0,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 1.0
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.00css",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.00% interiorΔE 0.00",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-narrow-text-wrap-chain",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "percent-text-wrap-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "PASS",
+              "diff_pct": 0.9737,
+              "weight": 1.0,
+              "description": "Nested percentage-width blocks narrow the innermost text column so wrapping creates a tall stack; catches deep width collapse or failure to wrap text in the resolved column.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-text-baseline"
+              ],
+              "expected_support": "implemented",
+              "oracle": "chrome",
+              "attribution": "",
+              "html_sha256": "e3ac52bda5bed9ffe5201770fdf809e5895a28d38b105f5e44e00ed892be5f5e",
+              "diagnosis": {
+                "primary_class": "GeometryShift",
+                "secondary": [],
+                "headline": "content shifted (-0.6,0.0)px beyond page-origin calibration",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    -7,
+                    -8,
+                    -7
+                  ],
+                  "delta_e": 5.013804856062404,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    -0.64,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      176.96,
+                      19.2,
+                      176.96,
+                      248.64
+                    ],
+                    "area_pct": 0.10538768872175595,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.3195543175487465,
+                      -0.0004456824512534819
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.3,-0.0)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      123.84,
+                      27.2,
+                      123.84,
+                      240.64
+                    ],
+                    "area_pct": 0.09804871318402922,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.32,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.3,0.0)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      120.64,
+                      30.08,
+                      120.64,
+                      237.76
+                    ],
+                    "area_pct": 0.09540668199044759,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.32,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.3,0.0)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      114.88,
+                      36.16,
+                      114.88,
+                      231.68
+                    ],
+                    "area_pct": 0.08982906058177527,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.32,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.3,0.0)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      58.56,
+                      54.72,
+                      64.96,
+                      56.0
+                    ],
+                    "area_pct": 0.0036694877688633687,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      8,
+                      8,
+                      7
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.013333333333333332,
+                      0.56
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.0,0.6)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      68.48,
+                      54.72,
+                      74.88,
+                      56.0
+                    ],
+                    "area_pct": 0.0036694877688633687,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      8,
+                      8,
+                      7
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.013333333333333332,
+                      0.56
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.0,0.6)px beyond page-origin calibration"
+                  }
+                ],
+                "residual_shift_css": [
+                  -0.64,
+                  0.0
+                ],
+                "confidence": 0.882574615616521
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.64css",
+                  "magnitude": 0.64
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.14% interiorΔE 0.00",
+                  "magnitude": 0.13754551008372795
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-overflow-clip-scroll-chain",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "overflow-hidden-scroll-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "PASS",
+              "diff_pct": 0.2134,
+              "weight": 1.0,
+              "description": "Three nested blocks combine overflow:hidden and overflow:scroll while clipping a four-stripe oversized canvas; catches clip-stack composition errors at depth.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-border-box"
+              ],
+              "expected_support": "implemented",
+              "oracle": "chrome",
+              "attribution": "",
+              "html_sha256": "b3b3780dcea8867680831a6c7817fbc1a5b07ec9446833c35fe06c6147e02484",
+              "diagnosis": {
+                "primary_class": "GeometryShift",
+                "secondary": [
+                  "ColorValue",
+                  "Extra",
+                  "Missing"
+                ],
+                "headline": "content shifted (-0.0,0.3)px beyond page-origin calibration",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0298368418454194,
+                  "extra_area_pct": 0.041451622949164844,
+                  "modal_drgb": [
+                    5,
+                    1,
+                    -6
+                  ],
+                  "delta_e": 3.9429287362299483,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    -0.012307692307692308,
+                    0.32
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      71.04,
+                      124.8,
+                      160.32,
+                      124.8
+                    ],
+                    "area_pct": 0.05621609466790342,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.003440860215053764,
+                      -0.32
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.0,-0.3)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      48.96,
+                      39.04,
+                      48.96,
+                      83.84
+                    ],
+                    "area_pct": 0.028308819100622794,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      5,
+                      1,
+                      -6
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+5,+1,-6) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "Extra",
+                    "bbox_css": [
+                      260.8,
+                      113.6,
+                      265.92,
+                      118.4
+                    ],
+                    "area_pct": 0.01887254606708186,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "extra paint where Chrome is blank (0.0%)"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      258.88,
+                      61.12,
+                      258.88,
+                      74.88
+                    ],
+                    "area_pct": 0.008833957733527681,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.3054545454545455,
+                      0.007272727272727273
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.3,0.0)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "Extra",
+                    "bbox_css": [
+                      262.08,
+                      42.24,
+                      264.64,
+                      45.12
+                    ],
+                    "area_pct": 0.008030870666843345,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "extra paint where Chrome is blank (0.0%)"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      259.52,
+                      48.64,
+                      267.52,
+                      49.92
+                    ],
+                    "area_pct": 0.007027011833487928,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -73,
+                      -73,
+                      -73
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -2.7636363636363637,
+                      -1.0327272727272727
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-2.8,-1.0)px beyond page-origin calibration"
+                  }
+                ],
+                "residual_shift_css": [
+                  -0.012307692307692308,
+                  0.32
+                ],
+                "confidence": 0.47130761994355597
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.32css",
+                  "magnitude": 0.32023659892326617
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.05% interiorΔE 0.00",
+                  "magnitude": 0.049261611283050795
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.03% extra 0.04%",
+                  "magnitude": 0.041451622949164844
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-percent-height-chain",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "percent-height-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "FAIL",
+              "diff_pct": 1.3796,
+              "weight": 1.0,
+              "description": "A definite-height outer block contains three nested percentage-height blocks and a 100% leaf; currently ironpress mis-sizes the innermost percentage-height bar, showing definite-height propagation drift at depth.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-border-box"
+              ],
+              "expected_support": "unsupported",
+              "oracle": "chrome",
+              "attribution": "REAL",
+              "html_sha256": "dfb7057f4594ba4ebea125c1b7edc60df1789ace22d0585bcea7c87d403b6d9a",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [
+                  "GeometryShift"
+                ],
+                "headline": "fill recolour ΔRGB(+131,+122,+220) (ΔE 50.5)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    131,
+                    122,
+                    220
+                  ],
+                  "delta_e": 50.48659886655679,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    -0.48
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      49.92,
+                      62.4,
+                      249.6,
+                      69.76
+                    ],
+                    "area_pct": 0.7659329658328566,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      131,
+                      122,
+                      220
+                    ],
+                    "delta_e": 50.48659886655679,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      -1.3535135135135135
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+131,+122,+220) (ΔE 50.5)"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      22.08,
+                      146.56,
+                      277.76,
+                      146.88
+                    ],
+                    "area_pct": 0.26002392220084247,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      -0.48
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.0,-0.5)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      24.96,
+                      143.68,
+                      274.88,
+                      143.68
+                    ],
+                    "area_pct": 0.12708669197566175,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      -0.32
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.0,-0.3)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      37.12,
+                      93.76,
+                      262.72,
+                      93.76
+                    ],
+                    "area_pct": 0.11473555567112174,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      -0.32
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.0,-0.3)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      40.0,
+                      90.88,
+                      259.84,
+                      90.88
+                    ],
+                    "area_pct": 0.11181028654636227,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      -0.32
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.0,-0.3)px beyond page-origin calibration"
+                  }
+                ],
+                "residual_shift_css": [
+                  0.0,
+                  -0.48
+                ],
+                "confidence": 0.5290375780421722
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.48css",
+                  "magnitude": 0.48
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PARTIAL",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.73% interiorΔE 50.49",
+                  "magnitude": 0.7298546466274898
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-percent-padding-chain",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "percent-padding-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "FAIL",
+              "diff_pct": 22.6396,
+              "weight": 1.0,
+              "description": "Four nested block boxes combine fixed width, percentage width, percentage padding, explicit padding, margins, borders, and a percentage-width leaf; currently ironpress shifts the deep leaf right and expands extra paint, showing width/padding propagation drift through depth.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-border-box"
+              ],
+              "expected_support": "unsupported",
+              "oracle": "chrome",
+              "attribution": "REAL",
+              "html_sha256": "b7e312b9af08bffaaa20d4519d2e12a99497d899c4015aa4a75489f426538e1f",
+              "diagnosis": {
+                "primary_class": "Extra",
+                "secondary": [
+                  "ColorValue"
+                ],
+                "headline": "extra paint where Chrome is blank (5.7%)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    -12.16
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 5.672413220395283,
+                  "modal_drgb": [
+                    39,
+                    -12,
+                    -53
+                  ],
+                  "delta_e": 43.910059183023584,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "Extra",
+                    "bbox_css": [
+                      0.0,
+                      198.08,
+                      359.68,
+                      213.76
+                    ],
+                    "area_pct": 7.426274705198472,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      194,
+                      177,
+                      146
+                    ],
+                    "delta_e": 61.28738464284935,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "extra paint where Chrome is blank (7.4%)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      107.2,
+                      176.96,
+                      331.84,
+                      191.68
+                    ],
+                    "area_pct": 4.363793389802359,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      39,
+                      -12,
+                      -92
+                    ],
+                    "delta_e": 30.858434724612362,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+39,-12,-92) (ΔE 30.9)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      152.0,
+                      56.96,
+                      291.84,
+                      146.88
+                    ],
+                    "area_pct": 3.2779936887560206,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      40,
+                      -20,
+                      -53
+                    ],
+                    "delta_e": 38.69395152225625,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -1.4598540145985401,
+                      0.024525547445255477
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+40,-20,-53) (ΔE 38.7)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      197.12,
+                      72.96,
+                      246.72,
+                      130.88
+                    ],
+                    "area_pct": 3.1010131207440623,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      15,
+                      174,
+                      109
+                    ],
+                    "delta_e": 57.89931343958141,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.56,
+                      0.56
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+15,+174,+109) (ΔE 57.9)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      232.32,
+                      79.04,
+                      278.08,
+                      136.64
+                    ],
+                    "area_pct": 2.8112273708686266,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -15,
+                      -174,
+                      -109
+                    ],
+                    "delta_e": 57.89931343958141,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.56,
+                      -0.5733333333333334
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-15,-174,-109) (ΔE 57.9)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      156.8,
+                      143.04,
+                      288.96,
+                      152.64
+                    ],
+                    "area_pct": 1.6592592592592592,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -40,
+                      20,
+                      53
+                    ],
+                    "delta_e": 38.69395152225625,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-40,+20,+53) (ΔE 38.7)"
+                  }
+                ],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 0.25055313954375524
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 12.16css shift 0.00css",
+                  "magnitude": 12.16
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 16.66% interiorΔE 46.63",
+                  "magnitude": 16.662614183690415
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PARTIAL",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 5.67%",
+                  "magnitude": 5.672413220395283
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-block-radius-clip-composition",
+              "category": "block-box-model",
+              "feature": "deep-nesting",
+              "subfeature": "border-radius-clip-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "FAIL",
+              "diff_pct": 37.7978,
+              "weight": 1.0,
+              "description": "Nested rounded overflow clips with offset oversized color tiles exercise border-radius clipping through multiple block ancestors; currently ironpress clips/paints the wrong tile region inside the rounded nested clip stack.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-border-box"
+              ],
+              "expected_support": "unsupported",
+              "oracle": "chrome",
+              "attribution": "REAL",
+              "html_sha256": "58a2c74235c3e7d1f61830cccd59798dc3b98f95188606e2690e25b7a8462cc0",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [
+                  "GeometryShift"
+                ],
+                "headline": "fill recolour ΔRGB(+171,+68,+164) (ΔE 39.1)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    171,
+                    68,
+                    164
+                  ],
+                  "delta_e": 39.08485242459131,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    -1.097142857142857,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      26.88,
+                      40.96,
+                      258.88,
+                      156.8
+                    ],
+                    "area_pct": 37.094170985506544,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      171,
+                      68,
+                      164
+                    ],
+                    "delta_e": 39.08485242459131,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+171,+68,+164) (ΔE 39.1)"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      16.0,
+                      179.84,
+                      248.96,
+                      179.84
+                    ],
+                    "area_pct": 0.1478138154212998,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -52,
+                      -47,
+                      -40
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.64,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.6,0.0)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      49.92,
+                      21.76,
+                      241.92,
+                      21.76
+                    ],
+                    "area_pct": 0.12186022368751875,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      22,
+                      17,
+                      5
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted ~0.0px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      33.92,
+                      36.8,
+                      220.48,
+                      36.8
+                    ],
+                    "area_pct": 0.11841326228537596,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -2,
+                      3,
+                      14
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted ~0.0px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      280.0,
+                      16.64,
+                      280.0,
+                      147.84
+                    ],
+                    "area_pct": 0.08333536095768754,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -25,
+                      -22,
+                      -20
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted ~0.0px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      21.76,
+                      49.92,
+                      21.76,
+                      133.76
+                    ],
+                    "area_pct": 0.05332652051550322,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      22,
+                      17,
+                      5
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content shifted ~0.0px beyond page-origin calibration"
+                  }
+                ],
+                "residual_shift_css": [
+                  -1.097142857142857,
+                  0.0
+                ],
+                "confidence": 0.9990290428830453
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 1.10css",
+                  "magnitude": 1.097142857142857
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 38.24% interiorΔE 39.08",
+                  "magnitude": 38.24039128881369
                 },
                 {
                   "verifier": "RasterDiff",
@@ -44909,11 +46591,11 @@
     },
     {
       "category": "flexbox",
-      "score_pct": 95.52,
+      "score_pct": 100.0,
       "counts": {
         "pass": 128,
         "partial": 0,
-        "fail": 6,
+        "fail": 0,
         "unknown": 0
       },
       "features": [
@@ -49434,1232 +51116,6 @@
                   "concern": "Presence",
                   "headline": "raster presence: missing 0.00% extra 0.00%",
                   "magnitude": 0.0
-                }
-              ],
-              "disagreements": []
-            }
-          ]
-        },
-        {
-          "feature": "deep-nesting",
-          "score_pct": 0.0,
-          "counts": {
-            "pass": 0,
-            "partial": 0,
-            "fail": 6,
-            "unknown": 0
-          },
-          "fixtures": [
-            {
-              "id": "flexbox-deep-column-row-grow-min-content",
-              "category": "flexbox",
-              "feature": "deep-nesting",
-              "subfeature": "column-row-grow-min-content",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 35.1701,
-              "weight": 1.0,
-              "description": "A column flex child grows into a row flex layout where a min-content flex basis and wrapped text resolve through several nested items; ironpress overflows the row downward and loses full-height stretch on siblings.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "35afe645c7a9ed08f192fd57ab2eeae30b3e95a259c100f197bbd09088134954",
-              "diagnosis": {
-                "primary_class": "Missing",
-                "secondary": [
-                  "Extra",
-                  "GeometrySize"
-                ],
-                "headline": "content clipped/truncated (39.4% missing)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    -18.24
-                  ],
-                  "missing_area_pct": 39.35303695044086,
-                  "extra_area_pct": 14.943148325027032,
-                  "modal_drgb": [
-                    -2,
-                    12,
-                    0
-                  ],
-                  "delta_e": 38.740737124977215,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    -2.88,
-                    -3.84
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      104.0,
-                      65.92,
-                      331.84,
-                      224.0
-                    ],
-                    "area_pct": 14.673948092753054,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -2,
-                      1,
-                      -37
-                    ],
-                    "delta_e": 26.87689151650974,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.10285714285714287,
-                      -0.20571428571428574
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (14.7% missing)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      12.16,
-                      57.92,
-                      93.76,
-                      193.6
-                    ],
-                    "area_pct": 14.018207004718137,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -101,
-                      -175,
-                      -175
-                    ],
-                    "delta_e": 49.08868899565927,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (14.0% missing)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      312.0,
-                      56.0,
-                      341.76,
-                      193.6
-                    ],
-                    "area_pct": 4.38020600898226,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -35,
-                      19,
-                      84
-                    ],
-                    "delta_e": 26.87689151650974,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -1.1648,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (4.4% missing)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      168.64,
-                      204.16,
-                      311.04,
-                      205.76
-                    ],
-                    "area_pct": 0.34515404240390246,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.3% missing)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      284.8,
-                      136.0,
-                      295.68,
-                      143.68
-                    ],
-                    "area_pct": 0.05430114045293084,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.1% missing)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      296.64,
-                      86.08,
-                      303.36,
-                      96.96
-                    ],
-                    "area_pct": 0.05339827113423603,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (0.1%)"
-                  }
-                ],
-                "residual_shift_css": [
-                  -2.88,
-                  -3.84
-                ],
-                "confidence": 0.6444204843843976
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 18.24css shift 4.80css",
-                  "magnitude": 18.24
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 9.57% interiorΔE 27.45",
-                  "magnitude": 9.572658197192762
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 39.35% extra 14.94%",
-                  "magnitude": 39.35303695044086
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "flexbox-deep-flex-grid-percent-stretch",
-              "category": "flexbox",
-              "feature": "deep-nesting",
-              "subfeature": "flex-grid-percent-stretch",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 26.9303,
-              "weight": 1.0,
-              "description": "A stretched flex item contains a percentage-track grid whose spanning grid item aligns a deep child to the far edge; ironpress collapses the nested grid's stretched height and misplaces the lower span.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "02587b25df82681aa5ee14fd9f0fe03d7d515d5eef0a3cf8ecf36eea21ea230d",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [],
-                "headline": "fill recolour ΔRGB(+50,+26,-5) (ΔE 14.9)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 0.0,
-                  "extra_area_pct": 0.0,
-                  "modal_drgb": [
-                    50,
-                    26,
-                    -5
-                  ],
-                  "delta_e": 14.85460439041837,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    -1.502608695652174,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      112.0,
-                      76.16,
-                      371.84,
-                      187.84
-                    ],
-                    "area_pct": 22.521466666666665,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      50,
-                      26,
-                      -5
-                    ],
-                    "delta_e": 13.240028218851618,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.37670886075949367,
-                      -0.759493670886076
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+50,+26,-5) (ΔE 13.2)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      268.16,
-                      84.16,
-                      353.6,
-                      117.76
-                    ],
-                    "area_pct": 3.1777333333333333,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -95,
-                      -54,
-                      -4
-                    ],
-                    "delta_e": 16.545909534485073,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.56,
-                      0.56
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-95,-54,-4) (ΔE 16.5)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      360.0,
-                      22.08,
-                      369.6,
-                      67.84
-                    ],
-                    "area_pct": 0.5837333333333333,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      2,
-                      7,
-                      75
-                    ],
-                    "delta_e": 15.17757468544175,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -1.12,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+2,+7,+75) (ΔE 15.2)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      224.32,
-                      22.08,
-                      229.76,
-                      67.84
-                    ],
-                    "area_pct": 0.3324,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      2,
-                      7,
-                      75
-                    ],
-                    "delta_e": 62.43376736989478,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -1.502608695652174,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+2,+7,+75) (ΔE 62.4)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      234.56,
-                      22.08,
-                      239.68,
-                      67.84
-                    ],
-                    "area_pct": 0.31493333333333334,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -2,
-                      -7,
-                      -75
-                    ],
-                    "delta_e": 62.43376736989478,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -1.2297721518987341,
-                      -0.009721518987341771
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-2,-7,-75) (ΔE 62.4)"
-                  }
-                ],
-                "residual_shift_css": [
-                  -1.502608695652174,
-                  0.0
-                ],
-                "confidence": 0.9936874000505008
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 1.50css",
-                  "magnitude": 1.502608695652174
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 26.76% interiorΔE 14.07",
-                  "magnitude": 26.760266666666666
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 0.00% extra 0.00%",
-                  "magnitude": 0.0
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "flexbox-deep-flex-svg-center",
-              "category": "flexbox",
-              "feature": "deep-nesting",
-              "subfeature": "flex-svg-center",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 41.5455,
-              "weight": 1.0,
-              "description": "A column flex item contains a centered flex row whose deepest child is an inline SVG centered inside nested flex holders; ironpress over-expands the nested flex stack and places the SVG too low.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "67906b14778fec5c34f3b2ccd873cd53ed1a1d36ade52243bb7376ec59b30a3f",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [],
-                "headline": "fill recolour ΔRGB(+34,-5,-5) (ΔE 14.2)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    -2.24
-                  ],
-                  "missing_area_pct": 0.0,
-                  "extra_area_pct": 0.255370393327076,
-                  "modal_drgb": [
-                    34,
-                    -5,
-                    -5
-                  ],
-                  "delta_e": 14.237949786674234,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      12.16,
-                      60.16,
-                      311.68,
-                      179.84
-                    ],
-                    "area_pct": 37.6903101597527,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      34,
-                      -5,
-                      -5
-                    ],
-                    "delta_e": 12.676511075704001,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.032195975503062114,
-                      -0.0735063672596481
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+34,-5,-5) (ΔE 12.7)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      66.56,
-                      75.2,
-                      136.32,
-                      144.64
-                    ],
-                    "area_pct": 2.2718864354861052,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      34,
-                      -26,
-                      -5
-                    ],
-                    "delta_e": 29.50329103907821,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.05141880341880342,
-                      -1.3494700854700854
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+34,-26,-5) (ΔE 29.5)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      80.0,
-                      78.08,
-                      149.76,
-                      147.84
-                    ],
-                    "area_pct": 1.5833244201929095,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -34,
-                      26,
-                      5
-                    ],
-                    "delta_e": 29.50329103907821,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.004236760124610592,
-                      -1.2316510903426792
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-34,+26,+5) (ΔE 29.5)"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 0.9401414692203155
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PARTIAL",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 2.24css shift 0.00css",
-                  "magnitude": 2.24
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 39.45% interiorΔE 13.91",
-                  "magnitude": 39.44941293144669
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 0.00% extra 0.26%",
-                  "magnitude": 0.255370393327076
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "flexbox-deep-inline-block-flex-wrap-text",
-              "category": "flexbox",
-              "feature": "deep-nesting",
-              "subfeature": "inline-block-flex-wrap-text",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 32.8778,
-              "weight": 1.0,
-              "description": "An inline-block inside a centered flex item contains a nested flex row with a fixed swatch and wrapping text; ironpress drops most nested inline-block/flex decoration and sizes to text only.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "6cf475fc8c69e6e47e75b842f4841209c6a6e2914b7eb42f50c534ab3fc75f94",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [
-                  "Extra",
-                  "Missing",
-                  "GeometryShift"
-                ],
-                "headline": "fill recolour ΔRGB(-18,+11,+56) (ΔE 17.9)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 7.6926154447980934,
-                  "extra_area_pct": 8.772041644779787,
-                  "modal_drgb": [
-                    -18,
-                    11,
-                    56
-                  ],
-                  "delta_e": 17.892030884719077,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      52.8,
-                      33.92,
-                      289.6,
-                      119.68
-                    ],
-                    "area_pct": 30.969781946526133,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -18,
-                      11,
-                      56
-                    ],
-                    "delta_e": 17.892030884719077,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.13048543689320388,
-                      -0.32
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-18,+11,+56) (ΔE 17.9)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      145.92,
-                      81.92,
-                      158.08,
-                      95.04
-                    ],
-                    "area_pct": 0.08799497171590195,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      11,
-                      11,
-                      11
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.128,
-                      -0.41600000000000004
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (0.1%)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      198.72,
-                      72.64,
-                      207.04,
-                      88.96
-                    ],
-                    "area_pct": 0.07697142580863511,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -24,
-                      -24,
-                      -24
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -1.8488888888888888,
-                      -1.5644444444444445
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.1% missing)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      184.32,
-                      66.24,
-                      190.72,
-                      79.68
-                    ],
-                    "area_pct": 0.06768843978146304,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -115,
-                      -115,
-                      -115
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      1.156923076923077,
-                      -1.4523076923076923
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (0.1%)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      243.84,
-                      72.0,
-                      253.44,
-                      79.68
-                    ],
-                    "area_pct": 0.06633467098583377,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      26,
-                      26,
-                      26
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.6892307692307692,
-                      -2.486153846153846
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.1% missing)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      142.4,
-                      66.24,
-                      152.0,
-                      72.0
-                    ],
-                    "area_pct": 0.061499782430014985,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (0.1%)"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 0.5593136591707205
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 0.00css",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 19.39% interiorΔE 17.89",
-                  "magnitude": 19.391409331370095
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 7.69% extra 8.77%",
-                  "magnitude": 8.772041644779787
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "flexbox-deep-overflow-grid-clip-decoration",
-              "category": "flexbox",
-              "feature": "deep-nesting",
-              "subfeature": "overflow-grid-clip-decoration",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 1.5323,
-              "weight": 1.0,
-              "description": "A flex item clips an oversized nested grid with decorated cells so overflow and paint clipping compose through the nested containers; ironpress leaves a thin clip-boundary mismatch at the nested grid edge.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "95bd0988c574f8cb0dabe1d54fc61621ece5e312058d380c5783b4301d6b8a3e",
-              "diagnosis": {
-                "primary_class": "Missing",
-                "secondary": [],
-                "headline": "content clipped/truncated (1.3% missing)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 1.2806225563341707,
-                  "extra_area_pct": 0.0,
-                  "modal_drgb": [
-                    -10,
-                    -68,
-                    -115
-                  ],
-                  "delta_e": 48.73112412413844,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    -1.1927272727272726,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      179.84,
-                      14.08,
-                      185.6,
-                      159.68
-                    ],
-                    "area_pct": 1.5322861622437722,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -10,
-                      -68,
-                      -115
-                    ],
-                    "delta_e": 58.30711926838157,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -1.1927272727272726,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (1.5% missing)"
-                  }
-                ],
-                "residual_shift_css": [
-                  -1.1927272727272726,
-                  0.0
-                ],
-                "confidence": 0.6423495973472289
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PARTIAL",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 1.19css",
-                  "magnitude": 1.1927272727272726
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PARTIAL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 0.70% interiorΔE 58.31",
-                  "magnitude": 0.6974481990064787
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PARTIAL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 1.28% extra 0.00%",
-                  "magnitude": 1.2806225563341707
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "flexbox-deep-table-cell-flex-alignment",
-              "category": "flexbox",
-              "feature": "deep-nesting",
-              "subfeature": "table-cell-flex-alignment",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 39.2146,
-              "weight": 1.0,
-              "description": "A flex item contains a table cell whose nested flex row centers and distributes fixed and growing children; ironpress collapses the table/flex content toward the top instead of filling the item height.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "6b52474e770a0e5e67e2226889a365bbffc3a98c275d1d7e2717abc9edbb2430",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [
-                  "GeometryShift"
-                ],
-                "headline": "fill recolour ΔRGB(+35,-5,+14) (ΔE 18.8)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 3.680706064080623,
-                  "extra_area_pct": 4.954068682093501,
-                  "modal_drgb": [
-                    35,
-                    -5,
-                    14
-                  ],
-                  "delta_e": 18.760957963801715,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.36,
-                    0.16
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      96.0,
-                      12.16,
-                      351.68,
-                      169.6
-                    ],
-                    "area_pct": 31.31476613921998,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      35,
-                      -5,
-                      14
-                    ],
-                    "delta_e": 16.066683021997722,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.5412571428571429,
-                      -0.5449142857142857
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+35,-5,+14) (ΔE 16.1)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      118.08,
-                      46.08,
-                      275.84,
-                      70.72
-                    ],
-                    "area_pct": 5.938639922658998,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -148,
-                      -62,
-                      7
-                    ],
-                    "delta_e": 26.55534680441076,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-148,-62,+7) (ΔE 26.6)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      283.84,
-                      33.92,
-                      325.76,
-                      101.76
-                    ],
-                    "area_pct": 1.9590067982246162,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -12,
-                      -119,
-                      11
-                    ],
-                    "delta_e": 38.200666396818335,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.56,
-                      0.56
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-12,-119,+11) (ΔE 38.2)"
-                  },
-                  {
-                    "class": "GeometryShift",
-                    "bbox_css": [
-                      97.92,
-                      14.08,
-                      98.88,
-                      14.72
-                    ],
-                    "area_pct": 0.0018532188867714148,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      183,
-                      141,
-                      121
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.36,
-                      0.16
-                    ],
-                    "selector": null,
-                    "headline": "content shifted (0.4,0.2)px beyond page-origin calibration"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.36,
-                  0.16
-                ],
-                "confidence": 0.7953434702646077
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 0.39css",
-                  "magnitude": 0.39395431207184417
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 32.71% interiorΔE 19.44",
-                  "magnitude": 32.71220593094601
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PARTIAL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 3.68% extra 4.95%",
-                  "magnitude": 4.954068682093501
                 }
               ],
               "disagreements": []
@@ -75708,11 +76164,11 @@
     },
     {
       "category": "grid",
-      "score_pct": 93.68,
+      "score_pct": 100.0,
       "counts": {
         "pass": 89,
         "partial": 0,
-        "fail": 6,
+        "fail": 0,
         "unknown": 0
       },
       "features": [
@@ -76291,1173 +76747,6 @@
                   "concern": "Presence",
                   "headline": "raster presence: missing 0.36% extra 0.36%",
                   "magnitude": 0.3590734599012874
-                }
-              ],
-              "disagreements": []
-            }
-          ]
-        },
-        {
-          "feature": "deep-nesting",
-          "score_pct": 0.0,
-          "counts": {
-            "pass": 0,
-            "partial": 0,
-            "fail": 6,
-            "unknown": 0
-          },
-          "fixtures": [
-            {
-              "id": "grid-deep-grid-flex-img-intrinsic",
-              "category": "grid",
-              "feature": "deep-nesting",
-              "subfeature": "grid-flex-img-intrinsic",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 19.3013,
-              "weight": 1.0,
-              "description": "A spanning grid item contains an aligned flex frame whose deepest child is an intrinsic SVG image scaled by width; ironpress over-expands the spanning grid/flex area and shifts the image frame downward.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow",
-                "probe-image-render"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "2681bb7b6c1099b8f05c0c2204eac5f773479918e3998b3325c054112c9210af",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [
-                  "Extra"
-                ],
-                "headline": "fill recolour ΔRGB(+4,-10,+23) (ΔE 35.5)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    -8.96
-                  ],
-                  "missing_area_pct": 0.0,
-                  "extra_area_pct": 3.5719562192974896,
-                  "modal_drgb": [
-                    4,
-                    -10,
-                    23
-                  ],
-                  "delta_e": 35.54226220259151,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      144.0,
-                      47.04,
-                      369.6,
-                      158.72
-                    ],
-                    "area_pct": 12.910962301587302,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      4,
-                      -10,
-                      23
-                    ],
-                    "delta_e": 40.4887645999501,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.8922547332185886,
-                      0.11910499139414801
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+4,-10,+23) (ΔE 40.5)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      228.16,
-                      157.12,
-                      355.84,
-                      177.6
-                    ],
-                    "area_pct": 3.2145337301587302,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -4,
-                      10,
-                      -23
-                    ],
-                    "delta_e": 15.674962202645794,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.08960000000000001,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-4,+10,-23) (ΔE 15.7)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      228.16,
-                      193.92,
-                      355.84,
-                      214.72
-                    ],
-                    "area_pct": 3.175843253968254,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      203,
-                      228,
-                      192
-                    ],
-                    "delta_e": 89.13517147569327,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (3.2%)"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 0.8349845161456125
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 8.96css shift 0.00css",
-                  "magnitude": 8.96
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 20.00% interiorΔE 36.00",
-                  "magnitude": 20.000800265934526
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PARTIAL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 0.00% extra 3.57%",
-                  "magnitude": 3.5719562192974896
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "grid-deep-grid-grid-place-self",
-              "category": "grid",
-              "feature": "deep-nesting",
-              "subfeature": "grid-grid-place-self",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 3.4706,
-              "weight": 1.0,
-              "description": "A grid item spans rows and contains a nested grid using place-content, with a deep grid item using place-self; ironpress misplaces nested grid rows and the place-self target.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "879fd17d96a2e31878c8dc8007e0a85dfb95968e2f597c181c972e6c8a9e0bca",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [],
-                "headline": "fill recolour ΔRGB(+13,+32,-13) (ΔE 23.3)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 0.0,
-                  "extra_area_pct": 0.0,
-                  "modal_drgb": [
-                    13,
-                    32,
-                    -13
-                  ],
-                  "delta_e": 23.2669634044178,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    -1.12
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      257.92,
-                      144.0,
-                      331.84,
-                      159.68
-                    ],
-                    "area_pct": 1.698580189917667,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      13,
-                      32,
-                      -13
-                    ],
-                    "delta_e": 20.073798921219293,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      -1.12
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+13,+32,-13) (ΔE 20.1)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      196.16,
-                      144.0,
-                      249.6,
-                      159.68
-                    ],
-                    "area_pct": 1.2283584423093374,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      13,
-                      32,
-                      -13
-                    ],
-                    "delta_e": 20.073798921219293,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      -1.12
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(+13,+32,-13) (ΔE 20.1)"
-                  },
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      140.16,
-                      103.04,
-                      339.84,
-                      104.64
-                    ],
-                    "area_pct": 0.5436754584957034,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -176,
-                      -101,
-                      -144
-                    ],
-                    "delta_e": 40.45772737744853,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-176,-101,-144) (ΔE 40.5)"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  -1.12
-                ],
-                "confidence": 0.984190395240119
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 1.12css",
-                  "magnitude": 1.12
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 4.23% interiorΔE 21.61",
-                  "magnitude": 4.230884470070667
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 0.00% extra 0.00%",
-                  "magnitude": 0.0
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "grid-deep-inline-block-flex-item",
-              "category": "grid",
-              "feature": "deep-nesting",
-              "subfeature": "inline-block-flex-item",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 24.2806,
-              "weight": 1.0,
-              "description": "A grid item contains an inline-block whose nested flex row combines a fixed swatch with wrapping text; ironpress drops the fixed swatch and wraps/sizes the inline flex content incorrectly.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "486615c40f5575fc8937a4c3221c07c4a058b591fbdc4b3afe7d01b9674b7070",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [
-                  "Missing",
-                  "Extra",
-                  "GeometryShift"
-                ],
-                "headline": "fill recolour ΔRGB(-15,+17,-13) (ΔE 17.4)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 7.672550370899695,
-                  "extra_area_pct": 9.448326233108403,
-                  "modal_drgb": [
-                    -15,
-                    17,
-                    -13
-                  ],
-                  "delta_e": 17.373807198835756,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      142.72,
-                      22.08,
-                      329.6,
-                      115.84
-                    ],
-                    "area_pct": 22.87313549843732,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -15,
-                      17,
-                      -13
-                    ],
-                    "delta_e": 17.373807198835756,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.1256307129798903,
-                      -1.8772943327239489
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-15,+17,-13) (ΔE 17.4)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      241.92,
-                      73.6,
-                      258.56,
-                      96.96
-                    ],
-                    "area_pct": 0.16393328385718814,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      75,
-                      122,
-                      112
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -2.56,
-                      -2.3680000000000003
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.2% missing)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      217.6,
-                      73.6,
-                      224.96,
-                      88.32
-                    ],
-                    "area_pct": 0.09825544324702881,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -52,
-                      -52,
-                      -52
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -3.04,
-                      2.88
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (0.1%)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      231.04,
-                      73.6,
-                      238.72,
-                      88.0
-                    ],
-                    "area_pct": 0.0722978882048173,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -18,
-                      -18,
-                      -18
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.22399999999999998,
-                      0.8640000000000001
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.1% missing)"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      209.92,
-                      73.6,
-                      216.96,
-                      88.0
-                    ],
-                    "area_pct": 0.052263533642036605,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "content clipped/truncated (0.1% missing)"
-                  },
-                  {
-                    "class": "Extra",
-                    "bbox_css": [
-                      272.64,
-                      60.16,
-                      279.04,
-                      67.52
-                    ],
-                    "area_pct": 0.04965035695993478,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "extra paint where Chrome is blank (0.0%)"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 0.49386542683714324
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 0.00css",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 15.92% interiorΔE 17.37",
-                  "magnitude": 15.917747205860929
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 7.67% extra 9.45%",
-                  "magnitude": 9.448326233108403
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "grid-deep-min-content-flex-wrap",
-              "category": "grid",
-              "feature": "deep-nesting",
-              "subfeature": "min-content-flex-wrap",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 100.0,
-              "weight": 1.0,
-              "description": "A min-content grid track contains a column flex stack while the adjacent nested flex item wraps text in the remaining track; ironpress lays it out over two pages instead of one.",
-              "note": "page-count mismatch: ironpress 2 vs reference 1",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "edae78507adb4e7c7b6e178523f8e52b29450a107129d7f6617a6742e1468f57",
-              "diagnosis": {
-                "primary_class": "Missing",
-                "secondary": [],
-                "headline": "feature not rendered — candidate blank where Chrome paints",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 100.0,
-                  "extra_area_pct": 0.0,
-                  "modal_drgb": [
-                    0,
-                    0,
-                    0
-                  ],
-                  "delta_e": 0.0,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      12.16,
-                      12.16,
-                      104.64,
-                      175.68
-                    ],
-                    "area_pct": 21.04308390022676,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      117.12,
-                      12.16,
-                      371.84,
-                      175.68
-                    ],
-                    "area_pct": 13.014172335600907,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      0.0,
-                      0.0,
-                      383.68,
-                      187.84
-                    ],
-                    "area_pct": 3.188775510204082,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      169.92,
-                      51.84,
-                      176.64,
-                      62.72
-                    ],
-                    "area_pct": 0.058673469387755105,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      134.72,
-                      69.12,
-                      144.96,
-                      76.48
-                    ],
-                    "area_pct": 0.05839002267573696,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      162.24,
-                      32.0,
-                      169.28,
-                      42.56
-                    ],
-                    "area_pct": 0.05796485260770975,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 1.0
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 0.00css",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 0.00% interiorΔE 0.00",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 100.00% extra 0.00%",
-                  "magnitude": 100.0
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "grid-deep-overflow-flex-clip-img",
-              "category": "grid",
-              "feature": "deep-nesting",
-              "subfeature": "overflow-flex-clip-img",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 20.1277,
-              "weight": 1.0,
-              "description": "A grid item clips an oversized nested flex frame containing a deep SVG image so overflow clipping and replaced paint combine at depth; ironpress mis-sizes the nested flex/image and clips at the wrong offset.",
-              "note": "",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow",
-                "probe-image-render"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "32bbb18a2e71781187aa9a788376220dc84b99bf154c5a2579e9a88eca863b34",
-              "diagnosis": {
-                "primary_class": "ColorValue",
-                "secondary": [],
-                "headline": "fill recolour ΔRGB(-33,-3,-5) (ΔE 50.4)",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 0.0,
-                  "extra_area_pct": 0.0,
-                  "modal_drgb": [
-                    -33,
-                    -3,
-                    -5
-                  ],
-                  "delta_e": 50.40288410731768,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "ColorValue",
-                    "bbox_css": [
-                      14.08,
-                      32.0,
-                      161.92,
-                      161.6
-                    ],
-                    "area_pct": 20.1275186747154,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      -33,
-                      -3,
-                      -5
-                    ],
-                    "delta_e": 50.40288410731768,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      -0.2492883895131086,
-                      -0.20086891385767788
-                    ],
-                    "selector": null,
-                    "headline": "fill recolour ΔRGB(-33,-3,-5) (ΔE 50.4)"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 0.9885735316774227
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 0.00css",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 24.74% interiorΔE 50.40",
-                  "magnitude": 24.739165543934355
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 0.00% extra 0.00%",
-                  "magnitude": 0.0
-                }
-              ],
-              "disagreements": []
-            },
-            {
-              "id": "grid-deep-percent-height-flex-grow",
-              "category": "grid",
-              "feature": "deep-nesting",
-              "subfeature": "percent-height-flex-grow",
-              "interaction_of": [],
-              "base_ids": [],
-              "status": "FAIL",
-              "diff_pct": 100.0,
-              "weight": 1.0,
-              "description": "A definite-height grid item contains a nested percentage-row grid and a flex column whose growing child fills the remaining height; ironpress overflows the percentage-height stack onto a second page.",
-              "note": "page-count mismatch: ironpress 2 vs reference 1",
-              "kind": "interaction",
-              "depends_on": [
-                "probe-fill-box",
-                "probe-block-flow"
-              ],
-              "expected_support": "unsupported",
-              "oracle": "chrome",
-              "attribution": "REAL",
-              "html_sha256": "94cc19a93cd9836e21e9b528a72e749a8928d6d56f87b44cda2f56f5c03ba5e4",
-              "diagnosis": {
-                "primary_class": "Missing",
-                "secondary": [],
-                "headline": "feature not rendered — candidate blank where Chrome paints",
-                "magnitude": {
-                  "edge_delta_css": [
-                    0.0,
-                    0.0,
-                    0.0,
-                    0.0
-                  ],
-                  "missing_area_pct": 100.0,
-                  "extra_area_pct": 0.0,
-                  "modal_drgb": [
-                    0,
-                    0,
-                    0
-                  ],
-                  "delta_e": 0.0,
-                  "recovered_alpha": null,
-                  "residual_shift_css": [
-                    0.0,
-                    0.0
-                  ],
-                  "colorspace": null
-                },
-                "regions": [
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      12.16,
-                      72.0,
-                      243.84,
-                      193.6
-                    ],
-                    "area_pct": 35.74340062111801,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      12.16,
-                      12.16,
-                      371.84,
-                      59.84
-                    ],
-                    "area_pct": 21.836180124223603,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      256.0,
-                      72.0,
-                      371.84,
-                      193.6
-                    ],
-                    "area_pct": 17.89635093167702,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  },
-                  {
-                    "class": "Missing",
-                    "bbox_css": [
-                      0.0,
-                      0.0,
-                      383.68,
-                      205.76
-                    ],
-                    "area_pct": 2.8447204968944098,
-                    "edge_delta_css": [
-                      0.0,
-                      0.0,
-                      0.0,
-                      0.0
-                    ],
-                    "modal_drgb": [
-                      0,
-                      0,
-                      0
-                    ],
-                    "delta_e": 0.0,
-                    "recovered_alpha": null,
-                    "shift_css": [
-                      0.0,
-                      0.0
-                    ],
-                    "selector": null,
-                    "headline": "feature not rendered — candidate blank where Chrome paints"
-                  }
-                ],
-                "residual_shift_css": [
-                  0.0,
-                  0.0
-                ],
-                "confidence": 1.0
-              },
-              "sub_verdicts": [
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Geometry",
-                  "headline": "raster geometry: edge 0.00css shift 0.00css",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "PASS",
-                  "concern": "Appearance",
-                  "headline": "raster appearance: color 0.00% interiorΔE 0.00",
-                  "magnitude": 0.0
-                },
-                {
-                  "verifier": "RasterDiff",
-                  "status": "FAIL",
-                  "concern": "Presence",
-                  "headline": "raster presence: missing 100.00% extra 0.00%",
-                  "magnitude": 100.0
                 }
               ],
               "disagreements": []
@@ -85571,11 +84860,11 @@
     },
     {
       "category": "images-replaced",
-      "score_pct": 100.0,
+      "score_pct": 92.68,
       "counts": {
-        "pass": 37,
+        "pass": 38,
         "partial": 0,
-        "fail": 0,
+        "fail": 3,
         "unknown": 0
       },
       "features": [
@@ -85657,6 +84946,721 @@
                   "concern": "Appearance",
                   "headline": "raster appearance: color 0.00% interiorΔE 0.00",
                   "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            }
+          ]
+        },
+        {
+          "feature": "deep-replaced",
+          "score_pct": 25.0,
+          "counts": {
+            "pass": 1,
+            "partial": 0,
+            "fail": 3,
+            "unknown": 0
+          },
+          "fixtures": [
+            {
+              "id": "deep-img-absolute-containing-chain",
+              "category": "images-replaced",
+              "feature": "deep-replaced",
+              "subfeature": "absolute-img-containing-block-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "FAIL",
+              "diff_pct": 16.7939,
+              "weight": 1.0,
+              "description": "A raster img is absolutely positioned from three static block ancestors below a positioned outer stage; currently ironpress positions the image inside the inner block instead of against the positioned outer stage.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-image-render"
+              ],
+              "expected_support": "unsupported",
+              "oracle": "chrome",
+              "attribution": "REAL",
+              "html_sha256": "6ff2c919951ecfab4a0c34c330111c7e94c5546aa4a7fdc0e8b4b33af45bcaef",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [],
+                "headline": "fill recolour ΔRGB(+29,+72,+48) (ΔE 56.1)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    29,
+                    72,
+                    48
+                  ],
+                  "delta_e": 56.13019052421938,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      203.2,
+                      109.12,
+                      298.88,
+                      172.8
+                    ],
+                    "area_pct": 10.098316498316498,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      130,
+                      172,
+                      188
+                    ],
+                    "delta_e": 50.50620691059658,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+130,+172,+188) (ΔE 50.5)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      61.12,
+                      61.12,
+                      138.88,
+                      112.96
+                    ],
+                    "area_pct": 6.695622895622896,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -84,
+                      -166,
+                      -129
+                    ],
+                    "delta_e": 64.61226417099475,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-84,-166,-129) (ΔE 64.6)"
+                  }
+                ],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 1.0
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.00css",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 16.79% interiorΔE 55.97",
+                  "magnitude": 16.793939393939393
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-img-object-fit-radius-clip-chain",
+              "category": "images-replaced",
+              "feature": "deep-replaced",
+              "subfeature": "object-fit-radius-clip-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "FAIL",
+              "diff_pct": 11.4176,
+              "weight": 1.0,
+              "description": "An SVG-backed img with object-fit:cover and object-position is clipped by two nested rounded overflow ancestors; currently ironpress paints a different source region inside the deep rounded clip.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-image-render"
+              ],
+              "expected_support": "unsupported",
+              "oracle": "chrome",
+              "attribution": "REAL",
+              "html_sha256": "b4dc65cd1ee5383cd373ebf1ea6d94f7229ae72ede7e6fcd57ccb24ba34718dd",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [
+                  "GeometryShift"
+                ],
+                "headline": "fill recolour ΔRGB(-172,+28,+32) (ΔE 48.0)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    -172,
+                    28,
+                    32
+                  ],
+                  "delta_e": 48.00267158439627,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      48.96,
+                      59.2,
+                      233.92,
+                      168.96
+                    ],
+                    "area_pct": 10.784805051618724,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -172,
+                      28,
+                      32
+                    ],
+                    "delta_e": 48.41934605395024,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.31488,
+                      -0.4224
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-172,+28,+32) (ΔE 48.4)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      218.56,
+                      63.36,
+                      238.72,
+                      90.88
+                    ],
+                    "area_pct": 0.3981379394830332,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -34,
+                      -3,
+                      -46
+                    ],
+                    "delta_e": 36.715746932198606,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.5821026894865525,
+                      -0.3458190709046455
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-34,-3,-46) (ΔE 36.7)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      242.88,
+                      95.04,
+                      242.88,
+                      155.52
+                    ],
+                    "area_pct": 0.03526629766982579,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -10,
+                      4,
+                      21
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-10,+4,+21) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      239.04,
+                      97.28,
+                      239.04,
+                      153.6
+                    ],
+                    "area_pct": 0.0328533404608377,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -3,
+                      -7,
+                      5
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-3,-7,+5) (ΔE 0.0)"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      235.2,
+                      158.08,
+                      238.72,
+                      163.84
+                    ],
+                    "area_pct": 0.023758347903882635,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -10,
+                      14,
+                      -36
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.6342342342342342,
+                      0.3286486486486486
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (0.6,0.3)px beyond page-origin calibration"
+                  },
+                  {
+                    "class": "GeometryShift",
+                    "bbox_css": [
+                      48.96,
+                      165.76,
+                      49.92,
+                      168.32
+                    ],
+                    "area_pct": 0.002598569301987163,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -1,
+                      13,
+                      31
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.6666666666666667,
+                      0.42666666666666664
+                    ],
+                    "selector": null,
+                    "headline": "content shifted (-0.7,0.4)px beyond page-origin calibration"
+                  }
+                ],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 0.9804594150829906
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.00css",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 11.42% interiorΔE 48.14",
+                  "magnitude": 11.421521190348587
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 0.00% extra 0.00%",
+                  "magnitude": 0.0
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-img-percent-sizing-chain",
+              "category": "images-replaced",
+              "feature": "deep-replaced",
+              "subfeature": "percent-img-sizing-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "FAIL",
+              "diff_pct": 13.0307,
+              "weight": 1.0,
+              "description": "A raster img sits three block levels deep with percentage widths and padding at each ancestor; currently ironpress shrinks and offsets the deep image/ancestor boxes, showing replaced sizing uses the wrong deep containing block.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow",
+                "probe-image-render"
+              ],
+              "expected_support": "unsupported",
+              "oracle": "chrome",
+              "attribution": "REAL",
+              "html_sha256": "9c354cc7631c636399b5bb7860eeb8fb2643a00b517dcdd62c9d62847279a4ee",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [
+                  "Missing"
+                ],
+                "headline": "fill recolour ΔRGB(-17,-47,-89) (ΔE 53.5)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    4.8
+                  ],
+                  "missing_area_pct": 2.504816955684008,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    -17,
+                    -47,
+                    -89
+                  ],
+                  "delta_e": 53.53493429340782,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    -3.629669902912622
+                  ],
+                  "colorspace": null
+                },
+                "regions": [
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      22.08,
+                      22.08,
+                      256.64,
+                      143.68
+                    ],
+                    "area_pct": 3.4588638525553694,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -17,
+                      17,
+                      81
+                    ],
+                    "delta_e": 36.64178767100881,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.38049751243781094,
+                      -0.13373134328358208
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-17,+17,+81) (ΔE 36.6)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      112.0,
+                      52.16,
+                      226.88,
+                      113.6
+                    ],
+                    "area_pct": 2.5406988370158983,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      96,
+                      40,
+                      170
+                    ],
+                    "delta_e": 72.38983485565284,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.07845762095307385,
+                      -0.8249690796653328
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+96,+40,+170) (ΔE 72.4)"
+                  },
+                  {
+                    "class": "Missing",
+                    "bbox_css": [
+                      0.0,
+                      161.92,
+                      329.6,
+                      165.76
+                    ],
+                    "area_pct": 2.504816955684008,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      0,
+                      0,
+                      0
+                    ],
+                    "delta_e": 0.0,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      0.0
+                    ],
+                    "selector": null,
+                    "headline": "content clipped/truncated (2.5% missing)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      4.16,
+                      157.12,
+                      325.76,
+                      160.96
+                    ],
+                    "area_pct": 2.444079396137839,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      -196,
+                      -188,
+                      -168
+                    ],
+                    "delta_e": 65.66310241522088,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      0.0,
+                      -3.629669902912622
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(-196,-188,-168) (ΔE 65.7)"
+                  },
+                  {
+                    "class": "ColorValue",
+                    "bbox_css": [
+                      99.2,
+                      39.04,
+                      239.68,
+                      126.72
+                    ],
+                    "area_pct": 2.0822704260412754,
+                    "edge_delta_css": [
+                      0.0,
+                      0.0,
+                      0.0,
+                      0.0
+                    ],
+                    "modal_drgb": [
+                      52,
+                      -13,
+                      -89
+                    ],
+                    "delta_e": 44.354697517835085,
+                    "recovered_alpha": null,
+                    "shift_css": [
+                      -0.36396396396396397,
+                      -0.18162162162162163
+                    ],
+                    "selector": null,
+                    "headline": "fill recolour ΔRGB(+52,-13,-89) (ΔE 44.4)"
+                  }
+                ],
+                "residual_shift_css": [
+                  0.0,
+                  -3.629669902912622
+                ],
+                "confidence": 0.6792301293635086
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 4.80css shift 3.63css",
+                  "magnitude": 4.8
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "FAIL",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 8.85% interiorΔE 54.64",
+                  "magnitude": 8.850864061866345
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PARTIAL",
+                  "concern": "Presence",
+                  "headline": "raster presence: missing 2.50% extra 0.00%",
+                  "magnitude": 2.504816955684008
+                }
+              ],
+              "disagreements": []
+            },
+            {
+              "id": "deep-svg-inline-block-chain",
+              "category": "images-replaced",
+              "feature": "deep-replaced",
+              "subfeature": "inline-svg-block-chain",
+              "interaction_of": [],
+              "base_ids": [],
+              "status": "PASS",
+              "diff_pct": 0.0107,
+              "weight": 1.0,
+              "description": "An inline SVG viewBox is nested inside three decorated blocks with width and padding constraints; catches inline SVG painting or sizing being dropped below nested block descendants.",
+              "note": "",
+              "kind": "feature",
+              "depends_on": [
+                "probe-fill-box",
+                "probe-block-flow"
+              ],
+              "expected_support": "implemented",
+              "oracle": "chrome",
+              "attribution": "",
+              "html_sha256": "1b98ca60bb38e9db5c77817e1c72e6a22432ee4e93a55d59ca1730965cfe91e3",
+              "diagnosis": {
+                "primary_class": "ColorValue",
+                "secondary": [],
+                "headline": "fill recolour ΔRGB(-2,-10,-2) (ΔE 3.6)",
+                "magnitude": {
+                  "edge_delta_css": [
+                    0.0,
+                    0.0,
+                    0.0,
+                    0.0
+                  ],
+                  "missing_area_pct": 0.0,
+                  "extra_area_pct": 0.0,
+                  "modal_drgb": [
+                    -2,
+                    -10,
+                    -2
+                  ],
+                  "delta_e": 3.617804717949318,
+                  "recovered_alpha": null,
+                  "residual_shift_css": [
+                    0.0,
+                    0.0
+                  ],
+                  "colorspace": null
+                },
+                "regions": [],
+                "residual_shift_css": [
+                  0.0,
+                  0.0
+                ],
+                "confidence": 1.0
+              },
+              "sub_verdicts": [
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Geometry",
+                  "headline": "raster geometry: edge 0.00css shift 0.00css",
+                  "magnitude": 0.0
+                },
+                {
+                  "verifier": "RasterDiff",
+                  "status": "PASS",
+                  "concern": "Appearance",
+                  "headline": "raster appearance: color 0.01% interiorΔE 0.00",
+                  "magnitude": 0.010676916506512918
                 },
                 {
                   "verifier": "RasterDiff",
@@ -176415,6 +176419,7 @@
       "backgrounds-gradients/repeating-radial-gradient",
       "block-box-model/border-width",
       "block-box-model/box-sizing",
+      "block-box-model/deep-nesting",
       "block-box-model/display",
       "block-box-model/fragmentation",
       "block-box-model/height",
@@ -176559,7 +176564,6 @@
       "flexbox/aspect-ratio",
       "flexbox/auto-margins",
       "flexbox/automatic-minimum-size",
-      "flexbox/deep-nesting",
       "flexbox/display",
       "flexbox/flex",
       "flexbox/flex-basis",
@@ -176635,7 +176639,6 @@
       "grid/absolute-positioning",
       "grid/align-content",
       "grid/align-items",
-      "grid/deep-nesting",
       "grid/direction",
       "grid/display",
       "grid/fragmentation",
@@ -176665,6 +176668,7 @@
       "grid/writing-mode",
       "grid/z-index",
       "images-replaced/aspect-ratio",
+      "images-replaced/deep-replaced",
       "images-replaced/fragmentation",
       "images-replaced/image-orientation",
       "images-replaced/image-rendering",
@@ -176882,9 +176886,9 @@
       "units-values/percentage",
       "units-values/viewport-units"
     ],
-    "implemented": 1209,
+    "implemented": 1215,
     "partial": 37,
-    "unsupported": 21
+    "unsupported": 15
   },
   "fix_first": [],
   "ref_mismatches": [],

@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deep block margin collapse chain</title>
+<style>
+  @page { size: 330px 220px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 20px; }
+  .marker {
+    width: 260px;
+    height: 24px;
+    background: #1f4f91;
+  }
+  .collapse {
+    width: 260px;
+    background: #d6e8ff;
+  }
+  .leaf {
+    margin-top: 38px;
+    height: 44px;
+    background: #d94f4f;
+    border: 5px solid #6f1d1d;
+  }
+  .after {
+    width: 260px;
+    height: 24px;
+    background: #2e9e5b;
+  }
+</style>
+</head>
+<body>
+  <div class="marker"></div>
+  <div class="collapse">
+    <div class="level1">
+      <div class="level2">
+        <div class="level3">
+          <div class="leaf"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+  <div class="after"></div>
+</body>
+</html>

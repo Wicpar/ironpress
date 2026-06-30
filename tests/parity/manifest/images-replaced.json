@@ -656,5 +656,83 @@
     ],
     "pass_threshold_pct": 2.0,
     "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-img-percent-sizing-chain",
+    "category": "images-replaced",
+    "feature": "deep-replaced",
+    "subfeature": "percent-img-sizing-chain",
+    "description": "A raster img sits three block levels deep with percentage widths and padding at each ancestor; currently ironpress shrinks and offsets the deep image/ancestor boxes, showing replaced sizing uses the wrong deep containing block.",
+    "file": "cases/images-replaced/deep-img-percent-sizing-chain.html",
+    "weight": 1,
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "unsupported",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-image-render"
+    ],
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-img-object-fit-radius-clip-chain",
+    "category": "images-replaced",
+    "feature": "deep-replaced",
+    "subfeature": "object-fit-radius-clip-chain",
+    "description": "An SVG-backed img with object-fit:cover and object-position is clipped by two nested rounded overflow ancestors; currently ironpress paints a different source region inside the deep rounded clip.",
+    "file": "cases/images-replaced/deep-img-object-fit-radius-clip-chain.html",
+    "weight": 1,
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "unsupported",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-image-render"
+    ],
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-svg-inline-block-chain",
+    "category": "images-replaced",
+    "feature": "deep-replaced",
+    "subfeature": "inline-svg-block-chain",
+    "description": "An inline SVG viewBox is nested inside three decorated blocks with width and padding constraints; catches inline SVG painting or sizing being dropped below nested block descendants.",
+    "file": "cases/images-replaced/deep-svg-inline-block-chain.html",
+    "weight": 1,
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-img-absolute-containing-chain",
+    "category": "images-replaced",
+    "feature": "deep-replaced",
+    "subfeature": "absolute-img-containing-block-chain",
+    "description": "A raster img is absolutely positioned from three static block ancestors below a positioned outer stage; currently ironpress positions the image inside the inner block instead of against the positioned outer stage.",
+    "file": "cases/images-replaced/deep-img-absolute-containing-chain.html",
+    "weight": 1,
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "unsupported",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-image-render"
+    ],
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
   }
 ]

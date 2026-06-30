@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deep image absolute containing chain</title>
+<style>
+  @page { size: 380px 240px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 20px; }
+  .stage {
+    position: relative;
+    width: 320px;
+    height: 190px;
+    padding: 18px;
+    background: #edf2f8;
+    border: 5px solid #26364f;
+  }
+  .level1 {
+    width: 220px;
+    height: 126px;
+    padding: 14px;
+    background: #ffe5ab;
+    border: 4px solid #965d00;
+  }
+  .level2 {
+    width: 160px;
+    height: 84px;
+    padding: 12px;
+    background: #c9ecff;
+    border: 4px solid #11627f;
+  }
+  .level3 {
+    width: 86px;
+    height: 40px;
+    background: #bfe8b1;
+    border: 4px solid #3b762f;
+  }
+  img {
+    position: absolute;
+    left: 198px;
+    top: 104px;
+    display: block;
+    width: 96px;
+    height: 64px;
+    object-fit: fill;
+    image-rendering: pixelated;
+    border: 5px solid #6b1730;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="level1">
+      <div class="level2">
+        <div class="level3">
+          <img alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAIAAAA8r+mnAAAAIElEQVR42mM4IScHR3I9NnDEgFNCzu0EHN1ZJQJHOCUAni4lgeO2HLIAAAAASUVORK5CYII=">
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

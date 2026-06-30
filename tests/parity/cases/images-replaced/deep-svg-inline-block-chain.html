@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deep inline svg block chain</title>
+<style>
+  @page { size: 360px 300px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .stage {
+    width: 300px;
+    padding: 18px;
+    background: #eef2f7;
+    border: 4px solid #2a364f;
+  }
+  .level1 {
+    width: 240px;
+    padding: 12px;
+    background: #ffe1a6;
+    border: 3px solid #9b6100;
+  }
+  .level2 {
+    width: 205px;
+    padding: 10px;
+    margin-left: auto;
+    background: #cbeeff;
+    border: 3px solid #11627f;
+  }
+  .level3 {
+    width: 175px;
+    padding: 6px;
+    background: #e3f2cf;
+    border: 3px solid #477827;
+  }
+  svg {
+    display: block;
+    width: 160px;
+    height: 96px;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="level1">
+      <div class="level2">
+        <div class="level3">
+          <svg viewBox="0 0 160 96" aria-hidden="true">
+            <rect x="0" y="0" width="160" height="96" fill="#f7d36f"/>
+            <rect x="16" y="16" width="64" height="52" fill="#2d6cdf"/>
+            <circle cx="112" cy="48" r="30" fill="#d94f4f"/>
+            <path d="M30 82 L80 42 L138 82 Z" fill="#2e9e5b"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

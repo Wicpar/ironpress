@@ -1,0 +1,49 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deep image percent sizing chain</title>
+<style>
+  @page { size: 390px 220px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .stage {
+    width: 330px;
+    padding: 18px;
+    background: #eef2f7;
+    border: 4px solid #2a364f;
+  }
+  .level1 {
+    width: 82%;
+    padding: 14px;
+    background: #ffe1a6;
+    border: 3px solid #9b6100;
+  }
+  .level2 {
+    width: 70%;
+    padding: 10px;
+    margin-left: auto;
+    background: #cbeeff;
+    border: 3px solid #11627f;
+  }
+  img {
+    display: block;
+    width: 100%;
+    height: auto;
+    border: 5px solid #6b1730;
+    image-rendering: pixelated;
+  }
+</style>
+</head>
+<body>
+  <div class="stage">
+    <div class="level1">
+      <div class="level2">
+        <img alt="" src="data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAgAAAAECAIAAAA8r+mnAAAAIElEQVR42mM4IScHR3I9NnDEgFNCzu0EHN1ZJQJHOCUAni4lgeO2HLIAAAAASUVORK5CYII=">
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -957,5 +957,156 @@
     "weight": 1,
     "pass_threshold_pct": 2.0,
     "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-percent-padding-chain",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "percent-padding-chain",
+    "description": "Four nested block boxes combine fixed width, percentage width, percentage padding, explicit padding, margins, borders, and a percentage-width leaf; currently ironpress shifts the deep leaf right and expands extra paint, showing width/padding propagation drift through depth.",
+    "file": "cases/block-box-model/deep-block-percent-padding-chain.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-border-box"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-percent-height-chain",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "percent-height-chain",
+    "description": "A definite-height outer block contains three nested percentage-height blocks and a 100% leaf; currently ironpress mis-sizes the innermost percentage-height bar, showing definite-height propagation drift at depth.",
+    "file": "cases/block-box-model/deep-block-percent-height-chain.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-border-box"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-narrow-text-wrap-chain",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "percent-text-wrap-chain",
+    "description": "Nested percentage-width blocks narrow the innermost text column so wrapping creates a tall stack; catches deep width collapse or failure to wrap text in the resolved column.",
+    "file": "cases/block-box-model/deep-block-narrow-text-wrap-chain.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-text-baseline"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 6.0,
+    "partial_threshold_pct": 18.0
+  },
+  {
+    "id": "deep-block-overflow-clip-scroll-chain",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "overflow-hidden-scroll-chain",
+    "description": "Three nested blocks combine overflow:hidden and overflow:scroll while clipping a four-stripe oversized canvas; catches clip-stack composition errors at depth.",
+    "file": "cases/block-box-model/deep-block-overflow-clip-scroll-chain.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-border-box"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-radius-clip-composition",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "border-radius-clip-chain",
+    "description": "Nested rounded overflow clips with offset oversized color tiles exercise border-radius clipping through multiple block ancestors; currently ironpress clips/paints the wrong tile region inside the rounded nested clip stack.",
+    "file": "cases/block-box-model/deep-block-radius-clip-composition.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-border-box"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-effects-subtree",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "opacity-transform-shadow-subtree",
+    "description": "A nested block subtree with opacity, transform, and box-shadow contains two more decorated descendants; catches effect-group painting being lost or applied to the wrong depth.",
+    "file": "cases/block-box-model/deep-block-effects-subtree.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-border-box"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-absolute-containing-chain",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "absolute-containing-block-chain",
+    "description": "An absolutely positioned block is nested three static ancestors below a positioned outer block and must resolve offsets against the positioned ancestor, not its DOM parent.",
+    "file": "cases/block-box-model/deep-block-absolute-containing-chain.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-border-box"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "deep-block-margin-collapse-chain",
+    "category": "block-box-model",
+    "feature": "deep-nesting",
+    "subfeature": "margin-collapse-through-ancestors",
+    "description": "A leaf top margin collapses through three unbordered block ancestors to the parent; the white gap before the red leaf catches engines that keep the margin inside the blue parent background.",
+    "file": "cases/block-box-model/deep-block-margin-collapse-chain.html",
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
   }
 ]

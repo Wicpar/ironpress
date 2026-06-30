@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>deep block radius clip composition</title>
+<style>
+  @page { size: 330px 230px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .outer {
+    width: 280px;
+    height: 180px;
+    padding: 16px;
+    overflow: hidden;
+    border-radius: 34px 18px 34px 18px;
+    background: #1d3152;
+    border: 6px solid #0b1730;
+  }
+  .level1 {
+    width: 248px;
+    height: 140px;
+    overflow: hidden;
+    border-radius: 28px;
+    background: #f4d37e;
+    border: 5px solid #8d5a00;
+  }
+  .level2 {
+    width: 250px;
+    height: 130px;
+    margin-left: -14px;
+    margin-top: 10px;
+    overflow: hidden;
+    border-radius: 22px 44px 20px 34px;
+    background: #eaf6ff;
+    border: 4px solid #12658c;
+  }
+  .payload {
+    width: 310px;
+    height: 190px;
+    margin-left: -30px;
+    margin-top: -28px;
+  }
+  .tile {
+    float: left;
+    width: 155px;
+    height: 95px;
+  }
+  .r { background: #d94f4f; }
+  .g { background: #2e9e5b; }
+  .b { background: #2d6cdf; }
+  .y { background: #e0b21e; }
+</style>
+</head>
+<body>
+  <div class="outer">
+    <div class="level1">
+      <div class="level2">
+        <div class="payload">
+          <div class="tile r"></div>
+          <div class="tile g"></div>
+          <div class="tile b"></div>
+          <div class="tile y"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>
