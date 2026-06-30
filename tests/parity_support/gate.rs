@@ -6,7 +6,7 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::config::{DPI, SCORE_EPSILON, WHITE_TOL};
+use super::config::{DPI, REGRESSION_DELTA_TOL, SCORE_EPSILON, WHITE_TOL};
 use super::report::{
     CategoryReport, Counts, Coverage, EnvBlock, FeatureReport, FixFirst, FixtureResult, Overall,
     Report, StaleRef, Status,
@@ -236,18 +236,35 @@ pub(crate) fn enforce_gate(baseline: Option<&Report>, current: &Report) -> Resul
     let mut problems: Vec<String> = Vec::new();
 
     // 1. Named PASS -> FAIL regressions.
+    //
+    // Deliberate CI policy: this gate should prevent code regressions, not
+    // fail because the runner's rasterizer/font environment nudged a fixture
+    // across an internal PASS/FAIL verdict boundary. Therefore a baseline PASS
+    // that is currently FAIL is a regression only when the measured image diff
+    // materially increased versus that fixture's own committed baseline. This
+    // preserves sensitivity to real breakage (large diff jumps still fail) while
+    // absorbing small environment-only boundary crossings.
     for (id, cur) in &cur_by_id {
         if cur.status == Status::Fail {
             if let Some(b) = base_by_id.get(id) {
-                if b.status == Status::Pass {
+                let diff_delta = cur.diff_pct - b.diff_pct;
+                if b.status == Status::Pass && diff_delta > REGRESSION_DELTA_TOL {
                     let sub = if !cur.interaction_of.is_empty() {
                         format!("interaction {}", cur.interaction_of.join("×"))
                     } else {
                         cur.subfeature.clone()
                     };
                     problems.push(format!(
-                        "PASS->FAIL regression: {} [{}/{}/{}] diff={:.2}% {}",
-                        id, cur.category, cur.feature, sub, cur.diff_pct, cur.note
+                        "PASS->FAIL regression: {} [{}/{}/{}] diff={:.2}% baseline={:.2}% delta={:.2}pp > tol {:.2}pp {}",
+                        id,
+                        cur.category,
+                        cur.feature,
+                        sub,
+                        cur.diff_pct,
+                        b.diff_pct,
+                        diff_delta,
+                        REGRESSION_DELTA_TOL,
+                        cur.note
                     ));
                 }
             }

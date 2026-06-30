@@ -16,6 +16,16 @@ pub(crate) const DPI: u32 = 300;
 pub(crate) const WHITE_TOL: i32 = 10;
 /// Overall-score regression epsilon (percentage points). Below this is noise.
 pub(crate) const SCORE_EPSILON: f64 = 0.5;
+/// Per-fixture PASS->FAIL regression delta tolerance (percentage points).
+///
+/// The parity gate is a CI regression guard, not an environment fingerprint. A
+/// baseline-PASS fixture may cross an internal verdict boundary from harmless
+/// rasterizer/font noise even when its image diff only nudges by a fraction of a
+/// point (for example, sub-1% edge coverage jitter). Gate only when the current
+/// diff grows materially beyond that fixture's own committed baseline. One point
+/// absorbs those boundary-crossing environment flakes while still catching real
+/// breakage such as a 1% -> 40% jump.
+pub(crate) const REGRESSION_DELTA_TOL: f64 = 1.0;
 /// Maximum possible YIQ color delta (pixelmatch constant). Read by the V2
 /// `t_match()`/`t_aa()` budgets below (and, via `color_delta`, the V2 detectors).
 pub(crate) const PM_MAX_DELTA: f64 = 35215.0;

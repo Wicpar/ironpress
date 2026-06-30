@@ -36,8 +36,8 @@ jobs:
             target
           key: parity-cargo-${{ runner.os }}-${{ hashFiles('Cargo.toml') }}
 
-      - name: Install poppler-utils
-        run: sudo apt-get update && sudo apt-get install -y poppler-utils
+      - name: Install poppler and CJK fonts
+        run: sudo apt-get update && sudo apt-get install -y poppler-utils fonts-noto-cjk
 
       - name: Install bundled Parity fonts
         run: |
