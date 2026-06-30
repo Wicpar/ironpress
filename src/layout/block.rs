@@ -2104,23 +2104,6 @@ pub(crate) fn layout_block_element(
         } else {
             output.push(inline_tb);
         }
-        // Only emit non-absolute before pseudo-elements here.
-        // Absolute positioned ::before will be emitted after children processing.
-        // When this block routes its block-level pseudos through the Container
-        // wrapper (visual box + in-flow block content), skip this sibling emit —
-        // the wrapper nests the pseudo inside the padding box instead.
-        if !before_is_abs && !block_pseudo_via_wrapper {
-            push_block_pseudo(
-                output,
-                before_style.as_ref(),
-                el,
-                inner_width,
-                env.fonts,
-                cb_info,
-                positioned_depth,
-                env.counter_state,
-            );
-        }
     }
 
     // Also process block children recursively, using inner_width
@@ -2700,18 +2683,6 @@ pub(crate) fn layout_block_element(
             containing_block: wrapper_cb,
         });
     } else {
-        if no_inline_content {
-            push_block_pseudo(
-                output,
-                before_style.as_ref(),
-                el,
-                inner_width,
-                env.fonts,
-                cb_info,
-                positioned_depth,
-                env.counter_state,
-            );
-        }
         // Compute cb_info for positioned containers in the non-wrapper path
         // so that absolute children get a containing block.
         if cb_info.is_none() && positioned_container {

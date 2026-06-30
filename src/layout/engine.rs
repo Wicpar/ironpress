@@ -9571,6 +9571,86 @@ mod tests {
         }
     }
 
+    fn collect_text_runs_from_lines<'a>(lines: &'a [TextLine], out: &mut Vec<&'a TextRun>) {
+        for line in lines {
+            out.extend(line.runs.iter());
+        }
+    }
+
+    fn collect_text_runs_from_element<'a>(element: &'a LayoutElement, out: &mut Vec<&'a TextRun>) {
+        match element {
+            LayoutElement::TextBlock { lines, .. } => collect_text_runs_from_lines(lines, out),
+            LayoutElement::Container { children, .. } => {
+                for child in children {
+                    collect_text_runs_from_element(child, out);
+                }
+            }
+            LayoutElement::TableRow { cells, .. } | LayoutElement::GridRow { cells, .. } => {
+                for cell in cells {
+                    collect_text_runs_from_cell(cell, out);
+                }
+            }
+            LayoutElement::FlexRow { cells, .. } => {
+                for cell in cells {
+                    collect_text_runs_from_lines(&cell.lines, out);
+                    for child in &cell.nested_elements {
+                        collect_text_runs_from_element(child, out);
+                    }
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_text_runs_from_cell<'a>(cell: &'a TableCell, out: &mut Vec<&'a TextRun>) {
+        collect_text_runs_from_lines(&cell.lines, out);
+        for child in &cell.nested_rows {
+            collect_text_runs_from_element(child, out);
+        }
+    }
+
+    fn text_runs_in_cell(cell: &TableCell) -> Vec<&TextRun> {
+        let mut runs = Vec::new();
+        collect_text_runs_from_cell(cell, &mut runs);
+        runs
+    }
+
+    fn find_text_block_containing<'a>(
+        elements: &'a [LayoutElement],
+        needle: &str,
+    ) -> Option<&'a LayoutElement> {
+        for element in elements {
+            match element {
+                LayoutElement::TextBlock { lines, .. } if text_lines_contain(lines, needle) => {
+                    return Some(element);
+                }
+                LayoutElement::Container { children, .. } => {
+                    if let Some(found) = find_text_block_containing(children, needle) {
+                        return Some(found);
+                    }
+                }
+                LayoutElement::TableRow { cells, .. } | LayoutElement::GridRow { cells, .. } => {
+                    for cell in cells {
+                        if let Some(found) = find_text_block_containing(&cell.nested_rows, needle) {
+                            return Some(found);
+                        }
+                    }
+                }
+                LayoutElement::FlexRow { cells, .. } => {
+                    for cell in cells {
+                        if let Some(found) =
+                            find_text_block_containing(&cell.nested_elements, needle)
+                        {
+                            return Some(found);
+                        }
+                    }
+                }
+                _ => {}
+            }
+        }
+        None
+    }
+
     #[test]
     fn unordered_list_uses_bullet_marker() {
         let html = "<ul><li>Item</li></ul>";
@@ -12003,17 +12083,10 @@ mod tests {
             }
         });
         let cells = cells.expect("expected table row");
-        let text: String = cells[0]
-            .lines
-            .iter()
-            .flat_map(|line| line.runs.iter())
-            .map(|run| run.text.as_str())
-            .collect();
+        let runs = text_runs_in_cell(&cells[0]);
+        let text: String = runs.iter().map(|run| run.text.as_str()).collect();
         assert!(
-            cells[0]
-                .lines
-                .iter()
-                .flat_map(|line| line.runs.iter())
+            runs.iter()
                 .any(|run| run.link_url.as_deref() == Some("https://example.com")),
             "Expected link URL to survive nested block traversal"
         );
@@ -12058,17 +12131,17 @@ mod tests {
             (0.0, 0.0),
             "direct cell text should not inherit table-cell padding"
         );
-        let nested_run = cells[0]
-            .lines
-            .iter()
-            .flat_map(|line| line.runs.iter())
-            .find(|run| run.text.contains("Nested"))
+        let nested_block = find_text_block_containing(&cells[0].nested_rows, "Nested")
             .expect("expected nested block text run");
-        assert_eq!(
-            nested_run.padding,
-            (6.0, 3.0),
-            "nested block text should keep its own padding"
-        );
+        let LayoutElement::TextBlock {
+            padding_left,
+            padding_top,
+            ..
+        } = nested_block
+        else {
+            panic!("expected nested text block");
+        };
+        assert_eq!((*padding_left, *padding_top), (6.0, 3.0));
     }
 
     #[test]

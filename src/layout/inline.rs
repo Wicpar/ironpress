@@ -9,7 +9,9 @@ use crate::style::computed::{
 use std::collections::HashMap;
 
 use super::context::{LayoutContext, LayoutEnv};
-use super::engine::{BackgroundFields, FlexCell, LayoutBorder, LayoutElement, TextLine};
+use super::engine::{
+    BackgroundFields, FlexCell, LayoutBorder, LayoutElement, TextLine, flatten_element,
+};
 use super::flex::layout_flex_container;
 use super::grid::layout_grid_container;
 use super::table::flatten_table;
@@ -112,6 +114,151 @@ pub(crate) fn element_has_css_display_block(
         &selector_ctx,
     );
     style.display == Display::Block
+}
+
+fn inline_block_child_should_flatten(el: &ElementNode, style: &ComputedStyle) -> bool {
+    matches!(el.tag, HtmlTag::Img | HtmlTag::Svg | HtmlTag::Table)
+        || style.display != Display::Inline
+}
+
+fn inline_block_nested_outer_width(elements: &[LayoutElement]) -> f32 {
+    elements
+        .iter()
+        .map(|element| match element {
+            LayoutElement::Image { width, .. } | LayoutElement::Svg { width, .. } => *width,
+            LayoutElement::TableRow { cells, .. } => {
+                let outer = cells.first().map_or(0.0, |cell| cell.border.left.width) / 2.0
+                    + cells.last().map_or(0.0, |cell| cell.border.right.width) / 2.0;
+                crate::layout::paginate::table_row_content_width(element) + outer
+            }
+            LayoutElement::TextBlock {
+                block_width: Some(width),
+                ..
+            } => *width,
+            LayoutElement::Container {
+                children,
+                padding_left,
+                padding_right,
+                border,
+                block_width,
+                ..
+            } => {
+                let children_w = inline_block_nested_outer_width(children);
+                if children_w > 0.0 {
+                    children_w + padding_left + padding_right + border.horizontal_width()
+                } else {
+                    block_width.unwrap_or(0.0)
+                }
+            }
+            _ => 0.0,
+        })
+        .fold(0.0f32, f32::max)
+}
+
+#[allow(clippy::too_many_arguments)]
+fn collect_inline_block_contents(
+    nodes: &[DomNode],
+    parent_style: &ComputedStyle,
+    ctx: &LayoutContext,
+    runs: &mut Vec<crate::layout::engine::TextRun>,
+    nested_elements: &mut Vec<LayoutElement>,
+    ancestors: &[AncestorInfo],
+    env: &mut LayoutEnv,
+    available_width: f32,
+) {
+    let element_count = nodes
+        .iter()
+        .filter(|node| matches!(node, DomNode::Element(_)))
+        .count();
+    let sibling_list: Vec<(String, Vec<String>)> = nodes
+        .iter()
+        .filter_map(|node| match node {
+            DomNode::Element(el) => Some((
+                el.tag_name().to_string(),
+                el.class_list().iter().map(|s| s.to_string()).collect(),
+            )),
+            _ => None,
+        })
+        .collect();
+    let mut element_index = 0usize;
+
+    for node in nodes {
+        let DomNode::Element(el) = node else {
+            collect_text_runs(
+                std::slice::from_ref(node),
+                parent_style,
+                runs,
+                None,
+                env.rules,
+                env.fonts,
+                ancestors,
+                env.counter_state,
+            );
+            continue;
+        };
+
+        let selector_ctx = SelectorContext {
+            ancestors: ancestors.to_vec(),
+            child_index: element_index,
+            sibling_count: element_count,
+            preceding_siblings: sibling_list[..element_index].to_vec(),
+            following_siblings: sibling_list[element_index + 1..].to_vec(),
+            is_empty: false,
+        };
+        let style = compute_style_with_context(
+            el.tag,
+            el.style_attr(),
+            parent_style,
+            env.rules,
+            el.tag_name(),
+            &el.class_list(),
+            el.id(),
+            &el.attributes,
+            &selector_ctx,
+        );
+
+        if style.display == Display::None {
+            element_index += 1;
+            continue;
+        }
+
+        if inline_block_child_should_flatten(el, &style) {
+            let child_ctx = ctx
+                .with_parent_and_basis(
+                    available_width.max(1.0),
+                    available_width.max(1.0),
+                    None,
+                    parent_style.font_size,
+                )
+                .with_containing_block(None);
+            flatten_element(
+                el,
+                parent_style,
+                &child_ctx,
+                nested_elements,
+                None,
+                ancestors,
+                0,
+                element_index,
+                element_count,
+                &sibling_list[..element_index],
+                &sibling_list[element_index + 1..],
+                env,
+            );
+        } else {
+            collect_text_runs(
+                std::slice::from_ref(node),
+                parent_style,
+                runs,
+                None,
+                env.rules,
+                env.fonts,
+                ancestors,
+                env.counter_state,
+            );
+        }
+        element_index += 1;
+    }
 }
 
 /// Lay out consecutive atomic inline elements as `FlexRow`s.
@@ -474,15 +621,16 @@ fn inline_atomic_cell(
             }
             Display::InlineBlock => {
                 let mut runs = Vec::new();
-                collect_text_runs(
+                let mut nested_elements = Vec::new();
+                collect_inline_block_contents(
                     &child_el.children,
                     child_style,
+                    ctx,
                     &mut runs,
-                    None,
-                    env.rules,
-                    env.fonts,
+                    &mut nested_elements,
                     &child_ancestors,
-                    env.counter_state,
+                    env,
+                    ctx.available_width(),
                 );
                 let lines = wrap_text_runs(
                     runs,
@@ -503,9 +651,13 @@ fn inline_atomic_cell(
                         })
                         .fold(0.0f32, f32::max)
                 });
-                let content_h = child_style
-                    .height
-                    .unwrap_or_else(|| lines.iter().map(|line| line.height).sum::<f32>());
+                let content_h = child_style.height.unwrap_or_else(|| {
+                    lines.iter().map(|line| line.height).sum::<f32>()
+                        + nested_elements
+                            .iter()
+                            .map(crate::layout::paginate::estimate_element_height)
+                            .sum::<f32>()
+                });
                 let total_w = content_w
                     + child_style.padding.left
                     + child_style.padding.right
@@ -545,7 +697,7 @@ fn inline_atomic_cell(
                         transform: child_style.transform,
                         transform_origin: child_style.transform_origin,
                         box_shadow: child_style.box_shadow.clone(),
-                        nested_elements: Vec::new(),
+                        nested_elements,
                         y_offset: 0.0,
                         line_cross_size: 0.0,
                         is_positioned: matches!(
@@ -1117,18 +1269,32 @@ fn layout_inline_block_group_inner(
             continue;
         }
         let mut runs = Vec::new();
-        FlexTextRunCollector {
-            runs: &mut runs,
-            rules,
-            fonts,
+        let mut nested_elements = Vec::new();
+        if let Some(env) = env.as_deref_mut() {
+            collect_inline_block_contents(
+                &child_el.children,
+                &child_style,
+                ctx,
+                &mut runs,
+                &mut nested_elements,
+                &child_ancestors,
+                env,
+                inner_width,
+            );
+        } else {
+            FlexTextRunCollector {
+                runs: &mut runs,
+                rules,
+                fonts,
+            }
+            .collect(
+                &child_el.children,
+                &child_style,
+                None,
+                (0.0, 0.0),
+                &child_ancestors,
+            );
         }
-        .collect(
-            &child_el.children,
-            &child_style,
-            None,
-            (0.0, 0.0),
-            &child_ancestors,
-        );
 
         let wrap_inner_width = if !has_explicit_width
             && child_style.width_keyword == Some(IntrinsicWidthKeyword::MinContent)
@@ -1164,10 +1330,11 @@ fn layout_inline_block_group_inner(
         } else {
             // Shrink-to-fit: widest line, measured with the REAL bundled-font
             // advances (str_width is Helvetica AFM and mis-sizes a ParitySans run).
-            lines
+            let line_w = lines
                 .iter()
                 .map(|l| crate::layout::helpers::measure_runs_width(&l.runs, fonts))
-                .fold(0.0f32, f32::max)
+                .fold(0.0f32, f32::max);
+            line_w.max(inline_block_nested_outer_width(&nested_elements))
         };
         let total_w = if child_style.box_sizing == BoxSizing::BorderBox && has_explicit_width {
             content_w
@@ -1180,7 +1347,15 @@ fn layout_inline_block_group_inner(
 
         // Total element height including padding + border
         let text_height: f32 = lines.iter().map(|l| l.height).sum();
-        let content_h = if child_h > 0.0 { child_h } else { text_height };
+        let nested_height: f32 = nested_elements
+            .iter()
+            .map(crate::layout::paginate::estimate_element_height)
+            .sum();
+        let content_h = if child_h > 0.0 {
+            child_h
+        } else {
+            text_height + nested_height
+        };
         let total_h = if child_style.box_sizing == BoxSizing::BorderBox && child_h > 0.0 {
             child_h
         } else {
@@ -1254,7 +1429,7 @@ fn layout_inline_block_group_inner(
             margin_right: child_style.margin.right,
             margin_bottom: child_style.margin.bottom,
             box_shadow: child_style.box_shadow.clone(),
-            nested_elements: Vec::new(),
+            nested_elements,
             space_before: *space_before,
             // CSS 2.1 §9.9.1: a positioned inline-block (relative/absolute) is
             // painted after all non-positioned in-flow siblings in the same

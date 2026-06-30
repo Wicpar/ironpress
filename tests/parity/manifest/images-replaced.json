@@ -629,7 +629,26 @@
     "weight": 1,
     "kind": "feature",
     "oracle": "chrome",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-image-render"
+    ],
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "img-inline-block-descendant-sizing",
+    "category": "images-replaced",
+    "feature": "img",
+    "subfeature": "inline-block-descendant-sizing",
+    "description": "An inline-block containing an img with explicit width and height:auto must preserve intrinsic aspect-ratio sizing and paint the replaced child.",
+    "file": "cases/images-replaced/img-inline-block-descendant-sizing.html",
+    "weight": 1,
+    "kind": "feature",
+    "oracle": "chrome",
+    "expected_support": "implemented",
     "sanitize": true,
     "depends_on": [
       "probe-fill-box",

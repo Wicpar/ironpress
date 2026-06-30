@@ -5,7 +5,8 @@ use crate::parser::dom::{DomNode, ElementNode, HtmlTag};
 use crate::parser::ttf::TtfFont;
 use crate::style::computed::{
     BorderCollapse, BorderStyle, BoxSizing, ComputedStyle, Display, FontStyle, FontWeight,
-    TableLayout, TextAlign, VerticalAlign, Visibility, WhiteSpace, compute_style_with_context,
+    Position, TableLayout, TextAlign, VerticalAlign, Visibility, WhiteSpace,
+    compute_style_with_context,
 };
 use std::collections::HashMap;
 
@@ -118,13 +119,43 @@ pub(crate) fn table_cell_content_height(cell: &TableCell) -> f32 {
     table_cell_intrinsic_content_height(cell).max(cell.min_content_height)
 }
 
+fn nested_cell_content_element_height(element: &LayoutElement) -> f32 {
+    let base = estimate_element_height(element);
+    let LayoutElement::TableRow {
+        cells,
+        border_collapse,
+        ..
+    } = element
+    else {
+        return base;
+    };
+    if *border_collapse != BorderCollapse::Collapse {
+        return base;
+    }
+    let top = cells
+        .iter()
+        .filter(|cell| cell.rowspan != 0)
+        .map(|cell| cell.border.top.width / 2.0)
+        .fold(0.0f32, f32::max);
+    let bottom = cells
+        .iter()
+        .filter(|cell| cell.rowspan != 0)
+        .map(|cell| cell.border.bottom.width / 2.0)
+        .fold(0.0f32, f32::max);
+    base + top + bottom
+}
+
 /// The cell's *actual* content height (padding + text + nested content), WITHOUT
 /// the `min_content_height` floor. Used to position content within a taller cell
 /// (e.g. `vertical-align` offset), where the real content extent is needed
 /// rather than the cell's full height.
 pub(crate) fn table_cell_intrinsic_content_height(cell: &TableCell) -> f32 {
     let text_h: f32 = cell.lines.iter().map(|l| l.height).sum();
-    let nested_h: f32 = cell.nested_rows.iter().map(estimate_element_height).sum();
+    let nested_h: f32 = cell
+        .nested_rows
+        .iter()
+        .map(nested_cell_content_element_height)
+        .sum();
     cell.padding_top + text_h + nested_h + cell.padding_bottom
 }
 
@@ -899,6 +930,29 @@ fn stretch_table_rows_to_min_height(
     }
 }
 
+fn collapsed_outer_vertical_border_extent(rows: &[LayoutElement]) -> f32 {
+    let first_top = rows.iter().find_map(|row| {
+        let LayoutElement::TableRow { cells, .. } = row else {
+            return None;
+        };
+        cells
+            .iter()
+            .find(|cell| cell.rowspan != 0)
+            .map(|cell| cell.border.top.width / 2.0)
+    });
+    let last_bottom = rows.iter().rev().find_map(|row| {
+        let LayoutElement::TableRow { cells, .. } = row else {
+            return None;
+        };
+        cells
+            .iter()
+            .rev()
+            .find(|cell| cell.rowspan != 0)
+            .map(|cell| cell.border.bottom.width / 2.0)
+    });
+    first_top.unwrap_or(0.0) + last_bottom.unwrap_or(0.0)
+}
+
 fn table_cell_vertical_align(value: VerticalAlign) -> VerticalAlign {
     match value {
         VerticalAlign::Middle | VerticalAlign::Bottom | VerticalAlign::Top => value,
@@ -1354,8 +1408,15 @@ fn resolve_fixed_table_columns(
 /// row. Returns `(0.0, 0.0)` when there are no cells. Used to shrink the column
 /// tracks so the outer borders fit inside the table's declared width
 /// (`border-collapse: collapse`).
+#[allow(clippy::too_many_arguments)]
 fn collapse_outer_horizontal_borders(
     rows: &[&ElementNode],
+    row_section_indices: &[usize],
+    row_section_sizes: &[usize],
+    row_section_elements: &[Option<&ElementNode>],
+    row_section_child_indices: &[usize],
+    row_section_sibling_counts: &[usize],
+    num_cols: usize,
     table_style: &ComputedStyle,
     rules: &[CssRule],
     table_ancestors: &[AncestorInfo],
@@ -1363,40 +1424,82 @@ fn collapse_outer_horizontal_borders(
     if table_style.border_collapse != BorderCollapse::Collapse {
         return (0.0, 0.0);
     }
-    let Some(first_row) = rows.first() else {
+    let Some((row_idx, first_row)) = rows.iter().enumerate().next() else {
         return (0.0, 0.0);
     };
-    let cells: Vec<&ElementNode> = first_row
-        .children
-        .iter()
-        .filter_map(|child| match child {
-            DomNode::Element(e) => Some(e),
-            _ => None,
-        })
-        .collect();
-    if cells.is_empty() {
-        return (0.0, 0.0);
+    let mut row_ancestors = table_ancestors.to_vec();
+    if let Some(section_el) = row_section_elements
+        .get(row_idx)
+        .and_then(|section| *section)
+    {
+        row_ancestors.push(AncestorInfo {
+            element: section_el,
+            child_index: row_section_child_indices.get(row_idx).copied().unwrap_or(0),
+            sibling_count: row_section_sibling_counts
+                .get(row_idx)
+                .copied()
+                .unwrap_or(0),
+            preceding_siblings: Vec::new(),
+            following_siblings: Vec::new(),
+            is_empty: false,
+        });
     }
+    let row_parent_style = row_section_elements
+        .get(row_idx)
+        .and_then(|section| *section)
+        .map(|section_el| {
+            compute_column_style(
+                section_el,
+                table_style,
+                rules,
+                table_ancestors,
+                row_section_child_indices.get(row_idx).copied().unwrap_or(0),
+                row_section_sibling_counts
+                    .get(row_idx)
+                    .copied()
+                    .unwrap_or(0),
+            )
+        });
     let row_classes = first_row.class_list();
+    let row_selector_ctx = SelectorContext {
+        ancestors: row_ancestors,
+        child_index: row_section_indices.get(row_idx).copied().unwrap_or(0),
+        sibling_count: row_section_sizes.get(row_idx).copied().unwrap_or(1),
+        preceding_siblings: Vec::new(),
+        following_siblings: Vec::new(),
+        is_empty: false,
+    };
     let row_style = compute_style_with_context(
         first_row.tag,
         first_row.style_attr(),
-        table_style,
+        row_parent_style.as_ref().unwrap_or(table_style),
         rules,
         first_row.tag_name(),
         &row_classes,
         first_row.id(),
         &first_row.attributes,
-        &SelectorContext {
-            ancestors: table_ancestors.to_vec(),
-            child_index: 0,
-            sibling_count: rows.len(),
-            preceding_siblings: Vec::new(),
-            following_siblings: Vec::new(),
-            is_empty: false,
-        },
+        &row_selector_ctx,
     );
+    let cells = table_row_cell_elements(first_row, &row_style, rules, &row_selector_ctx.ancestors);
+    if cells.is_empty() {
+        return (0.0, 0.0);
+    }
     let cell_count = cells.len();
+    let mut cell_positions = Vec::with_capacity(cell_count);
+    let mut col_pos = 0usize;
+    for cell in &cells {
+        cell_positions.push(col_pos);
+        col_pos = col_pos.saturating_add(parse_cell_colspan(cell));
+    }
+    let mut cell_ancestors = row_selector_ctx.ancestors.clone();
+    cell_ancestors.push(AncestorInfo {
+        element: first_row,
+        child_index: row_selector_ctx.child_index,
+        sibling_count: row_selector_ctx.sibling_count,
+        preceding_siblings: Vec::new(),
+        following_siblings: Vec::new(),
+        is_empty: false,
+    });
     let cell_border = |idx: usize, cell: &ElementNode| -> ComputedStyle {
         let classes = cell.class_list();
         compute_style_with_context(
@@ -1409,9 +1512,9 @@ fn collapse_outer_horizontal_borders(
             cell.id(),
             &cell.attributes,
             &SelectorContext {
-                ancestors: table_ancestors.to_vec(),
-                child_index: idx,
-                sibling_count: cell_count,
+                ancestors: cell_ancestors.clone(),
+                child_index: cell_positions.get(idx).copied().unwrap_or(idx),
+                sibling_count: num_cols,
                 preceding_siblings: Vec::new(),
                 following_siblings: Vec::new(),
                 is_empty: false,
@@ -1849,8 +1952,18 @@ pub(crate) fn flatten_table(
     // `collapse_paint_offset` then nudges the painted table right by `outer_left/2`
     // so the outer border's outer pixel lands on the table box edge. Without this
     // reduction the columns sum to the full width and the table renders too wide.
-    let (outer_left_border, outer_right_border) =
-        collapse_outer_horizontal_borders(&rows, style, rules, &table_ancestors);
+    let (outer_left_border, outer_right_border) = collapse_outer_horizontal_borders(
+        &rows,
+        &row_section_indices,
+        &row_section_sizes,
+        &row_section_elements,
+        &row_section_child_indices,
+        &row_section_sibling_counts,
+        num_cols,
+        style,
+        rules,
+        &table_ancestors,
+    );
     let columns_width = if matches!(
         style.border_collapse,
         crate::style::computed::BorderCollapse::Separate
@@ -2936,9 +3049,15 @@ pub(crate) fn flatten_table(
     };
 
     if let Some(table_height) = style.height.or(style.min_height) {
+        let stretch_target = if style.border_collapse == BorderCollapse::Collapse {
+            (table_height - collapsed_outer_vertical_border_extent(&output[table_output_start..]))
+                .max(0.0)
+        } else {
+            table_height
+        };
         stretch_table_rows_to_min_height(
             &mut output[table_output_start..],
-            table_height,
+            stretch_target,
             edge_spacing_v,
         );
     }
@@ -3327,6 +3446,15 @@ fn table_cell_edge_block_margins(
     )
 }
 
+fn table_cell_child_should_flatten(el: &ElementNode, style: &ComputedStyle) -> bool {
+    el.tag == HtmlTag::Table
+        || el.tag == HtmlTag::Img
+        || el.tag == HtmlTag::Svg
+        || (recurses_as_layout_child(el.tag) && !collects_as_inline_text(el.tag))
+        || style.display != Display::Inline
+        || style.position == Position::Absolute
+}
+
 #[allow(clippy::too_many_arguments)]
 fn collect_table_cell_content_inner(
     nodes: &[DomNode],
@@ -3481,36 +3609,7 @@ fn collect_table_cell_content_inner(
                     following_siblings: Vec::new(),
                     is_empty: false,
                 });
-                if el.tag == HtmlTag::Table {
-                    let mut inner_env = LayoutEnv {
-                        rules,
-                        fonts,
-                        counter_state,
-                        filter_defs,
-                    };
-                    flatten_table(
-                        el,
-                        &style,
-                        available_width,
-                        nested_rows,
-                        &child_ancestors,
-                        child_index,
-                        element_sibling_count,
-                        &mut inner_env,
-                    );
-                } else if el.tag == HtmlTag::Img
-                    || el.tag == HtmlTag::Svg
-                    || (recurse_blocks
-                        && style.display != Display::Inline
-                        && el.tag != HtmlTag::Br
-                        && el.children.is_empty()
-                        && (has_background_paint(&style)
-                            || style.border.has_any()
-                            || !style.box_shadow.is_empty()
-                            || style.aspect_ratio.is_some()
-                            || style.height.is_some()
-                            || style.width.is_some()))
-                {
+                if table_cell_child_should_flatten(el, &style) && el.tag != HtmlTag::Br {
                     let cell_ctx = LayoutContext {
                         viewport: Viewport {
                             width: available_width,

@@ -2120,7 +2120,7 @@
     "description": "A raster img paints in normal flow and should also paint as a direct child of a simple flex item; catches the simple flex-item text collector dropping replaced children.",
     "file": "cases/flexbox/flexbox-item-raster-img-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "sanitize": true,
     "depends_on": [
       "probe-fill-box",
@@ -2138,10 +2138,28 @@
     "description": "An inline SVG paints in normal flow and should also paint as a direct child of a simple flex item; catches the simple flex-item text collector dropping replaced/vector children.",
     "file": "cases/flexbox/flexbox-item-inline-svg-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-item-img-sizing-child",
+    "category": "flexbox",
+    "feature": "flex-item-children",
+    "subfeature": "img-sizing-child",
+    "description": "A flex item containing an img with explicit width and height:auto must keep intrinsic aspect-ratio sizing and paint the replaced child.",
+    "file": "cases/flexbox/flexbox-item-img-sizing-child.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-image-render"
     ],
     "weight": 1,
     "pass_threshold_pct": 2.0,

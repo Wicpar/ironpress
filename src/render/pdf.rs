@@ -2,8 +2,8 @@ use crate::error::IronpressError;
 use crate::layout::engine::{
     FOOTNOTE_CALL_FONT_SCALE, FootnoteItem, ImageFormat, LayoutBorder, LayoutElement, Page,
     PngMetadata, TableCell, TextLine, TextRun, decode_footnote_link, decode_footnote_link_data,
-    footnote_call_multiline_extra_height, is_internal_target_anchor, layout_element_paint_order,
-    table_cell_content_height, table_cell_intrinsic_content_height, text_run_is_footnote_call,
+    footnote_call_multiline_extra_height, is_internal_target_anchor, table_cell_content_height,
+    table_cell_intrinsic_content_height, text_run_is_footnote_call,
 };
 use crate::layout::text::{OverflowWrap, TextWrapOptions, wrap_text_runs};
 use crate::parser::ttf::TtfFont;
@@ -27,6 +27,9 @@ use crate::style::computed::{
 use crate::types::{Margin, PageSize};
 use std::collections::HashMap;
 use std::io::Write as _;
+
+#[cfg(test)]
+use crate::layout::engine::layout_element_paint_order;
 
 mod layout_elements;
 
@@ -81,6 +84,94 @@ fn background_clip_rect(
         (bw - inset_left - inset_right).max(0.0),
         (bh - inset_top - inset_bottom).max(0.0),
     )
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_block_svg_background(
+    content: &mut String,
+    svg_tree: &crate::parser::svg::SvgTree,
+    pdf_writer: &mut PdfWriter,
+    page_images: &mut Vec<ImageRef>,
+    page_shadings: &mut Vec<ShadingEntry>,
+    shading_counter: &mut usize,
+    page_ext_gstates: &mut Vec<(String, f32)>,
+    background_blend_mode: crate::style::computed::BlendMode,
+    box_x: f32,
+    box_y: f32,
+    box_w: f32,
+    box_h: f32,
+    border: &LayoutBorder,
+    padding_left: f32,
+    padding_right: f32,
+    padding_top: f32,
+    padding_bottom: f32,
+    border_radius: f32,
+    border_radii: [f32; 4],
+    border_radii_y: [f32; 4],
+    background_size: BackgroundSize,
+    background_position: BackgroundPosition,
+    background_repeat: BackgroundRepeat,
+    background_origin: BackgroundOrigin,
+    background_clip: BackgroundClip,
+    background_blur_radius: f32,
+) {
+    let (clip_x, clip_y, clip_w, clip_h) = background_clip_rect(
+        background_clip,
+        box_x,
+        box_y,
+        box_w,
+        box_h,
+        border.left.width,
+        border.right.width,
+        border.top.width,
+        border.bottom.width,
+        padding_left,
+        padding_right,
+        padding_top,
+        padding_bottom,
+    );
+    let (ref_x, ref_y, ref_w, ref_h) = match background_origin {
+        BackgroundOrigin::Border => (box_x, box_y, box_w, box_h),
+        BackgroundOrigin::Content => (
+            box_x + border.left.width + padding_left,
+            box_y + border.bottom.width + padding_bottom,
+            (box_w - border.horizontal_width() - padding_left - padding_right).max(0.0),
+            (box_h - border.vertical_width() - padding_top - padding_bottom).max(0.0),
+        ),
+        BackgroundOrigin::Padding => (
+            box_x + border.left.width,
+            box_y + border.bottom.width,
+            (box_w - border.horizontal_width()).max(0.0),
+            (box_h - border.vertical_width()).max(0.0),
+        ),
+    };
+    let bg_blended = background_blend_mode != crate::style::computed::BlendMode::Normal;
+    if bg_blended {
+        content.push_str("q\n");
+        begin_blend_mode(content, page_ext_gstates, background_blend_mode);
+    }
+    render_svg_background(
+        content,
+        svg_tree,
+        pdf_writer,
+        page_images,
+        page_shadings,
+        shading_counter,
+        Some(page_ext_gstates),
+        BackgroundPaintContext::new(
+            SvgViewportBox::new(ref_x, ref_y, ref_w, ref_h),
+            SvgViewportBox::new(clip_x, clip_y, clip_w, clip_h),
+            border_radius,
+            background_blur_radius,
+            background_size,
+            background_position,
+            background_repeat,
+        )
+        .with_border_radii(border_radii, border_radii_y),
+    );
+    if bg_blended {
+        content.push_str("Q\n");
+    }
 }
 
 fn collect_document_svg_defs(pages: &[Page]) -> crate::parser::svg::SvgDefs {
@@ -400,6 +491,7 @@ fn inset_shadow_padding_box(
 /// rounded-rect path when `border_radius` is set, otherwise a plain rectangle.
 /// The caller is responsible for the matching `Q`. Returns `true` if a clip was
 /// pushed (always, but kept for symmetry with conditional callers).
+#[cfg(test)]
 fn push_background_clip(content: &mut String, x: f32, y: f32, w: f32, h: f32, border_radius: f32) {
     push_background_clip_box(content, x, y, w, h, [border_radius; 4], [border_radius; 4]);
 }
@@ -6873,577 +6965,44 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             text_y -= metrics.descender + metrics.half_leading;
                         }
 
-                        // Render nested elements (tables, images, etc. inside flex items)
+                        // Render nested elements (tables, images, SVGs, blocks,
+                        // etc. inside flex/inline-block items) through the shared
+                        // block child renderer so variant support matches normal
+                        // container children.
                         if !cell.nested_elements.is_empty() {
-                            let nested_x = cell_x + cell.border.left.width * 0.5;
-                            let mut nested_y =
-                                text_area_top - cell_y_shift - cell.border.top.width * 0.5;
-                            for nested_elem in &cell.nested_elements {
-                                match nested_elem {
-                                    LayoutElement::TextBlock {
-                                        lines: n_lines,
-                                        margin_top: n_mt,
-                                        padding_top: n_pt,
-                                        padding_left: n_pl,
-                                        padding_bottom: n_pb,
-                                        background_color: n_bg,
-                                        block_width: n_bw,
-                                        block_height: n_bh,
-                                        border: n_border,
-                                        ..
-                                    } => {
-                                        nested_y -= n_mt;
-                                        let n_width = n_bw.unwrap_or(cell.width);
-                                        let text_h: f32 = n_lines.iter().map(|l| l.height).sum();
-                                        let content_total =
-                                            n_pt + text_h + n_pb + n_border.vertical_width();
-                                        // `block_height` is a padding-box height
-                                        // (TextBlock convention), so the painted
-                                        // border box is `block_height + border`.
-                                        // Without adding the border back, a
-                                        // border-box-sized child (e.g. an empty
-                                        // box with an explicit height) rendered
-                                        // short by its border thickness.
-                                        let total_h = n_bh.map_or(content_total, |h| {
-                                            (h + n_border.vertical_width()).max(content_total)
-                                        });
-
-                                        if let Some((r, g, b, a)) = n_bg {
-                                            if *a >= 1.0 {
-                                                let bg_inset_l = n_border.left.width;
-                                                let bg_inset_r = n_border.right.width;
-                                                let bg_inset_t = n_border.top.width;
-                                                let bg_inset_b = n_border.bottom.width;
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} rg\n{x} {y} {w} {h} re\nf\n",
-                                                    x = nested_x + bg_inset_l,
-                                                    y = nested_y - total_h + bg_inset_b,
-                                                    w = (n_width - bg_inset_l - bg_inset_r)
-                                                        .max(0.0),
-                                                    h = (total_h - bg_inset_t - bg_inset_b)
-                                                        .max(0.0),
-                                                ));
-                                            }
-                                        }
-
-                                        // Draw borders for nested TextBlock
-                                        if n_border.has_any() {
-                                            let x1 = nested_x;
-                                            let x2 = nested_x + n_width;
-                                            let y_top = nested_y;
-                                            let y_bottom = nested_y - total_h;
-                                            if n_border.top.width > 0.0 {
-                                                let (r, g, b) = n_border.top.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    n_border.top.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x2} {y_top} l S\n",
-                                                    n_border.top.width,
-                                                    y_top = y_top - n_border.top.width * 0.5
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                            if n_border.bottom.width > 0.0 {
-                                                let (r, g, b) = n_border.bottom.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    n_border.bottom.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{x1} {y_bottom} m {x2} {y_bottom} l S\n",
-                                                    n_border.bottom.width,
-                                                    y_bottom = y_bottom + n_border.bottom.width * 0.5
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                            if n_border.left.width > 0.0 {
-                                                let (r, g, b) = n_border.left.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    n_border.left.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x1} {y_bottom} l S\n",
-                                                    n_border.left.width,
-                                                    x1 = x1 + n_border.left.width * 0.5
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                            if n_border.right.width > 0.0 {
-                                                let (r, g, b) = n_border.right.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    n_border.right.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{x2} {y_top} m {x2} {y_bottom} l S\n",
-                                                    n_border.right.width,
-                                                    x2 = x2 - n_border.right.width * 0.5
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                        }
-
-                                        let mut ty = nested_y - n_border.top.width - n_pt;
-                                        for line in n_lines {
-                                            let m = line_box_metrics(line, custom_fonts);
-                                            ty -= m.half_leading + m.ascender;
-                                            let merged = merge_runs(&line.runs);
-                                            let mut lx = nested_x + n_border.left.width + n_pl;
-                                            for run in &merged {
-                                                let rw = render_run_text(
-                                                    &mut content,
-                                                    run,
-                                                    lx,
-                                                    ty,
-                                                    crate::layout::text::line_primary_font_size(
-                                                        &merged,
-                                                    ),
-                                                    custom_fonts,
-                                                    &prepared_custom_fonts,
-                                                    0.0,
-                                                    &mut pdf_writer,
-                                                    &mut page_images,
-                                                );
-                                                lx += rw;
-                                            }
-                                            ty -= m.descender + m.half_leading;
-                                        }
-                                        nested_y -= total_h;
-                                    }
-                                    LayoutElement::TableRow {
-                                        cells: t_cells,
-                                        col_widths,
-                                        border_collapse,
-                                        border_spacing,
-                                        offset_left,
-                                        ..
-                                    } => {
-                                        let spacing =
-                                            if *border_collapse == BorderCollapse::Collapse {
-                                                0.0
-                                            } else {
-                                                *border_spacing
-                                            };
-                                        let t_row_h = compute_row_height(t_cells);
-                                        let row_top = nested_y - spacing;
-                                        for (i, t_cell) in t_cells.iter().enumerate() {
-                                            let (tcx, tw) = table_cell_geometry(
-                                                col_widths,
-                                                i,
-                                                t_cell.colspan,
-                                                spacing,
-                                                nested_x + *offset_left,
-                                            );
-                                            if let Some((r, g, b, _)) = t_cell.background_color {
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} rg\n{x} {y} {w} {h} re\nf\n",
-                                                    x = tcx,
-                                                    y = row_top - t_row_h,
-                                                    w = tw,
-                                                    h = t_row_h,
-                                                ));
-                                            }
-                                            let mut ty = row_top - t_cell.padding_top;
-                                            for line in &t_cell.lines {
-                                                let m = line_box_metrics(line, custom_fonts);
-                                                ty -= m.half_leading + m.ascender;
-                                                let merged = merge_runs(&line.runs);
-                                                let mut lx = tcx + t_cell.padding_left;
-                                                for run in &merged {
-                                                    let rw = render_run_text(
-                                                        &mut content,
-                                                        run,
-                                                        lx,
-                                                        ty,
-                                                        crate::layout::text::line_primary_font_size(
-                                                            &merged,
-                                                        ),
-                                                        custom_fonts,
-                                                        &prepared_custom_fonts,
-                                                        0.0,
-                                                        &mut pdf_writer,
-                                                        &mut page_images,
-                                                    );
-                                                    lx += rw;
-                                                }
-                                                ty -= m.descender + m.half_leading;
-                                            }
-                                            // Draw cell borders
-                                            if t_cell.border.has_any() {
-                                                let x1 = tcx;
-                                                let x2 = tcx + tw;
-                                                let y_top = row_top;
-                                                let y_bottom = row_top - t_row_h;
-                                                if t_cell.border.top.width > 0.0 {
-                                                    let (r, g, b) = t_cell.border.top.color;
-                                                    let a = begin_border_alpha(
-                                                        &mut content,
-                                                        &mut page_ext_gstates,
-                                                        &mut bg_alpha_counter,
-                                                        t_cell.border.top.alpha,
-                                                    );
-                                                    content.push_str(&format!(
-                                                        "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x2} {y_top} l S\n",
-                                                        t_cell.border.top.width
-                                                    ));
-                                                    end_border_alpha(&mut content, a);
-                                                }
-                                                if t_cell.border.bottom.width > 0.0 {
-                                                    let (r, g, b) = t_cell.border.bottom.color;
-                                                    let a = begin_border_alpha(
-                                                        &mut content,
-                                                        &mut page_ext_gstates,
-                                                        &mut bg_alpha_counter,
-                                                        t_cell.border.bottom.alpha,
-                                                    );
-                                                    content.push_str(&format!(
-                                                        "{r} {g} {b} RG\n{} w\n{x1} {y_bottom} m {x2} {y_bottom} l S\n",
-                                                        t_cell.border.bottom.width
-                                                    ));
-                                                    end_border_alpha(&mut content, a);
-                                                }
-                                                if t_cell.border.left.width > 0.0 {
-                                                    let (r, g, b) = t_cell.border.left.color;
-                                                    let a = begin_border_alpha(
-                                                        &mut content,
-                                                        &mut page_ext_gstates,
-                                                        &mut bg_alpha_counter,
-                                                        t_cell.border.left.alpha,
-                                                    );
-                                                    content.push_str(&format!(
-                                                        "{r} {g} {b} RG\n{} w\n{x1} {y_top} m {x1} {y_bottom} l S\n",
-                                                        t_cell.border.left.width
-                                                    ));
-                                                    end_border_alpha(&mut content, a);
-                                                }
-                                                if t_cell.border.right.width > 0.0 {
-                                                    let (r, g, b) = t_cell.border.right.color;
-                                                    let a = begin_border_alpha(
-                                                        &mut content,
-                                                        &mut page_ext_gstates,
-                                                        &mut bg_alpha_counter,
-                                                        t_cell.border.right.alpha,
-                                                    );
-                                                    content.push_str(&format!(
-                                                        "{r} {g} {b} RG\n{} w\n{x2} {y_top} m {x2} {y_bottom} l S\n",
-                                                        t_cell.border.right.width
-                                                    ));
-                                                    end_border_alpha(&mut content, a);
-                                                }
-                                            }
-                                        }
-                                        nested_y -= t_row_h;
-                                    }
-                                    LayoutElement::Svg {
-                                        tree,
-                                        width: svg_w,
-                                        height: svg_h,
-                                        margin_top: svg_mt,
-                                        mix_blend_mode,
-                                        ..
-                                    } => {
-                                        nested_y -= svg_mt;
-                                        let svg_x = nested_x;
-                                        let svg_y = nested_y - svg_h;
-                                        content.push_str("q\n");
-                                        if *mix_blend_mode
-                                            != crate::style::computed::BlendMode::Normal
-                                        {
-                                            begin_blend_mode(
-                                                &mut content,
-                                                &mut page_ext_gstates,
-                                                *mix_blend_mode,
-                                            );
-                                        }
-                                        // Y-flip + position
-                                        content.push_str(&format!(
-                                            "1 0 0 -1 {svg_x} {} cm\n",
-                                            svg_y + svg_h
-                                        ));
-                                        // Apply viewBox scaling
-                                        if let Some(placement) =
-                                            crate::render::svg_geometry::compute_svg_placement(
-                                                tree,
-                                                crate::render::svg_geometry::SvgPlacementRequest::from_rect(
-                                                    0.0, 0.0, *svg_w, *svg_h,
-                                                    tree.preserve_aspect_ratio,
-                                                ),
-                                            )
-                                        {
-                                            content.push_str("q\n");
-                                            content.push_str(&placement.viewport.clip_path());
-                                            content.push_str(&format!(
-                                                "{sx} 0 0 {sy} {tx} {ty} cm\n",
-                                                sx = placement.scale_x,
-                                                sy = placement.scale_y,
-                                                tx = placement.translate_x,
-                                                ty = placement.translate_y,
-                                            ));
-                                        }
-                                        {
-                                            let mut image_sink = SvgPageImageSink {
-                                                pdf_writer: &mut pdf_writer,
-                                                page_images: &mut page_images,
-                                            };
-                                            let mut resources =
-                                                crate::render::svg_to_pdf::SvgPdfResources {
-                                                    shadings: &mut page_shadings,
-                                                    shading_counter: &mut shading_counter,
-                                                    ext_gstates: Some(&mut page_ext_gstates),
-                                                    image_sink: Some(&mut image_sink),
-                                                    custom_fonts: Some(custom_fonts),
-                                                    prepared_custom_fonts: Some(
-                                                        &prepared_custom_fonts,
-                                                    ),
-                                                };
-                                            crate::render::svg_to_pdf::render_svg_tree_with_resources(
-                                                tree,
-                                                &mut content,
-                                                &mut resources,
-                                            );
-                                        }
-                                        if tree.view_box.is_some() {
-                                            content.push_str("Q\n");
-                                        }
-                                        content.push_str("Q\n");
-                                        nested_y -= svg_h;
-                                    }
-                                    LayoutElement::Container {
-                                        children: cont_kids,
-                                        background_color: cont_bg,
-                                        border: cont_border,
-                                        padding_top: cont_pt,
-                                        padding_bottom: cont_pb,
-                                        padding_left: cont_pl,
-                                        padding_right: cont_pr,
-                                        margin_top: cont_mt,
-                                        block_width: cont_bw,
-                                        border_radius: cont_br,
-                                        overflow: cont_overflow,
-                                        ..
-                                    } => {
-                                        nested_y -= cont_mt;
-                                        let cont_w = cont_bw.unwrap_or(cell.width);
-                                        let cont_children_h: f32 =
-                                            collapsed_children_height(cont_kids);
-                                        let cont_h = cont_pt
-                                            + cont_children_h
-                                            + cont_pb
-                                            + cont_border.vertical_width();
-
-                                        // Draw container background
-                                        if let Some((r, g, b, a)) = cont_bg {
-                                            let needs_alpha = *a < 1.0;
-                                            if needs_alpha {
-                                                let gs_name = format!("GSba{bg_alpha_counter}");
-                                                bg_alpha_counter += 1;
-                                                page_ext_gstates.push((gs_name.clone(), *a));
-                                                content.push_str(&format!("/{gs_name} gs\n"));
-                                            }
-                                            content.push_str(&format!("{r} {g} {b} rg\n"));
-                                            if *cont_br > 0.0 {
-                                                content.push_str(&rounded_rect_path(
-                                                    nested_x,
-                                                    nested_y - cont_h,
-                                                    cont_w,
-                                                    cont_h,
-                                                    *cont_br,
-                                                ));
-                                                content.push_str("\nf\n");
-                                            } else {
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} rg\n{x} {y} {w} {h} re\nf\n",
-                                                    x = nested_x,
-                                                    y = nested_y - cont_h,
-                                                    w = cont_w,
-                                                    h = cont_h,
-                                                ));
-                                            }
-                                            if needs_alpha {
-                                                content.push_str("/GSDefault gs\n");
-                                            }
-                                        }
-
-                                        // Draw container borders
-                                        if cont_border.has_any() {
-                                            let bx1 = nested_x;
-                                            let bx2 = nested_x + cont_w;
-                                            let by1 = nested_y;
-                                            let by2 = nested_y - cont_h;
-                                            if cont_border.left.width > 0.0 {
-                                                let (r, g, b) = cont_border.left.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    cont_border.left.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{} {} m {} {} l S\n",
-                                                    cont_border.left.width,
-                                                    bx1 + cont_border.left.width * 0.5,
-                                                    by1,
-                                                    bx1 + cont_border.left.width * 0.5,
-                                                    by2
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                            if cont_border.right.width > 0.0 {
-                                                let (r, g, b) = cont_border.right.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    cont_border.right.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{} {} m {} {} l S\n",
-                                                    cont_border.right.width,
-                                                    bx2 - cont_border.right.width * 0.5,
-                                                    by1,
-                                                    bx2 - cont_border.right.width * 0.5,
-                                                    by2
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                            if cont_border.top.width > 0.0 {
-                                                let (r, g, b) = cont_border.top.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    cont_border.top.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{} {} m {} {} l S\n",
-                                                    cont_border.top.width,
-                                                    bx1,
-                                                    by1 - cont_border.top.width * 0.5,
-                                                    bx2,
-                                                    by1 - cont_border.top.width * 0.5
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                            if cont_border.bottom.width > 0.0 {
-                                                let (r, g, b) = cont_border.bottom.color;
-                                                let a = begin_border_alpha(
-                                                    &mut content,
-                                                    &mut page_ext_gstates,
-                                                    &mut bg_alpha_counter,
-                                                    cont_border.bottom.alpha,
-                                                );
-                                                content.push_str(&format!(
-                                                    "{r} {g} {b} RG\n{} w\n{} {} m {} {} l S\n",
-                                                    cont_border.bottom.width,
-                                                    bx1,
-                                                    by2 + cont_border.bottom.width * 0.5,
-                                                    bx2,
-                                                    by2 + cont_border.bottom.width * 0.5
-                                                ));
-                                                end_border_alpha(&mut content, a);
-                                            }
-                                        }
-
-                                        // Clip and render children at the padding
-                                        // box (border box inset by the borders).
-                                        let clip = cont_overflow.clips();
-                                        if clip {
-                                            content.push_str("q\n");
-                                            content.push_str(&overflow_clip_path(
-                                                nested_x,
-                                                nested_y - cont_h,
-                                                cont_w,
-                                                cont_h,
-                                                cont_border.left.width,
-                                                cont_border.right.width,
-                                                cont_border.top.width,
-                                                cont_border.bottom.width,
-                                                *cont_br,
-                                            ));
-                                            content.push_str("W n\n");
-                                        }
-                                        let inner_x = nested_x + cont_pl + cont_border.left.width;
-                                        let inner_w = (cont_w
-                                            - cont_pl
-                                            - cont_pr
-                                            - cont_border.horizontal_width())
-                                        .max(0.0);
-                                        let inner_y = nested_y - cont_pt - cont_border.top.width;
-                                        let mut abs_origins: HashMap<usize, (f32, f32)> =
-                                            HashMap::new();
-                                        render_container_children(
-                                            &mut content,
-                                            cont_kids,
-                                            inner_x,
-                                            inner_y,
-                                            inner_w,
-                                            custom_fonts,
-                                            &prepared_custom_fonts,
-                                            &mut page_ext_gstates,
-                                            &mut bg_alpha_counter,
-                                            &mut page_shadings,
-                                            &mut shading_counter,
-                                            &mut pdf_writer,
-                                            &mut page_images,
-                                            *cont_pl,
-                                            *cont_pt,
-                                            &mut abs_origins,
-                                            None,
-                                        );
-                                        if clip {
-                                            content.push_str("Q\n");
-                                        }
-                                        nested_y -= cont_h;
-                                    }
-                                    LayoutElement::FlexRow { .. } => {
-                                        // A flex item that is itself a flex
-                                        // container (a nested FlexRow) establishes
-                                        // an independent formatting context.
-                                        // Render it through the shared block-flow
-                                        // renderer at the cell's nested origin,
-                                        // reusing its FlexRow arm. Without this the
-                                        // nested row fell through to `_ => {}` and
-                                        // the entire item — its boxes AND its own
-                                        // background — was dropped (blank page).
-                                        let mut nested_abs_origins: HashMap<usize, (f32, f32)> =
-                                            HashMap::new();
-                                        render_container_children(
-                                            &mut content,
-                                            std::slice::from_ref(nested_elem),
-                                            nested_x,
-                                            nested_y,
-                                            cell.width,
-                                            custom_fonts,
-                                            &prepared_custom_fonts,
-                                            &mut page_ext_gstates,
-                                            &mut bg_alpha_counter,
-                                            &mut page_shadings,
-                                            &mut shading_counter,
-                                            &mut pdf_writer,
-                                            &mut page_images,
-                                            0.0,
-                                            0.0,
-                                            &mut nested_abs_origins,
-                                            None,
-                                        );
-                                        nested_y -= crate::layout::engine::estimate_element_height(
-                                            nested_elem,
-                                        );
-                                    }
-                                    _ => {}
-                                }
-                            }
+                            let text_h: f32 = cell.lines.iter().map(|l| l.height).sum();
+                            let nested_x = cell_x + cell.border.left.width + cell.padding_left;
+                            let nested_y = text_area_top
+                                - cell_y_shift
+                                - cell.border.top.width
+                                - cell.padding_top
+                                - text_h;
+                            let nested_w = (cell.width
+                                - cell.border.horizontal_width()
+                                - cell.padding_left
+                                - cell.padding_right)
+                                .max(0.0);
+                            let mut nested_abs_origins: HashMap<usize, (f32, f32)> = HashMap::new();
+                            render_container_children(
+                                &mut content,
+                                &cell.nested_elements,
+                                nested_x,
+                                nested_y,
+                                nested_w,
+                                custom_fonts,
+                                &prepared_custom_fonts,
+                                &mut page_ext_gstates,
+                                &mut bg_alpha_counter,
+                                &mut page_shadings,
+                                &mut shading_counter,
+                                &mut pdf_writer,
+                                &mut page_images,
+                                &mut annotations,
+                                cell.padding_left,
+                                cell.padding_top + text_h,
+                                &mut nested_abs_origins,
+                                None,
+                            );
                         }
 
                         // Restore cell transform
@@ -8773,6 +8332,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         &mut shading_counter,
                         &mut pdf_writer,
                         &mut page_images,
+                        &mut annotations,
                         *c_pl,
                         *c_pt,
                         &mut abs_origins,
@@ -11000,6 +10560,7 @@ fn render_container_children(
     shading_counter: &mut usize,
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
+    annotations: &mut Vec<LinkAnnotation>,
     abs_pad_left: f32,
     abs_pad_top: f32,
     abs_origins: &mut HashMap<usize, (f32, f32)>,
@@ -11112,6 +10673,7 @@ fn render_container_children(
                 shading_counter,
                 pdf_writer,
                 page_images,
+                annotations,
             );
             y = cursor_y;
         }
@@ -11134,6 +10696,11 @@ fn render_container_children(
                 background_conic_gradient: tb_bg_conic,
                 background_svg: tb_bg_svg,
                 background_blur_radius: tb_bg_blur,
+                background_size: tb_bg_size,
+                background_position: tb_bg_position,
+                background_repeat: tb_bg_repeat,
+                background_origin: tb_bg_origin,
+                background_clip: tb_bg_clip,
                 text_align,
                 float: tb_float,
                 clear: tb_clear,
@@ -11148,6 +10715,8 @@ fn render_container_children(
                 clip_rect: tb_clip_rect,
                 transform: tb_transform,
                 transform_origin: tb_transform_origin,
+                border_radii: tb_radii,
+                border_radii_y: tb_radii_y,
                 text_indent: tb_text_indent,
                 letter_spacing: tb_letter_spacing,
                 word_spacing: tb_word_spacing,
@@ -11249,6 +10818,37 @@ fn render_container_children(
                                 content.push_str("/GSDefault gs\n");
                             }
                         }
+                    }
+                    if let Some(svg_tree) = tb_bg_svg {
+                        let bg_blend_mode = tb_bg_blend.background_layer(0);
+                        render_block_svg_background(
+                            content,
+                            svg_tree,
+                            pdf_writer,
+                            page_images,
+                            page_shadings,
+                            shading_counter,
+                            page_ext_gstates,
+                            bg_blend_mode,
+                            abs_x,
+                            abs_y - abs_h,
+                            abs_w,
+                            abs_h,
+                            border,
+                            *padding_left,
+                            *padding_right,
+                            *padding_top,
+                            *padding_bottom,
+                            *tb_border_radius,
+                            *tb_radii,
+                            *tb_radii_y,
+                            *tb_bg_size,
+                            *tb_bg_position,
+                            *tb_bg_repeat,
+                            *tb_bg_origin,
+                            *tb_bg_clip,
+                            *tb_bg_blur,
+                        );
                     }
                     // Render text for absolute-positioned children
                     let mut text_y_abs = abs_y - padding_top;
@@ -11565,6 +11165,37 @@ fn render_container_children(
                     if bg_blended {
                         content.push_str("Q\n");
                     }
+                }
+
+                if let Some(svg_tree) = tb_bg_svg {
+                    render_block_svg_background(
+                        content,
+                        svg_tree,
+                        pdf_writer,
+                        page_images,
+                        page_shadings,
+                        shading_counter,
+                        page_ext_gstates,
+                        bg_blend_mode,
+                        render_x,
+                        render_y - vertical_column_paint_h,
+                        render_w,
+                        vertical_column_paint_h,
+                        border,
+                        *padding_left,
+                        *padding_right,
+                        *padding_top,
+                        *padding_bottom,
+                        *tb_border_radius,
+                        *tb_radii,
+                        *tb_radii_y,
+                        *tb_bg_size,
+                        *tb_bg_position,
+                        *tb_bg_repeat,
+                        *tb_bg_origin,
+                        *tb_bg_clip,
+                        *tb_bg_blur,
+                    );
                 }
 
                 // Draw child borders. CSS borders paint INSIDE the border box, so
@@ -12938,6 +12569,7 @@ fn render_container_children(
                         shading_counter,
                         pdf_writer,
                         page_images,
+                        annotations,
                         *padding_left,
                         *padding_top,
                         abs_origins,
@@ -13220,9 +12852,21 @@ fn render_container_children(
                 background_color,
                 border,
                 border_radius: flex_border_radius,
+                box_shadow,
+                background_gradient,
+                background_radial_gradient,
+                background_conic_gradient,
+                background_svg,
+                background_blur_radius,
+                background_size: flex_bg_size,
+                background_position: flex_bg_pos,
+                background_repeat: flex_bg_repeat,
+                background_origin: flex_bg_origin,
                 container_width,
                 padding_top: flex_pt,
                 padding_left: flex_pl,
+                padding_right: flex_pr,
+                padding_bottom: flex_pb,
                 row_height: flex_row_h,
                 align_items,
                 positioned_depth: flex_positioned_depth,
@@ -13250,6 +12894,22 @@ fn render_container_children(
                 // flex box painted its background across the whole content width.
                 let flex_w = *container_width;
 
+                render_box_shadows(
+                    content,
+                    box_shadow,
+                    x,
+                    y - row_h,
+                    flex_w,
+                    row_h,
+                    *flex_border_radius,
+                    [*flex_border_radius; 4],
+                    [*flex_border_radius; 4],
+                    page_ext_gstates,
+                    bg_alpha_counter,
+                    pdf_writer,
+                    page_images,
+                );
+
                 // Draw flex row background
                 if let Some((r, g, b, a)) = background_color {
                     let needs_alpha = *a < 1.0;
@@ -13269,6 +12929,176 @@ fn render_container_children(
                     if needs_alpha {
                         content.push_str("/GSDefault gs\n");
                     }
+                }
+
+                if let Some(gradient) = background_gradient {
+                    let gradient = linear_with_background_layer(
+                        gradient,
+                        background_layer_box(*flex_bg_size, *flex_bg_pos, *flex_bg_repeat),
+                    );
+                    content.push_str("q\n");
+                    if *flex_border_radius > 0.0 {
+                        content.push_str(&rounded_rect_path(
+                            x,
+                            y - row_h,
+                            flex_w,
+                            row_h,
+                            *flex_border_radius,
+                        ));
+                        content.push_str("W n\n");
+                    } else {
+                        content.push_str(&format!("{x} {} {flex_w} {row_h} re W n\n", y - row_h));
+                    }
+                    render_linear_gradient(
+                        content,
+                        &gradient,
+                        x,
+                        y - row_h,
+                        flex_w,
+                        row_h,
+                        page_shadings,
+                        shading_counter,
+                        pdf_writer,
+                        page_images,
+                    );
+                    content.push_str("Q\n");
+                }
+
+                if let Some(gradient) = background_radial_gradient {
+                    let gradient = radial_with_background_layer(
+                        gradient,
+                        background_layer_box(*flex_bg_size, *flex_bg_pos, *flex_bg_repeat),
+                    );
+                    if *flex_border_radius > 0.0 {
+                        content.push_str("q\n");
+                        content.push_str(&rounded_rect_path(
+                            x,
+                            y - row_h,
+                            flex_w,
+                            row_h,
+                            *flex_border_radius,
+                        ));
+                        content.push_str("W n\n");
+                    }
+                    render_radial_gradient(
+                        content,
+                        &gradient,
+                        x,
+                        y - row_h,
+                        flex_w,
+                        row_h,
+                        page_shadings,
+                        shading_counter,
+                        pdf_writer,
+                        page_images,
+                    );
+                    if *flex_border_radius > 0.0 {
+                        content.push_str("Q\n");
+                    }
+                }
+
+                if let Some(gradient) = background_conic_gradient {
+                    let gradient = conic_with_background_layer(
+                        gradient,
+                        background_layer_box(*flex_bg_size, *flex_bg_pos, *flex_bg_repeat),
+                    );
+                    if *flex_border_radius > 0.0 {
+                        content.push_str("q\n");
+                        content.push_str(&rounded_rect_path(
+                            x,
+                            y - row_h,
+                            flex_w,
+                            row_h,
+                            *flex_border_radius,
+                        ));
+                        content.push_str("W n\n");
+                    }
+                    render_conic_gradient(
+                        content,
+                        &gradient,
+                        x,
+                        y - row_h,
+                        flex_w,
+                        row_h,
+                        pdf_writer,
+                        page_images,
+                    );
+                    if *flex_border_radius > 0.0 {
+                        content.push_str("Q\n");
+                    }
+                }
+
+                let flex_inset_shadow = inset_shadow_padding_box(
+                    x,
+                    y - row_h,
+                    flex_w,
+                    row_h,
+                    [
+                        border.left.width,
+                        border.right.width,
+                        border.top.width,
+                        border.bottom.width,
+                    ],
+                    [*flex_border_radius; 4],
+                    [*flex_border_radius; 4],
+                );
+                render_box_shadows_inset(
+                    content,
+                    box_shadow,
+                    flex_inset_shadow.x,
+                    flex_inset_shadow.y,
+                    flex_inset_shadow.w,
+                    flex_inset_shadow.h,
+                    flex_inset_shadow.radius,
+                    flex_inset_shadow.rx,
+                    flex_inset_shadow.ry,
+                    page_ext_gstates,
+                    bg_alpha_counter,
+                    pdf_writer,
+                    page_images,
+                );
+
+                if let Some(svg_tree) = background_svg {
+                    let bg_x = x;
+                    let bg_y = y - row_h;
+                    let (ref_x, ref_y, ref_w, ref_h) = match flex_bg_origin {
+                        BackgroundOrigin::Border => (
+                            bg_x - border.left.width,
+                            bg_y - border.bottom.width,
+                            flex_w + border.left.width + border.right.width,
+                            row_h + border.top.width + border.bottom.width,
+                        ),
+                        BackgroundOrigin::Content => (
+                            bg_x + flex_pl,
+                            bg_y + flex_pt,
+                            (flex_w - flex_pl - flex_pr).max(0.0),
+                            (row_h - flex_pt - flex_pb).max(0.0),
+                        ),
+                        BackgroundOrigin::Padding => (bg_x, bg_y, flex_w, row_h),
+                    };
+                    render_svg_background(
+                        content,
+                        svg_tree,
+                        pdf_writer,
+                        page_images,
+                        page_shadings,
+                        shading_counter,
+                        Some(&mut *page_ext_gstates),
+                        BackgroundPaintContext::new(
+                            SvgViewportBox::new(ref_x, ref_y, ref_w, ref_h),
+                            SvgViewportBox::new(
+                                bg_x - border.left.width,
+                                bg_y - border.bottom.width,
+                                flex_w + border.left.width + border.right.width,
+                                row_h + border.top.width + border.bottom.width,
+                            ),
+                            *flex_border_radius,
+                            *background_blur_radius,
+                            *flex_bg_size,
+                            *flex_bg_pos,
+                            *flex_bg_repeat,
+                        ),
+                    );
                 }
 
                 // Draw the flex container's own border. Mirrors the top-level
@@ -13726,6 +13556,7 @@ fn render_container_children(
                             shading_counter,
                             pdf_writer,
                             page_images,
+                            annotations,
                             0.0, // flex cells don't have separate padding for abs children
                             0.0,
                             &mut abs_origins,
@@ -13784,6 +13615,7 @@ fn render_container_children(
             shading_counter,
             pdf_writer,
             page_images,
+            annotations,
         );
     }
 }
@@ -13803,6 +13635,7 @@ fn render_nested_table_rows(
     shading_counter: &mut usize,
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
+    annotations: &mut Vec<LinkAnnotation>,
 ) {
     for element in elements {
         match element {
@@ -13841,8 +13674,9 @@ fn render_nested_table_rows(
                         0.0
                     };
 
+                let baseline_shifts = row_baseline_shifts(cells, custom_fonts);
                 let mut col_pos: usize = 0;
-                for cell in cells {
+                for (cell_idx, cell) in cells.iter().enumerate() {
                     if cell.rowspan == 0 {
                         col_pos += cell.colspan;
                         continue;
@@ -13985,81 +13819,30 @@ fn render_nested_table_rows(
                         }
                     }
 
-                    // Compute cell content top (simplified vertical alignment)
-                    let content_top = row_y - cell.padding_top;
-                    let cell_inner_w = cell_w - cell.padding_left - cell.padding_right;
-                    let mut text_y = content_top;
-                    for line in &cell.lines {
-                        let metrics = line_box_metrics(line, custom_fonts);
-                        text_y -= metrics.half_leading + metrics.ascender;
-                        let text_content: String =
-                            line.runs.iter().map(|run| run.text.as_str()).collect();
-                        if text_content.is_empty() {
-                            continue;
-                        }
-                        let merged = merge_runs(&line.runs);
-                        let line_width: f32 = merged
-                            .iter()
-                            .map(|run| estimate_run_width_with_fonts(run, custom_fonts))
-                            .sum();
-                        let text_x = match cell.text_align {
-                            TextAlign::Right => {
-                                cell_x + cell.padding_left + (cell_inner_w - line_width).max(0.0)
-                            }
-                            TextAlign::Center => {
-                                cell_x
-                                    + cell.padding_left
-                                    + ((cell_inner_w - line_width) / 2.0).max(0.0)
-                            }
-                            _ => cell_x + cell.padding_left,
-                        };
-                        let mut lx = text_x;
-                        for run in &merged {
-                            if run.text.is_empty() {
-                                continue;
-                            }
-                            // Inline background (for status badges etc.)
-                            if let Some((br, bg_c, bb, _ba)) = run.background_color {
-                                let (pad_h, pad_v) = run.padding;
-                                let run_w = estimate_run_width_with_fonts(run, custom_fonts);
-                                let rx = lx - pad_h;
-                                let rw2 = run_w + pad_h * 2.0;
-                                let (ry, rh) = inline_background_y_and_height(
-                                    run,
-                                    text_y,
-                                    pad_v,
-                                    custom_fonts,
-                                );
-                                content.push_str(&format!("{br} {bg_c} {bb} rg\n"));
-                                if run.border_radius > 0.0 {
-                                    content.push_str(&rounded_rect_path(
-                                        rx,
-                                        ry,
-                                        rw2,
-                                        rh,
-                                        run.border_radius,
-                                    ));
-                                    content.push_str("\nf\n");
-                                } else {
-                                    content.push_str(&format!("{rx} {ry} {rw2} {rh} re\nf\n"));
-                                }
-                            }
-                            let rw = render_run_text(
-                                content,
-                                run,
-                                lx,
-                                text_y,
-                                crate::layout::text::line_primary_font_size(&merged),
-                                custom_fonts,
-                                prepared_custom_fonts,
-                                0.0,
-                                pdf_writer,
-                                page_images,
-                            );
-                            lx += rw;
-                        }
-                        text_y -= metrics.descender + metrics.half_leading;
-                    }
+                    let mut page_context = PageRenderContext::new(
+                        pdf_writer,
+                        page_images,
+                        custom_fonts,
+                        prepared_custom_fonts,
+                        page_shadings,
+                        shading_counter,
+                        page_ext_gstates,
+                        bg_alpha_counter,
+                        annotations,
+                    );
+                    render_cell_content(
+                        content,
+                        cell,
+                        TableCellRenderBox::new(
+                            cell_x,
+                            row_y,
+                            cell_w,
+                            row_height,
+                            NestedLayoutFrame::new(cell_x, row_y, origin_x, cursor_y, cell_w),
+                        )
+                        .with_baseline_shift(baseline_shifts.get(cell_idx).copied().unwrap_or(0.0)),
+                        &mut page_context,
+                    );
 
                     col_pos += cell.colspan;
                 }
@@ -14326,6 +14109,7 @@ fn render_nested_table_rows(
                             shading_counter,
                             pdf_writer,
                             page_images,
+                            annotations,
                             cell.padding_left,
                             cell.padding_top,
                             &mut nested_abs,
@@ -23606,7 +23390,6 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
-
         // The PDF content stream should contain the octal escape \227
         assert!(
             pdf_str.contains("\\227"),

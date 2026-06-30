@@ -59,6 +59,7 @@ impl BackgroundPaintContext {
         }
     }
 
+    #[cfg(test)]
     pub fn with_blur_canvas_box(mut self, blur_canvas_box: Option<SvgViewportBox>) -> Self {
         self.blur_canvas_box = blur_canvas_box;
         self

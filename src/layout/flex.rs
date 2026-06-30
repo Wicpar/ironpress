@@ -15,6 +15,7 @@ use super::engine::{
     has_background_paint, measure_runs_width, pseudo_is_block_like, push_block_pseudo,
     resolve_padding_box_height,
 };
+use super::inline::element_has_css_display_block;
 use super::paginate::estimate_element_height;
 use super::text::{
     FlexTextRunCollector, TextWrapOptions, estimate_word_width, resolve_style_font_family,
@@ -26,11 +27,11 @@ use super::text::{
 /// encodes its position inside the flex row/column. The container itself emits
 /// a wrapper TextBlock for its background/border first, then the items.
 #[allow(clippy::too_many_arguments)]
-/// Max-content border-box width of any `<table>` laid out inside a flex item's
-/// flattened content (recursing through the `Container` the item flattens to).
-/// Used to shrink-wrap a `flex: 0 0 auto` item around a nested table's intrinsic
-/// grid (Chrome max-content-sizes such items). Returns 0 when there is no table.
-fn flex_probe_table_extent(elements: &[LayoutElement]) -> f32 {
+/// Max-content border-box width of layout-capable descendants inside a flex
+/// item's flattened content. Used to shrink-wrap a `flex: 0 0 auto` item around
+/// nested tables and replaced descendants instead of keeping the equal-share
+/// fallback and then constraining those children down to that accidental width.
+fn flex_probe_outer_extent(elements: &[LayoutElement]) -> f32 {
     let mut max_w = 0.0f32;
     for e in elements {
         match e {
@@ -44,8 +45,30 @@ fn flex_probe_table_extent(elements: &[LayoutElement]) -> f32 {
                 let w = *offset_left + crate::layout::paginate::table_row_content_width(e) + outer;
                 max_w = max_w.max(w);
             }
-            LayoutElement::Container { children, .. } => {
-                max_w = max_w.max(flex_probe_table_extent(children));
+            LayoutElement::Image { width, .. } | LayoutElement::Svg { width, .. } => {
+                max_w = max_w.max(*width);
+            }
+            LayoutElement::TextBlock {
+                block_width: Some(width),
+                ..
+            } => {
+                max_w = max_w.max(*width);
+            }
+            LayoutElement::Container {
+                children,
+                padding_left,
+                padding_right,
+                border,
+                block_width,
+                ..
+            } => {
+                let children_w = flex_probe_outer_extent(children);
+                let content_w = if children_w > 0.0 {
+                    children_w + padding_left + padding_right + border.horizontal_width()
+                } else {
+                    block_width.unwrap_or(0.0)
+                };
+                max_w = max_w.max(content_w);
             }
             _ => {}
         }
@@ -1465,19 +1488,27 @@ pub(crate) fn layout_flex_container(
             .max(0.0)
         };
 
-        // Check if this flex item has block-level children that need full layout
-        let item_has_block_children = child_el.children.iter().any(|c| {
-            matches!(c, DomNode::Element(e) if e.tag.is_block() && !collects_as_inline_text(e.tag))
-        });
+        // Check if this flex item or any of its descendants must use the normal
+        // block/replaced layout path instead of the text-only collector.
+        let item_has_block_children =
+            matches!(child_el.tag, HtmlTag::Img | HtmlTag::Svg | HtmlTag::Table)
+                || child_el.children.iter().any(|c| {
+                    matches!(c, DomNode::Element(e) if
+                    (e.tag.is_block() && !collects_as_inline_text(e.tag))
+                        || matches!(e.tag, HtmlTag::Img | HtmlTag::Svg | HtmlTag::Table)
+                        || element_has_css_display_block(
+                            e,
+                            &child_style,
+                            env.rules,
+                            &child_ancestors,
+                        ))
+                });
 
-        // flex: 0 0 auto wrapping a nested <table>: Chrome sizes the item to the
-        // table's max-content (intrinsic grid), not the equal-share fallback.
-        // Probe the table's intrinsic border-box width with a throwaway layout at
-        // the full container width (a table doesn't stretch, so it settles at its
-        // grid width), then hug it — only ever shrinking below the equal-share
-        // width, never growing. With grow:0 the base width is also the final
-        // width, so shrinking it here is the resolved size. Guarded to nested-
-        // table flex items to keep the blast radius minimal.
+        // flex: 0 0 auto wrapping a nested layout-capable child (table, image,
+        // SVG): Chrome sizes the item to that child's max-content contribution,
+        // not the equal-share fallback. Probe the child's flattened border-box
+        // width with a throwaway layout at the full container width, then hug it.
+        // With grow:0 the base width is also the final width.
         let mut hugged_item_width: Option<f32> = None;
         let (child_w_for_flex, child_w_for_layout) = if item_has_block_children
             && !has_explicit_width
@@ -1507,23 +1538,16 @@ pub(crate) fn layout_flex_container(
                 &[],
                 env,
             );
-            let table_w = flex_probe_table_extent(&probe_buf);
-            if table_w > 0.0 {
-                let pad_border = child_style.padding.left
-                    + child_style.padding.right
-                    + child_style.border.horizontal_width();
-                let hugged = (table_w + pad_border).max(item_box_floor);
-                if hugged < child_w_for_flex {
-                    hugged_item_width = Some(hugged);
-                    let inner = (hugged
-                        - child_style.padding.left
-                        - child_style.padding.right
-                        - child_style.border.horizontal_width())
-                    .max(0.0);
-                    (hugged, inner)
-                } else {
-                    (child_w_for_flex, child_w_for_layout)
-                }
+            let probed_w = flex_probe_outer_extent(&probe_buf);
+            if probed_w > 0.0 {
+                let hugged = probed_w.max(item_box_floor);
+                hugged_item_width = Some(hugged);
+                let inner = (hugged
+                    - child_style.padding.left
+                    - child_style.padding.right
+                    - child_style.border.horizontal_width())
+                .max(0.0);
+                (hugged, inner)
             } else {
                 (child_w_for_flex, child_w_for_layout)
             }

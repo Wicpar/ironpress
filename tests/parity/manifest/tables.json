@@ -1429,7 +1429,7 @@
     "description": "An inline SVG child paints in normal flow and should also paint when nested directly inside a table cell; catches table-cell child render traversal dropping SVG layout elements.",
     "file": "cases/tables/tables-cell-inline-svg-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"
@@ -1446,7 +1446,7 @@
     "description": "A nested table paints in normal flow and should also paint when nested directly inside a table cell; catches table-cell traversal dropping nested table rows.",
     "file": "cases/tables/tables-cell-nested-table-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"
@@ -1463,7 +1463,7 @@
     "description": "A linear-gradient block paints in normal flow and should also paint when nested directly inside a table cell; catches the table-cell nested renderer dropping gradient backgrounds.",
     "file": "cases/tables/tables-cell-gradient-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"
@@ -1480,7 +1480,7 @@
     "description": "A box-shadow block paints in normal flow and should also paint when nested directly inside a table cell; catches the table-cell nested renderer dropping shadow decoration.",
     "file": "cases/tables/tables-cell-box-shadow-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"
@@ -1497,7 +1497,7 @@
     "description": "A block ::before generated child paints in normal flow and should also paint when its originating element is nested directly inside a table cell.",
     "file": "cases/tables/tables-cell-generated-before-child.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-block-flow"
@@ -1514,9 +1514,84 @@
     "description": "An absolutely positioned descendant paints inside a normal positioned block and should also paint when that block is nested directly inside a table cell.",
     "file": "cases/tables/tables-cell-absolute-descendant.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-tall-img-sibling-content",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "tall-img-sibling-content",
+    "description": "A tall aspect-ratio image with max-height in one table cell must size the row without dropping nested-table and SVG-img content in the sibling cell.",
+    "file": "cases/tables/tables-cell-tall-img-sibling-content.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "sanitize": true,
+    "floor_pct": 2.5,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-image-render",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-nested-table-row-height",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "nested-table-row-height",
+    "description": "A nested table inside a table cell contributes to the outer row height and paints at the same size as in normal block layout.",
+    "file": "cases/tables/tables-cell-nested-table-row-height.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-img-width-auto-intrinsic",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "img-width-auto-intrinsic",
+    "description": "An img with explicit width and height:auto inside a table cell uses intrinsic aspect-ratio sizing and contributes the correct row height.",
+    "file": "cases/tables/tables-cell-img-width-auto-intrinsic.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-image-render",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-deep-img-descendant",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "deep-img-descendant",
+    "description": "A table cell containing nested block wrappers around an img lays out and paints the deep replaced descendant without flattening it away.",
+    "file": "cases/tables/tables-cell-deep-img-descendant.html",
+    "kind": "feature",
+    "expected_support": "implemented",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-image-render",
       "probe-block-flow"
     ],
     "weight": 1,
