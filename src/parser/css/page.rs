@@ -1,13 +1,15 @@
 use super::{
-    CssValue, FontFaceRule, MarginBox, MarginBoxPosition, MarginContentToken, PageRule,
+    CssRule, CssValue, FontFaceRule, MarginBox, MarginBoxPosition, MarginContentToken, PageRule,
     PageSelector, extract_url_path,
     model::{FontFaceSource, FootnoteAreaStyle, UnicodeRange},
-    preprocess_media_queries,
+    parse_inline_style, preprocess_media_queries,
 };
 
 /// Parse a CSS stylesheet and extract `@page` rules.
 pub fn parse_page_rules(css: &str) -> Vec<PageRule> {
     let preprocessed = preprocess_media_queries(css);
+    CssRule::begin_counter_style_stylesheet_scan();
+    CssRule::register_counter_style_rules(extract_counter_style_rules(&preprocessed));
     let mut rules = extract_page_rules(&preprocessed);
     rules.extend(
         extract_footnote_area_rules(&preprocessed)
@@ -21,6 +23,68 @@ pub fn parse_page_rules(css: &str) -> Vec<PageRule> {
             }),
     );
     rules
+}
+
+fn extract_counter_style_rules(css: &str) -> Vec<CssRule> {
+    let mut rules = Vec::new();
+    let mut remaining = css;
+
+    while let Some(at_pos) = remaining.to_ascii_lowercase().find("@counter-style") {
+        let Some(after_at) = remaining.get(at_pos + "@counter-style".len()..) else {
+            break;
+        };
+        let Some(brace_pos) = after_at.find('{') else {
+            break;
+        };
+        let name = after_at[..brace_pos].trim();
+        let Some(after_brace) = after_at.get(brace_pos + 1..) else {
+            break;
+        };
+        let Some(close_pos) = matching_rule_close(after_brace) else {
+            break;
+        };
+        let declarations = parse_inline_style(&after_brace[..close_pos]);
+        if !name.is_empty() && !declarations.properties.is_empty() {
+            rules.push(CssRule {
+                selector: format!("@counter-style {}", name.to_ascii_lowercase()),
+                declarations,
+                pseudo_element: None,
+            });
+        }
+        remaining = &after_brace[close_pos + 1..];
+    }
+
+    rules
+}
+
+fn matching_rule_close(body: &str) -> Option<usize> {
+    let mut depth = 1usize;
+    let mut quote = None;
+    let mut escape = false;
+    for (index, ch) in body.char_indices() {
+        if escape {
+            escape = false;
+            continue;
+        }
+        if quote.is_some() && ch == '\\' {
+            escape = true;
+            continue;
+        }
+        match (quote, ch) {
+            (Some(q), c) if c == q => quote = None,
+            (Some(_), _) => {}
+            (None, '"' | '\'') => quote = Some(ch),
+            (None, '{') => depth += 1,
+            (None, '}') => {
+                depth -= 1;
+                if depth == 0 {
+                    return Some(index);
+                }
+            }
+            _ => {}
+        }
+    }
+    None
 }
 
 /// Parse a CSS stylesheet and extract `@font-face` rules.

@@ -4444,7 +4444,7 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     let content_top = text_y;
                     let content_right = padding_box_x + padding_box_w - padding_right;
                     let content_left = padding_box_x + padding_left;
-                    if vertical {
+                    let vertical_transform = if vertical {
                         // Content-box edges in PDF (y-up) coordinates. `text_y`
                         // currently sits at the content-area top (block_y − top
                         // border − top padding) before any line advance.
@@ -4462,7 +4462,10 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         let f = content_top + content_left;
                         content.push_str("q\n");
                         content.push_str(&format!("0 -1 1 0 {e} {f} cm\n"));
-                    }
+                        Some((e, f))
+                    } else {
+                        None
+                    };
 
                     let line_count = lines.len();
                     for (line_idx, line) in lines.iter().enumerate() {
@@ -5123,19 +5126,37 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                             }
                         }
                         if !blurred_line && !text_clip_line_painted {
-                            render_line_text(
-                                &mut content,
-                                &merged,
-                                text_x,
-                                text_y,
-                                custom_fonts,
-                                &prepared_custom_fonts,
-                                total_ws,
-                                heading_level.is_none(),
-                                line_text_top(line, custom_fonts),
-                                &mut pdf_writer,
-                                &mut page_images,
-                            );
+                            if let Some((vertical_e, vertical_f)) = vertical_transform {
+                                render_vertical_mixed_line_text(
+                                    &mut content,
+                                    &merged,
+                                    text_x,
+                                    text_y,
+                                    custom_fonts,
+                                    &prepared_custom_fonts,
+                                    total_ws,
+                                    heading_level.is_none(),
+                                    line_text_top(line, custom_fonts),
+                                    vertical_e,
+                                    vertical_f,
+                                    &mut pdf_writer,
+                                    &mut page_images,
+                                );
+                            } else {
+                                render_line_text(
+                                    &mut content,
+                                    &merged,
+                                    text_x,
+                                    text_y,
+                                    custom_fonts,
+                                    &prepared_custom_fonts,
+                                    total_ws,
+                                    heading_level.is_none(),
+                                    line_text_top(line, custom_fonts),
+                                    &mut pdf_writer,
+                                    &mut page_images,
+                                );
+                            }
                         }
 
                         // Reset letter spacing after line
@@ -9773,6 +9794,20 @@ fn text_emphasis_baseline_shift(run: &TextRun) -> f32 {
     }
 }
 
+fn oversized_numeric_marker_baseline_lift(run: &TextRun) -> f32 {
+    let marker = run.text.trim();
+    if run.font_size >= 24.0
+        && !marker.is_empty()
+        && marker
+            .chars()
+            .all(|ch| ch.is_ascii_digit() || matches!(ch, '.' | ')' | '('))
+    {
+        0.25
+    } else {
+        0.0
+    }
+}
+
 fn generated_cross_reference_decoration(run: &TextRun) -> bool {
     run.underline
         && run.font_size >= 14.0
@@ -11549,7 +11584,7 @@ fn render_container_children(
                     tb_writing_mode,
                     crate::style::computed::WritingMode::VerticalRl
                 ) && !upright_vertical;
-                if vertical {
+                let vertical_transform = if vertical {
                     let padding_box_x = render_x + border.left.width;
                     let padding_box_w =
                         (render_w - border.left.width - border.right.width).max(0.0);
@@ -11565,7 +11600,10 @@ fn render_container_children(
                     let f = content_top + content_left;
                     content.push_str("q\n");
                     content.push_str(&format!("0 -1 1 0 {e} {f} cm\n"));
-                }
+                    Some((e, f))
+                } else {
+                    None
+                };
                 let mut tb_first_line = true;
                 for line in lines {
                     let metrics = line_box_metrics(line, custom_fonts);
@@ -11729,7 +11767,25 @@ fn render_container_children(
                                 pdf_writer,
                                 page_images,
                             ) {
-                            visual_width.unwrap_or_else(|| estimate_run_width_with_fonts(run, custom_fonts))
+                            visual_width
+                                .unwrap_or_else(|| estimate_run_width_with_fonts(run, custom_fonts))
+                        } else if let Some((vertical_e, vertical_f)) = vertical_transform
+                            && vertical_mixed_upright_run(run)
+                        {
+                            render_vertical_mixed_upright_run(
+                                content,
+                                run,
+                                lx,
+                                run_y,
+                                crate::layout::text::line_primary_font_size(&merged),
+                                custom_fonts,
+                                prepared_custom_fonts,
+                                *tb_word_spacing,
+                                vertical_e,
+                                vertical_f,
+                                pdf_writer,
+                                page_images,
+                            )
                         } else {
                             render_run_text(
                                 content,
@@ -14408,6 +14464,7 @@ fn render_run_text_with_faux_bold(
     let text_y = text_y
         + run_vertical_align_shift(run, parent_font_size)
         + text_emphasis_baseline_shift(run)
+        + oversized_numeric_marker_baseline_lift(run)
         + quote_glyph_baseline_lift(run)
         + synth_weight_baseline_shift
         + synth_small_caps_baseline_shift
@@ -15002,6 +15059,120 @@ fn render_line_text(
             );
             x += visual_width.unwrap_or(run_width);
         }
+    }
+}
+
+fn vertical_mixed_upright_run(run: &TextRun) -> bool {
+    run.inline_box.is_none()
+        && !run.text.is_empty()
+        && run.text.chars().any(is_cjk_codepoint)
+        && run
+            .text
+            .chars()
+            .all(|ch| ch.is_whitespace() || is_cjk_codepoint(ch))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_vertical_mixed_upright_run(
+    content: &mut String,
+    run: &TextRun,
+    x: f32,
+    y: f32,
+    parent_font_size: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+    prepared_custom_fonts: &PreparedCustomFonts,
+    word_spacing: f32,
+    vertical_e: f32,
+    vertical_f: f32,
+    pdf_writer: &mut PdfWriter,
+    page_images: &mut Vec<ImageRef>,
+) -> f32 {
+    let run_width = estimate_run_width_with_fonts(run, custom_fonts);
+    let page_x = y + vertical_e - (run.font_size - run_width).max(0.0) * 0.5;
+    let page_y = vertical_f - x - run.font_size * 0.75;
+    content.push_str("q\n");
+    content.push_str(&format!("0 1 -1 0 {vertical_f} {} cm\n", -vertical_e));
+    let width = render_run_text(
+        content,
+        run,
+        page_x,
+        page_y,
+        parent_font_size,
+        custom_fonts,
+        prepared_custom_fonts,
+        word_spacing,
+        pdf_writer,
+        page_images,
+    );
+    content.push_str("Q\n");
+    width
+}
+
+#[allow(clippy::too_many_arguments)]
+fn render_vertical_mixed_line_text(
+    content: &mut String,
+    runs: &[TextRun],
+    start_x: f32,
+    y: f32,
+    custom_fonts: &HashMap<String, TtfFont>,
+    prepared_custom_fonts: &PreparedCustomFonts,
+    word_spacing: f32,
+    allow_faux_bold: bool,
+    line_ascender: f32,
+    vertical_e: f32,
+    vertical_f: f32,
+    pdf_writer: &mut PdfWriter,
+    page_images: &mut Vec<ImageRef>,
+) {
+    let parent_font_size = crate::layout::text::line_primary_font_size(runs);
+    let mut x = start_x;
+    for run in runs
+        .iter()
+        .filter(|r| !r.text.is_empty() || r.inline_box.is_some())
+    {
+        if let Some(inline) = run.inline_box.as_deref() {
+            x += inline.outer_width();
+            continue;
+        }
+        let painted_run = footnote_call_paint_run(run);
+        let run = painted_run.as_ref().unwrap_or(run);
+        let run_y = y + drop_cap_baseline_shift(run, line_ascender, custom_fonts);
+        let run_width = if vertical_mixed_upright_run(run) {
+            render_vertical_mixed_upright_run(
+                content,
+                run,
+                x,
+                run_y,
+                parent_font_size,
+                custom_fonts,
+                prepared_custom_fonts,
+                word_spacing,
+                vertical_e,
+                vertical_f,
+                pdf_writer,
+                page_images,
+            )
+        } else {
+            render_run_text_with_faux_bold(
+                content,
+                run,
+                x,
+                run_y,
+                parent_font_size,
+                custom_fonts,
+                prepared_custom_fonts,
+                word_spacing,
+                allow_faux_bold,
+                if run.text_shadow.is_empty() {
+                    1.0
+                } else {
+                    TEXT_SHADOW_FAUX_BOLD_STROKE_SCALE
+                },
+                pdf_writer,
+                page_images,
+            )
+        };
+        x += run_width;
     }
 }
 

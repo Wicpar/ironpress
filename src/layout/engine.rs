@@ -1479,6 +1479,7 @@ pub fn layout_with_rules_and_fonts(
     // Expose the loaded fonts to style resolution for the whole pass so the
     // `ex`/`ch` units resolve against real font metrics (css-values-4 §6.1.1).
     let _font_ctx = crate::style::font_ctx::FontCtxGuard::new(custom_fonts);
+    CssRule::finish_counter_style_stylesheet_scan();
     // Apply body/html/:root rules to the root style so that inherited root
     // properties still take effect even though the HTML parser unwraps the
     // <html>/<body> elements before layout.
@@ -5119,6 +5120,7 @@ pub(crate) fn flatten_element(
         let has_marker = !marker.is_empty() || image_marker.is_some();
         let marker_run_start = runs.len();
         let mut marker_suffix_gap = 0.0f32;
+        let mut marker_line_height_extra = 0.0f32;
         if let Some(inline) = image_marker {
             // The image marker is an atomic inline box (empty text + advance), so
             // it occupies the marker slot the same way the glyph marker would and
@@ -5177,12 +5179,21 @@ pub(crate) fn flatten_element(
             let marker_font_family = resolve_style_font_family(marker_style, env.fonts);
             let marker_bold = marker_style.font_weight == FontWeight::Bold;
             let marker_italic = marker_style.font_style == FontStyle::Italic;
-            let marker_line_height_factor = crate::fonts::normal_line_height_factor(
+            let normal_marker_line_height_factor = crate::fonts::normal_line_height_factor(
                 &marker_font_family,
                 marker_bold,
                 marker_italic,
                 env.fonts,
             );
+            let marker_line_height_factor =
+                (resolved_line_height_factor(marker_style, env.fonts) - 0.02).max(0.0);
+            marker_line_height_extra = ((normal_marker_line_height_factor
+                - marker_line_height_factor)
+                * marker_style.font_size)
+                .max(0.0);
+            if marker_line_height_extra > 0.0 {
+                marker_line_height_extra += style.font_size * 0.025;
+            }
             if style.list_style_position == ListStylePosition::Outside
                 && marker_text.chars().last().is_some_and(char::is_whitespace)
                 && marker_style.font_size > style.font_size
@@ -5204,6 +5215,15 @@ pub(crate) fn flatten_element(
                     env.fonts,
                 );
                 marker_suffix_gap = (marker_space - item_space).max(0.0);
+            }
+            let marker_gap_writing_mode = if style.writing_mode == WritingMode::HorizontalTb {
+                parent_style.writing_mode
+            } else {
+                style.writing_mode
+            };
+            if style.marker_side_match_parent && marker_gap_writing_mode == WritingMode::VerticalRl
+            {
+                marker_suffix_gap = marker_suffix_gap.max(style.font_size * 0.13);
             }
             // Default `disc`/`square` bullets are GEOMETRIC shapes in Chrome, not
             // font glyphs (whose ink box is oversized and mis-seated). Render them
@@ -5390,7 +5410,7 @@ pub(crate) fn flatten_element(
             } else {
                 inner_width
             };
-            let lines = wrap_text_runs(
+            let mut lines = wrap_text_runs(
                 runs,
                 TextWrapOptions::new(
                     vertical_inline_extent,
@@ -5408,33 +5428,33 @@ pub(crate) fn flatten_element(
                 .with_text_indent(style.text_indent - marker_hang),
                 env.fonts,
             );
+            if marker_line_height_extra > 0.0
+                && let Some(first_line) = lines.first_mut()
+            {
+                first_line.height += marker_line_height_extra;
+            }
             let vertical_column_advance = if vertical_marker_match {
                 lines.iter().map(|line| line.height).fold(0.0_f32, f32::max)
             } else {
                 0.0
             };
             let vertical_item_index = if vertical_marker_match {
-                match list_ctx {
-                    Some(ListContext::Ordered { index, step, .. }) => {
-                        ((*index - *step).max(1) - 1) as f32
-                    }
-                    _ => 0.0,
-                }
+                child_index as f32
             } else {
                 0.0
             };
             let vertical_column_offset = if vertical_marker_match {
-                vertical_item_index * (vertical_column_advance + style.margin.bottom)
+                vertical_item_index * vertical_column_advance
             } else {
                 0.0
             };
             let vertical_flow_rewind = if vertical_marker_match {
-                vertical_item_index * (vertical_inline_extent + style.margin.bottom)
+                vertical_item_index * (vertical_column_advance + style.margin.bottom)
             } else {
                 0.0
             };
             let vertical_marker_offset = if vertical_marker_match {
-                marker_hang
+                marker_hang + vertical_column_advance / 2.0 + style.margin.bottom / 12.0
             } else {
                 0.0
             };
@@ -5481,13 +5501,19 @@ pub(crate) fn flatten_element(
                     - vertical_flow_rewind,
                 offset_left: if vertical_marker_match {
                     style.left.unwrap_or(0.0)
+                        + list_indent
                         + (available_width - vertical_column_advance - vertical_column_offset)
                             .max(0.0)
                 } else {
                     style.left.unwrap_or(0.0) + list_indent
                 },
                 offset_bottom: if vertical_marker_match {
-                    vertical_inline_extent
+                    (vertical_inline_extent
+                        - marker_hang
+                        - 2.0 * style.margin.bottom
+                        - vertical_column_advance / 2.0
+                        + style.margin.bottom / 8.0)
+                        .max(0.0)
                 } else {
                     style.bottom.unwrap_or(0.0)
                 },

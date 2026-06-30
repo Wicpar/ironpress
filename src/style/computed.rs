@@ -6411,13 +6411,20 @@ fn resolve_custom_counter_styles_in_content(items: &mut [ContentItem], rules: &[
 
 fn find_counter_style(name: &str, rules: &[CssRule]) -> Option<CounterStyle> {
     let selector = format!("@counter-style {}", name.to_ascii_lowercase());
-    rules.iter().rev().find_map(|rule| {
-        if rule.selector.trim().to_ascii_lowercase() == selector {
-            parse_counter_style_rule(&rule.declarations)
-        } else {
-            None
-        }
-    })
+    rules
+        .iter()
+        .rev()
+        .find_map(|rule| {
+            if rule.selector.trim().to_ascii_lowercase() == selector {
+                parse_counter_style_rule(&rule.declarations)
+            } else {
+                None
+            }
+        })
+        .or_else(|| {
+            CssRule::registered_counter_style_declarations(name)
+                .and_then(|declarations| parse_counter_style_rule(&declarations))
+        })
 }
 
 fn counter_style_keyword(map: &StyleMap, property: &str) -> Option<String> {

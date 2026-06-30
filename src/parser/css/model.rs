@@ -338,6 +338,54 @@ pub struct CssRule {
     pub pseudo_element: Option<PseudoElement>,
 }
 
+struct CounterStyleRuleRegistry {
+    rules: Vec<CssRule>,
+    collecting: bool,
+}
+
+thread_local! {
+    static COUNTER_STYLE_RULES: RefCell<CounterStyleRuleRegistry> = const {
+        RefCell::new(CounterStyleRuleRegistry { rules: Vec::new(), collecting: false })
+    };
+}
+
+impl CssRule {
+    pub(crate) fn begin_counter_style_stylesheet_scan() {
+        COUNTER_STYLE_RULES.with(|registry| {
+            let mut registry = registry.borrow_mut();
+            if !registry.collecting {
+                registry.rules.clear();
+                registry.collecting = true;
+            }
+        });
+    }
+
+    pub(crate) fn register_counter_style_rules(rules: impl IntoIterator<Item = CssRule>) {
+        COUNTER_STYLE_RULES.with(|registry| {
+            registry.borrow_mut().rules.extend(rules);
+        });
+    }
+
+    pub(crate) fn finish_counter_style_stylesheet_scan() {
+        COUNTER_STYLE_RULES.with(|registry| {
+            registry.borrow_mut().collecting = false;
+        });
+    }
+
+    pub(crate) fn registered_counter_style_declarations(name: &str) -> Option<StyleMap> {
+        let selector = format!("@counter-style {}", name.to_ascii_lowercase());
+        COUNTER_STYLE_RULES.with(|registry| {
+            registry
+                .borrow()
+                .rules
+                .iter()
+                .rev()
+                .find(|rule| rule.selector.trim().to_ascii_lowercase() == selector)
+                .map(|rule| rule.declarations.clone())
+        })
+    }
+}
+
 /// A source entry from an `@font-face src:` descriptor.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FontFaceSource {
