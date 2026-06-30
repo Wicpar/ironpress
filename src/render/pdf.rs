@@ -434,12 +434,12 @@ fn push_background_clip_box(
 fn dash_pattern_for_style(style: BorderStyle, width: f32) -> String {
     let w = width.max(0.1);
     match style {
-        // Chrome paints dashed strokes with dashes ~2x the line width and gaps
-        // ~1x the width (measured period ≈ 3x width, ink:gap ≈ 2:1), not the 3:3
+        // Chrome paints dashed strokes with dashes ~2x the line width and gaps a
+        // little under the line width (measured near 2:0.67), not the 3:3
         // (period 6x) of a naive equal pattern.
         BorderStyle::Dashed => {
             let dash = (w * 2.0).max(1.0);
-            let gap = w.max(1.0);
+            let gap = (w * (2.0 / 3.0)).max(1.0);
             format!("[{dash} {gap}] 0 d\n")
         }
         // Round dots: a zero-length dash under a round cap paints a filled dot of
@@ -634,6 +634,37 @@ fn paint_table_cell_border_line(
         content.push_str(reset_dash_pattern(side.style));
     }
     end_border_alpha(content, a);
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_clipped_table_cell_border_line(
+    content: &mut String,
+    side: &crate::layout::engine::LayoutBorderSide,
+    x1: f32,
+    y1: f32,
+    x2: f32,
+    y2: f32,
+    clip: [(f32, f32); 4],
+    page_ext_gstates: &mut Vec<(String, f32)>,
+    bg_alpha_counter: &mut usize,
+) {
+    content.push_str("q\n");
+    content.push_str(&format!("{} {} m\n", clip[0].0, clip[0].1));
+    for (x, y) in &clip[1..] {
+        content.push_str(&format!("{x} {y} l\n"));
+    }
+    content.push_str("h\nW\nn\n");
+    paint_table_cell_border_line(
+        content,
+        side,
+        x1,
+        y1,
+        x2,
+        y2,
+        page_ext_gstates,
+        bg_alpha_counter,
+    );
+    content.push_str("Q\n");
 }
 
 /// Emit the border-box outline path (rectangle or rounded rectangle) inset by
@@ -1276,19 +1307,15 @@ fn paint_miter_border(
     let r = border.right.width.max(0.0);
     let b = border.bottom.width.max(0.0);
     let l = border.left.width.max(0.0);
-    // Parity rasters at 300dpi. Chrome's PDF output resolves exact half-device
-    // border boundaries by center sampling, not by a 50% vector antialias row.
-    // Nudge only those half-pixel ties so axis-aligned miter edges snap the same
-    // way while diagonal miter seams remain antialiased.
-    let snap_half_pixel_ties = [&border.top, &border.right, &border.bottom, &border.left]
+    let snap_outer_half_pixel_ties = [&border.top, &border.right, &border.bottom, &border.left]
         .iter()
         .all(|s| {
             s.width <= 0.0
                 || s.style == crate::style::computed::BorderStyle::None
                 || s.alpha >= 0.999
         });
-    let tie = |width: f32| {
-        if !snap_half_pixel_ties {
+    let outer_tie = |width: f32| {
+        if !snap_outer_half_pixel_ties {
             return 0.0;
         }
         const DEVICE_PT: f32 = 72.0 / 300.0;
@@ -1300,14 +1327,16 @@ fn paint_miter_border(
         }
     };
     // Outer corners.
-    let (ol, or_, ob, ot) = (x, x + w, y, y + h); // left,right,bottom,top edges
+    let (ol, or_, ob, ot) = (
+        x - outer_tie(l),
+        x + w + outer_tie(r),
+        y - outer_tie(b),
+        y + h + outer_tie(t),
+    ); // left,right,bottom,top edges
     // Inner corners (padding box edges).
-    let (il, ir, ib, it) = (
-        x + l - tie(l),
-        x + w - r - tie(r),
-        y + b + tie(b),
-        y + h - t + tie(t),
-    );
+    // Keep these unsnapped: moving them creates an extra painted band on
+    // four-color borders at 300dpi.
+    let (il, ir, ib, it) = (x + l, x + w - r, y + b, y + h - t);
     let mut fill = |content: &mut String,
                     pts: [(f32, f32); 4],
                     side: &crate::layout::engine::LayoutBorderSide| {
@@ -8363,12 +8392,20 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                             &mut bg_alpha_counter,
                                             border.top.alpha,
                                         );
+                                        content.push_str(&format!("{r} {g} {b} rg\n"));
+                                        content.push_str(&format!("{bx1} {by1} m\n"));
+                                        content.push_str(&format!("{bx2} {by1} l\n"));
                                         content.push_str(&format!(
-                                            "{r} {g} {b} RG\n{bw} w\n{x1} {y} m {x2} {y} l\nS\n",
-                                            bw = border.top.width,
-                                            x1 = bx1,
-                                            x2 = bx2,
+                                            "{} {} l\n",
+                                            bx2 - border.right.width,
+                                            by1 - border.top.width
                                         ));
+                                        content.push_str(&format!(
+                                            "{} {} l\n",
+                                            bx1 + border.left.width,
+                                            by1 - border.top.width
+                                        ));
+                                        content.push_str("h\nf\n");
                                         end_border_alpha(&mut content, a);
                                     } else {
                                         let (seg_x1, seg_x2) =
@@ -8419,13 +8456,19 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                             } else {
                                                 (bx1, bx2)
                                             };
-                                        paint_table_cell_border_line(
+                                        paint_clipped_table_cell_border_line(
                                             &mut content,
                                             &border.bottom,
                                             seg_x1,
                                             y,
                                             seg_x2,
                                             y,
+                                            [
+                                                (bx2, by2),
+                                                (bx1, by2),
+                                                (bx1 + border.left.width, by2 + border.bottom.width),
+                                                (bx2 - border.right.width, by2 + border.bottom.width),
+                                            ],
                                             &mut page_ext_gstates,
                                             &mut bg_alpha_counter,
                                         );
