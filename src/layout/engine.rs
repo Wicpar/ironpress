@@ -3076,7 +3076,12 @@ fn filter_source_box(element: &LayoutElement) -> Option<(f32, f32, f32, f32)> {
         {
             let children_h: f32 = children.iter().map(estimate_element_height).sum();
             let fallback_h = padding_top + children_h + padding_bottom + border.vertical_width();
-            Some((*width, block_height.unwrap_or(fallback_h), *margin_top, *margin_bottom))
+            Some((
+                *width,
+                block_height.unwrap_or(fallback_h),
+                *margin_top,
+                *margin_bottom,
+            ))
         }
         _ => None,
     }
@@ -3159,7 +3164,10 @@ fn paint_filter_element_into(
                         offset_left,
                         offset_top,
                         ..
-                    } => (x_pt + padding_left + offset_left, y_pt + cursor_y + offset_top),
+                    } => (
+                        x_pt + padding_left + offset_left,
+                        y_pt + cursor_y + offset_top,
+                    ),
                     _ => return None,
                 };
                 let paint_w = if child_w > 0.0 { child_w } else { content_w };
@@ -3280,12 +3288,8 @@ fn filter_line_font_extents(line: &TextLine, fonts: &HashMap<String, TtfFont>) -
         .iter()
         .filter(|run| run.inline_box.is_none())
         .fold((0.0f32, 0.0f32), |(max_asc, max_desc), run| {
-            let (asc, desc) = crate::fonts::font_metrics_ratios(
-                &run.font_family,
-                run.bold,
-                run.italic,
-                fonts,
-            );
+            let (asc, desc) =
+                crate::fonts::font_metrics_ratios(&run.font_family, run.bold, run.italic, fonts);
             (
                 max_asc.max(asc * run.font_size),
                 max_desc.max(desc * run.font_size),
@@ -3537,7 +3541,9 @@ fn svg_filter_region_attr(filter_el: &ElementNode, name: &str, default: f32, siz
     if let Some(percent) = raw.strip_suffix('%') {
         return percent.trim().parse::<f32>().unwrap_or(default * 100.0) * size / 100.0;
     }
-    raw.parse::<f32>().map(|v| v * size).unwrap_or(default * size)
+    raw.parse::<f32>()
+        .map(|v| v * size)
+        .unwrap_or(default * size)
 }
 
 fn svg_turbulence_displacement_spec(

@@ -9734,9 +9734,6 @@ fn estimate_run_width_with_fonts(run: &TextRun, custom_fonts: &HashMap<String, T
     if let Some(inline) = run.inline_box.as_deref() {
         return inline.outer_width();
     }
-    if let Some(metrics) = drop_cap_ink_metrics(run, custom_fonts) {
-        return metrics.width;
-    }
     if let Some(width) = crate::text::measure_text_width(
         &run.text,
         run.font_size,
@@ -14117,12 +14114,10 @@ fn render_run_text(
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
 ) -> f32 {
-    let ink_metrics = drop_cap_ink_metrics(run, custom_fonts);
-    let paint_x = ink_metrics.map_or(x, |metrics| x - metrics.left);
-    let width = render_run_text_with_faux_bold(
+    render_run_text_with_faux_bold(
         content,
         run,
-        paint_x,
+        x,
         text_y,
         parent_font_size,
         custom_fonts,
@@ -14131,8 +14126,7 @@ fn render_run_text(
         true,
         pdf_writer,
         page_images,
-    );
-    ink_metrics.map_or(width, |metrics| metrics.width)
+    )
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -14980,45 +14974,6 @@ fn is_drop_cap_run(run: &TextRun) -> bool {
         && run.line_height_factor.is_finite()
         && run.line_height_factor < 0.9
         && run.text.chars().filter(|c| !c.is_whitespace()).count() <= 1
-}
-
-#[derive(Clone, Copy)]
-struct DropCapInkMetrics {
-    left: f32,
-    width: f32,
-}
-
-fn drop_cap_ink_metrics(
-    run: &TextRun,
-    custom_fonts: &HashMap<String, TtfFont>,
-) -> Option<DropCapInkMetrics> {
-    if !is_drop_cap_run(run) {
-        return None;
-    }
-    let FontFamily::Custom(name) = &run.font_family else {
-        return None;
-    };
-    let (_, ttf) = crate::system_fonts::find_font(custom_fonts, name, run.bold, run.italic)?;
-    let face = rustybuzz::ttf_parser::Face::parse(&ttf.data, 0).ok()?;
-    let mut pen_x = 0i32;
-    let mut x_min = i32::MAX;
-    let mut x_max = i32::MIN;
-    for ch in run.text.chars().filter(|c| !c.is_whitespace()) {
-        let glyph = face.glyph_index(ch)?;
-        if let Some(bbox) = face.glyph_bounding_box(glyph) {
-            x_min = x_min.min(pen_x + i32::from(bbox.x_min));
-            x_max = x_max.max(pen_x + i32::from(bbox.x_max));
-        }
-        pen_x += i32::from(face.glyph_hor_advance(glyph).unwrap_or(0));
-    }
-    if x_min > x_max || ttf.units_per_em == 0 {
-        return None;
-    }
-    let scale = run.font_size / f32::from(ttf.units_per_em);
-    Some(DropCapInkMetrics {
-        left: x_min as f32 * scale,
-        width: (x_max - x_min).max(0) as f32 * scale,
-    })
 }
 
 /// The visual top of a run's glyphs above the baseline, in points. Prefers the

@@ -891,9 +891,9 @@ impl SvgTurbulence {
                 lattice[i] = i;
                 for component in channel_gradient[i].iter_mut().take(2) {
                     seed = svg_turbulence_random(seed);
-                    *component =
-                        ((seed % (SVG_B_SIZE_I32 + SVG_B_SIZE_I32)) - SVG_B_SIZE_I32) as f64
-                            / SVG_B_SIZE_I32 as f64;
+                    *component = ((seed % (SVG_B_SIZE_I32 + SVG_B_SIZE_I32)) - SVG_B_SIZE_I32)
+                        as f64
+                        / SVG_B_SIZE_I32 as f64;
                 }
                 let len = (channel_gradient[i][0] * channel_gradient[i][0]
                     + channel_gradient[i][1] * channel_gradient[i][1])
