@@ -1107,7 +1107,7 @@
       "box-shadow",
       "border-radius"
     ],
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",

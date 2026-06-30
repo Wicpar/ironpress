@@ -14946,6 +14946,11 @@ fn render_line_text(
                 prepared_custom_fonts,
                 word_spacing,
                 allow_faux_bold,
+                if run.text_shadow.is_empty() {
+                    1.0
+                } else {
+                    TEXT_SHADOW_FAUX_BOLD_STROKE_SCALE
+                },
                 pdf_writer,
                 page_images,
             );
