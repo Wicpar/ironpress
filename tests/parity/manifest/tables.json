@@ -1420,5 +1420,107 @@
     "weight": 1,
     "pass_threshold_pct": 2.0,
     "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-inline-svg-child",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "inline-svg-child",
+    "description": "An inline SVG child paints in normal flow and should also paint when nested directly inside a table cell; catches table-cell child render traversal dropping SVG layout elements.",
+    "file": "cases/tables/tables-cell-inline-svg-child.html",
+    "kind": "feature",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-nested-table-child",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "nested-table-child",
+    "description": "A nested table paints in normal flow and should also paint when nested directly inside a table cell; catches table-cell traversal dropping nested table rows.",
+    "file": "cases/tables/tables-cell-nested-table-child.html",
+    "kind": "feature",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-gradient-child",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "gradient-block-child",
+    "description": "A linear-gradient block paints in normal flow and should also paint when nested directly inside a table cell; catches the table-cell nested renderer dropping gradient backgrounds.",
+    "file": "cases/tables/tables-cell-gradient-child.html",
+    "kind": "feature",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-box-shadow-child",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "box-shadow-child",
+    "description": "A box-shadow block paints in normal flow and should also paint when nested directly inside a table cell; catches the table-cell nested renderer dropping shadow decoration.",
+    "file": "cases/tables/tables-cell-box-shadow-child.html",
+    "kind": "feature",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-generated-before-child",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "generated-before-child",
+    "description": "A block ::before generated child paints in normal flow and should also paint when its originating element is nested directly inside a table cell.",
+    "file": "cases/tables/tables-cell-generated-before-child.html",
+    "kind": "feature",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "tables-cell-absolute-descendant",
+    "category": "tables",
+    "feature": "table-cell-children",
+    "subfeature": "absolute-descendant",
+    "description": "An absolutely positioned descendant paints inside a normal positioned block and should also paint when that block is nested directly inside a table cell.",
+    "file": "cases/tables/tables-cell-absolute-descendant.html",
+    "kind": "feature",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
   }
 ]
