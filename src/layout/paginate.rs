@@ -1,7 +1,7 @@
 use super::engine::{
     FOOTNOTE_CALL_FONT_SCALE, FootnoteItem, LayoutElement, Page, PageBreakSide, TableCell, TextRun,
     decode_footnote_link_data, footnote_call_multiline_extra_height, layout_element_paint_order,
-    table_cell_content_height,
+    table_cell_content_height, target_anchor_id,
 };
 use super::text::{OverflowWrap, TextWrapOptions, wrap_text_runs};
 use crate::style::computed::{
@@ -79,6 +79,7 @@ fn extract_page_state_markers(
     running_started: &mut HashSet<String>,
     named_strings: &mut HashMap<String, String>,
     named_strings_first: &mut HashMap<String, String>,
+    pending_target_anchors: &mut Vec<String>,
 ) {
     let LayoutElement::Container { children, .. } = element else {
         return;
@@ -91,10 +92,14 @@ fn extract_page_state_markers(
                 running_elements.insert(name, *element);
             }
             LayoutElement::NamedString { name, value } => {
-                named_strings_first
-                    .entry(name.clone())
-                    .or_insert_with(|| value.clone());
-                named_strings.insert(name, value);
+                if target_anchor_id(&name).is_some() {
+                    pending_target_anchors.push(name);
+                } else {
+                    named_strings_first
+                        .entry(name.clone())
+                        .or_insert_with(|| value.clone());
+                    named_strings.insert(name, value);
+                }
             }
             _ => {
                 extract_page_state_markers(
@@ -103,12 +108,26 @@ fn extract_page_state_markers(
                     running_started,
                     named_strings,
                     named_strings_first,
+                    pending_target_anchors,
                 );
                 kept.push(child);
             }
         }
     }
     *children = kept;
+}
+
+fn apply_pending_target_anchors(
+    pending_target_anchors: &mut Vec<String>,
+    named_strings: &mut HashMap<String, String>,
+    named_strings_first: &mut HashMap<String, String>,
+) {
+    for name in pending_target_anchors.drain(..) {
+        named_strings_first
+            .entry(name.clone())
+            .or_default();
+        named_strings.insert(name, String::new());
+    }
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -1985,6 +2004,7 @@ pub(crate) fn paginate_with_first_page(
     let mut current_running_elements_started: HashSet<String> = HashSet::new();
     let mut current_named_strings: HashMap<String, String> = HashMap::new();
     let mut current_named_strings_first: HashMap<String, String> = HashMap::new();
+    let mut pending_target_anchors: Vec<String> = Vec::new();
     let mut current_footnotes: Vec<FootnoteItem> = Vec::new();
     // Page 1 starts with body/html margin-top applied; continuation pages
     // start flush against the page margin (Chrome's print-model: body margin
@@ -2058,10 +2078,14 @@ pub(crate) fn paginate_with_first_page(
             continue;
         }
         if let LayoutElement::NamedString { name, value } = element {
-            current_named_strings_first
-                .entry(name.clone())
-                .or_insert_with(|| value.clone());
-            current_named_strings.insert(name, value);
+            if target_anchor_id(&name).is_some() {
+                pending_target_anchors.push(name);
+            } else {
+                current_named_strings_first
+                    .entry(name.clone())
+                    .or_insert_with(|| value.clone());
+                current_named_strings.insert(name, value);
+            }
             continue;
         }
         extract_page_state_markers(
@@ -2070,6 +2094,7 @@ pub(crate) fn paginate_with_first_page(
             &mut current_running_elements_started,
             &mut current_named_strings,
             &mut current_named_strings_first,
+            &mut pending_target_anchors,
         );
 
         // When the FIRST row of a `break-inside: avoid` table cannot fit in the
@@ -2919,6 +2944,11 @@ pub(crate) fn paginate_with_first_page(
             } else {
                 right_floats.push(region);
             }
+            apply_pending_target_anchors(
+                &mut pending_target_anchors,
+                &mut current_named_strings,
+                &mut current_named_strings_first,
+            );
             collect_footnotes_from_element(&element, &mut current_footnotes);
             current_elements.push((y, element));
             prev_margin_bottom = 0.0;
@@ -2955,6 +2985,11 @@ pub(crate) fn paginate_with_first_page(
                 // Place the first fragment at the (margin-adjusted) cursor; it
                 // fills the remainder of this page.
                 y += effective_margin_top;
+                apply_pending_target_anchors(
+                    &mut pending_target_anchors,
+                    &mut current_named_strings,
+                    &mut current_named_strings_first,
+                );
                 collect_footnotes_from_element(&first, &mut current_footnotes);
                 current_elements.push((y, first));
                 // Close the page (the fragmentainer is full) and reset flow state
@@ -3022,6 +3057,11 @@ pub(crate) fn paginate_with_first_page(
             positioned_y_by_depth.insert(depth, effective_y + border_top);
         }
 
+        apply_pending_target_anchors(
+            &mut pending_target_anchors,
+            &mut current_named_strings,
+            &mut current_named_strings_first,
+        );
         collect_footnotes_from_element(&element, &mut current_footnotes);
         current_elements.push((effective_y, element));
         y += content_h_val;

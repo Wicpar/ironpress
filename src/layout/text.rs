@@ -9,9 +9,11 @@ use crate::style::computed::{
     FONT_RUN_MARK_SYNTHETIC_SMALL_CAPS, FONT_RUN_MARK_SYNTHETIC_WEIGHT_700,
     FONT_RUN_MARK_SYNTHETIC_WEIGHT_900, Float, FontFamily, FontStyle, FontWeight,
     IntrinsicWidthKeyword, LEADER_PLACEHOLDER_END, LEADER_PLACEHOLDER_START, Position,
-    TARGET_PLACEHOLDER_START, TextDecorationStyle, VerticalAlign, WhiteSpace,
+    TARGET_PLACEHOLDER_END, TARGET_PLACEHOLDER_START, TextDecorationStyle, VerticalAlign,
+    WhiteSpace,
     compute_style_with_context,
 };
+use std::borrow::Cow;
 use std::collections::HashMap;
 
 use super::engine::{
@@ -375,14 +377,38 @@ fn letter_spacing_extra_for_text(run: &TextRun, text: &str) -> f32 {
 }
 
 fn estimate_text_width_for_run(text: &str, run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
+    let measured_text = target_placeholder_measure_text(text);
     estimate_word_width(
-        text,
+        &measured_text,
         run.font_size,
         &run.font_family,
         run.bold,
         run.italic,
         fonts,
-    ) + letter_spacing_extra_for_text(run, text)
+    ) + letter_spacing_extra_for_text(run, &measured_text)
+}
+
+fn target_placeholder_measure_text(text: &str) -> Cow<'_, str> {
+    if !text.contains(TARGET_PLACEHOLDER_START) {
+        return Cow::Borrowed(text);
+    }
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find(TARGET_PLACEHOLDER_START) {
+        out.push_str(&rest[..start]);
+        let payload_start = start + TARGET_PLACEHOLDER_START.len();
+        let Some(end_rel) = rest[payload_start..].find(TARGET_PLACEHOLDER_END) else {
+            out.push_str(&rest[start..]);
+            return Cow::Owned(out);
+        };
+        let payload = &rest[payload_start..payload_start + end_rel];
+        if payload.starts_with("counter|") {
+            out.push('0');
+        }
+        rest = &rest[payload_start + end_rel + TARGET_PLACEHOLDER_END.len()..];
+    }
+    out.push_str(rest);
+    Cow::Owned(out)
 }
 
 fn ligatures_enabled_for_style(style: &ComputedStyle) -> bool {

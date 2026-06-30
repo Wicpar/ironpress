@@ -592,6 +592,10 @@ pub(crate) fn is_internal_target_anchor(value: &str) -> bool {
     value.starts_with(TARGET_ANCHOR_PREFIX)
 }
 
+pub(crate) fn target_anchor_id(value: &str) -> Option<&str> {
+    value.strip_prefix(TARGET_ANCHOR_PREFIX)
+}
+
 /// An atomic inline-level box laid out inside a line of text, produced for
 /// `display: inline-block` elements that appear among inline text. It carries
 /// the resolved box geometry, paint properties, and pre-wrapped inner content.
@@ -1921,6 +1925,17 @@ fn string_set_marker(
     Some(LayoutElement::NamedString { name, value })
 }
 
+fn target_anchor_marker(el: &ElementNode) -> Option<LayoutElement> {
+    let id = el.id()?.trim();
+    if id.is_empty() {
+        return None;
+    }
+    Some(LayoutElement::NamedString {
+        name: format!("{TARGET_ANCHOR_PREFIX}{id}"),
+        value: String::new(),
+    })
+}
+
 fn collect_dom_targets(nodes: &[DomNode], out: &mut HashMap<String, String>) {
     for node in nodes {
         if let DomNode::Element(el) = node {
@@ -1937,12 +1952,11 @@ fn collect_dom_targets(nodes: &[DomNode], out: &mut HashMap<String, String>) {
     }
 }
 
-fn content_items_include_target_text(items: &[ContentItem]) -> bool {
+fn content_items_include_target_placeholder(items: &[ContentItem]) -> bool {
     items.iter().any(|item| {
         matches!(
             item,
-            ContentItem::String(text)
-                if text.contains(&format!("{TARGET_PLACEHOLDER_START}text|"))
+            ContentItem::String(text) if text.contains(TARGET_PLACEHOLDER_START)
         )
     })
 }
@@ -2022,11 +2036,21 @@ fn element_contains_text(element: &LayoutElement, needle: &str) -> bool {
 }
 
 fn resolve_target_placeholders(pages: &mut [Page], dom_targets: &HashMap<String, String>) {
-    if dom_targets.is_empty() {
+    if dom_targets.is_empty() && !pages.iter().any(page_has_target_anchor_marker) {
         return;
     }
     let mut page_by_id = HashMap::new();
+    for (idx, page) in pages.iter().enumerate() {
+        for name in page.named_strings.keys() {
+            if let Some(id) = target_anchor_id(name) {
+                page_by_id.entry(id.to_string()).or_insert(idx + 1);
+            }
+        }
+    }
     for (id, text) in dom_targets {
+        if page_by_id.contains_key(id) {
+            continue;
+        }
         if let Some((idx, _)) = pages
             .iter()
             .enumerate()
@@ -2040,6 +2064,12 @@ fn resolve_target_placeholders(pages: &mut [Page], dom_targets: &HashMap<String,
             resolve_target_placeholders_in_element(element, dom_targets, &page_by_id);
         }
     }
+}
+
+fn page_has_target_anchor_marker(page: &Page) -> bool {
+    page.named_strings
+        .keys()
+        .any(|name| target_anchor_id(name).is_some())
 }
 
 fn resolve_target_placeholders_in_element(
@@ -3881,6 +3911,9 @@ fn flatten_nodes(
                 if let Some(marker) = string_set_marker(el, env.rules, ancestors, &selector_ctx) {
                     output.push(marker);
                 }
+                if let Some(marker) = target_anchor_marker(el) {
+                    output.push(marker);
+                }
                 if let Some(name) = style.running_name.clone() {
                     flush_table_cells(
                         &mut table_cell_group,
@@ -4128,6 +4161,9 @@ pub(crate) fn flatten_element(
     // display: none — skip this element entirely
     if style.display == Display::None {
         return;
+    }
+    if let Some(marker) = target_anchor_marker(el) {
+        output.push(marker);
     }
 
     // Math elements: <span class="math-inline"> or <div class="math-display">
@@ -5913,7 +5949,6 @@ fn route_element(
     env: &mut LayoutEnv,
 ) {
     let layout_ctx = *ctx;
-
     // Flex container handling
     if matches!(style.display, Display::Flex | Display::InlineFlex) {
         let expanded_flex_el;
@@ -6019,12 +6054,12 @@ fn route_element(
             return;
         }
     } else {
-        let has_inline_target_text = before_style.as_ref().is_some_and(|ps| {
-            !pseudo_is_block_like(ps) && content_items_include_target_text(&ps.content)
+        let has_inline_target_placeholder = before_style.as_ref().is_some_and(|ps| {
+            !pseudo_is_block_like(ps) && content_items_include_target_placeholder(&ps.content)
         }) || after_style.as_ref().is_some_and(|ps| {
-            !pseudo_is_block_like(ps) && content_items_include_target_text(&ps.content)
+            !pseudo_is_block_like(ps) && content_items_include_target_placeholder(&ps.content)
         });
-        if has_inline_target_text {
+        if has_inline_target_placeholder {
             let mut runs = Vec::new();
             append_pseudo_inline_run(
                 &mut runs,

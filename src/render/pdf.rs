@@ -9214,21 +9214,16 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 if text.is_empty() {
                     continue;
                 }
-                let default_margin_font_size =
-                    if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
-                        12.3
-                    } else if mb.background_color.is_some() {
-                        11.9
-                    } else {
-                        12.0
-                    };
+                let default_margin_font_size = if mb.background_color.is_some() {
+                    11.9
+                } else {
+                    12.0
+                };
                 let mb_font_size = mb.font_size.unwrap_or(default_margin_font_size);
                 let selector_specific_margin_box =
                     !matches!(mb.selector, crate::parser::css::PageSelector::None);
                 let margin_font_family =
-                    if matches!(mb.selector, crate::parser::css::PageSelector::Blank) {
-                        FontFamily::Helvetica
-                    } else if used_named_string && mb.font_size.is_none() {
+                    if used_named_string && mb.font_size.is_none() {
                         margin_default_font_family
                             .clone()
                             .unwrap_or_else(|| dec.margin_box_font_family.clone())
@@ -9328,8 +9323,6 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                         margin.bottom,
                     ),
                 };
-                let blank_adjust = matches!(mb.selector, crate::parser::css::PageSelector::Blank);
-                let x = if blank_adjust { x + 0.25 } else { x };
                 let corner_lift = match mb.position {
                     crate::parser::css::MarginBoxPosition::TopLeftCorner
                     | crate::parser::css::MarginBoxPosition::TopRightCorner
@@ -9339,7 +9332,6 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                     }
                     _ => 0.0,
                 };
-                let blank_lift = if blank_adjust { 1.05 } else { 0.0 };
                 let plain_top_lift = match mb.position {
                     crate::parser::css::MarginBoxPosition::TopLeft
                     | crate::parser::css::MarginBoxPosition::TopCenter
@@ -9367,7 +9359,6 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 };
                 let text_y = y - mb_font_size * baseline_factor
                     + corner_lift
-                    + blank_lift
                     + plain_top_lift
                     + background_lift;
                 let text_x = if selector_specific_margin_box
