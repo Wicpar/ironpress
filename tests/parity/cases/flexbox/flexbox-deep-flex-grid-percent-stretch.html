@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flexbox deep flex grid percent stretch</title>
+<style>
+  @page { size: 420px 236px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .outer {
+    display: flex;
+    align-items: stretch;
+    gap: 12px;
+    width: 384px;
+    height: 200px;
+    padding: 10px;
+    border: 2px solid #1f2937;
+    background: #f1f5f9;
+  }
+  .rail {
+    flex: 0 0 88px;
+    border: 2px solid #0f766e;
+    background: #99f6e4;
+  }
+  .main {
+    display: grid;
+    grid-template-columns: 45% 55%;
+    grid-template-rows: 46px 1fr;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 8px;
+    border: 2px solid #7c2d12;
+    background: #ffedd5;
+  }
+  .cell {
+    border: 2px solid #334155;
+    background: #fde68a;
+  }
+  .span {
+    grid-column: 1 / 3;
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    padding: 8px;
+    background: #bfdbfe;
+  }
+  .deep {
+    width: 86px;
+    height: 34px;
+    border: 2px solid #1d4ed8;
+    background: #60a5fa;
+  }
+</style>
+</head>
+<body>
+  <div class="outer">
+    <div class="rail"></div>
+    <div class="main">
+      <div class="cell"></div>
+      <div class="cell"></div>
+      <div class="span">
+        <div class="deep"></div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

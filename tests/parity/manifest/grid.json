@@ -1574,5 +1574,111 @@
     "weight": 1,
     "pass_threshold_pct": 2.0,
     "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "grid-deep-grid-flex-img-intrinsic",
+    "category": "grid",
+    "feature": "deep-nesting",
+    "subfeature": "grid-flex-img-intrinsic",
+    "description": "A spanning grid item contains an aligned flex frame whose deepest child is an intrinsic SVG image scaled by width; ironpress over-expands the spanning grid/flex area and shifts the image frame downward.",
+    "file": "cases/grid/grid-deep-grid-flex-img-intrinsic.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-image-render"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "grid-deep-grid-grid-place-self",
+    "category": "grid",
+    "feature": "deep-nesting",
+    "subfeature": "grid-grid-place-self",
+    "description": "A grid item spans rows and contains a nested grid using place-content, with a deep grid item using place-self; ironpress misplaces nested grid rows and the place-self target.",
+    "file": "cases/grid/grid-deep-grid-grid-place-self.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "grid-deep-min-content-flex-wrap",
+    "category": "grid",
+    "feature": "deep-nesting",
+    "subfeature": "min-content-flex-wrap",
+    "description": "A min-content grid track contains a column flex stack while the adjacent nested flex item wraps text in the remaining track; ironpress lays it out over two pages instead of one.",
+    "file": "cases/grid/grid-deep-min-content-flex-wrap.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "grid-deep-overflow-flex-clip-img",
+    "category": "grid",
+    "feature": "deep-nesting",
+    "subfeature": "overflow-flex-clip-img",
+    "description": "A grid item clips an oversized nested flex frame containing a deep SVG image so overflow clipping and replaced paint combine at depth; ironpress mis-sizes the nested flex/image and clips at the wrong offset.",
+    "file": "cases/grid/grid-deep-overflow-flex-clip-img.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "sanitize": true,
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow",
+      "probe-image-render"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "grid-deep-inline-block-flex-item",
+    "category": "grid",
+    "feature": "deep-nesting",
+    "subfeature": "inline-block-flex-item",
+    "description": "A grid item contains an inline-block whose nested flex row combines a fixed swatch with wrapping text; ironpress drops the fixed swatch and wraps/sizes the inline flex content incorrectly.",
+    "file": "cases/grid/grid-deep-inline-block-flex-item.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "grid-deep-percent-height-flex-grow",
+    "category": "grid",
+    "feature": "deep-nesting",
+    "subfeature": "percent-height-flex-grow",
+    "description": "A definite-height grid item contains a nested percentage-row grid and a flex column whose growing child fills the remaining height; ironpress overflows the percentage-height stack onto a second page.",
+    "file": "cases/grid/grid-deep-percent-height-flex-grow.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
   }
 ]

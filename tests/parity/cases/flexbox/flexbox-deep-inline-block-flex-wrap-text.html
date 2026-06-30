@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flexbox deep inline block flex wrap text</title>
+<style>
+  @page { size: 380px 190px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .outer {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 344px;
+    height: 154px;
+    border: 2px solid #111827;
+    background: #ecfeff;
+  }
+  .inline-shell {
+    display: inline-block;
+    width: 236px;
+    border: 2px solid #0e7490;
+    background: #cffafe;
+    vertical-align: top;
+  }
+  .inner-flex {
+    display: flex;
+    gap: 8px;
+    align-items: flex-start;
+    padding: 8px;
+    border: 2px solid #a16207;
+    background: #fef3c7;
+  }
+  .thumb {
+    flex: 0 0 54px;
+    height: 62px;
+    border: 2px solid #be123c;
+    background: #fda4af;
+  }
+  .copy {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 4px;
+    border: 2px solid #1d4ed8;
+    background: #ffffff;
+    font-size: 13px;
+    line-height: 1.2;
+    overflow-wrap: break-word;
+  }
+</style>
+</head>
+<body>
+  <div class="outer">
+    <span class="inline-shell">
+      <span class="inner-flex">
+        <span class="thumb"></span>
+        <span class="copy">inline block owns a nested flex item with wrapped text</span>
+      </span>
+    </span>
+  </div>
+</body>
+</html>

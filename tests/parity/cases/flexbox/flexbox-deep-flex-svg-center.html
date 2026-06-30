@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flexbox deep flex svg center</title>
+<style>
+  @page { size: 360px 214px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .outer {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    width: 324px;
+    height: 178px;
+    padding: 10px;
+    border: 2px solid #1f2937;
+    background: #f1f5f9;
+  }
+  .top {
+    flex: 0 0 36px;
+    border: 2px solid #9a3412;
+    background: #fed7aa;
+  }
+  .row {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 1 1 auto;
+    min-height: 0;
+    border: 2px solid #155e75;
+    background: #cffafe;
+  }
+  .middle {
+    display: flex;
+    align-items: center;
+    justify-content: space-around;
+    flex: 0 0 210px;
+    height: 96px;
+    padding: 8px;
+    border: 2px solid #166534;
+    background: #dcfce7;
+  }
+  .holder {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex: 0 0 70px;
+    height: 70px;
+    border: 2px solid #7f1d1d;
+    background: #fee2e2;
+  }
+  svg {
+    display: block;
+    width: 48px;
+    height: 48px;
+  }
+</style>
+</head>
+<body>
+  <div class="outer">
+    <div class="top"></div>
+    <div class="row">
+      <div class="middle">
+        <div class="holder"></div>
+        <div class="holder">
+          <svg viewBox="0 0 48 48" xmlns="http://www.w3.org/2000/svg">
+            <rect width="48" height="48" fill="#2563eb"/>
+            <circle cx="24" cy="24" r="14" fill="#fde047"/>
+            <rect x="18" y="18" width="12" height="12" fill="#dc2626"/>
+          </svg>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

@@ -2164,5 +2164,107 @@
     "weight": 1,
     "pass_threshold_pct": 2.0,
     "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-deep-flex-grid-percent-stretch",
+    "category": "flexbox",
+    "feature": "deep-nesting",
+    "subfeature": "flex-grid-percent-stretch",
+    "description": "A stretched flex item contains a percentage-track grid whose spanning grid item aligns a deep child to the far edge; ironpress collapses the nested grid's stretched height and misplaces the lower span.",
+    "file": "cases/flexbox/flexbox-deep-flex-grid-percent-stretch.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-deep-column-row-grow-min-content",
+    "category": "flexbox",
+    "feature": "deep-nesting",
+    "subfeature": "column-row-grow-min-content",
+    "description": "A column flex child grows into a row flex layout where a min-content flex basis and wrapped text resolve through several nested items; ironpress overflows the row downward and loses full-height stretch on siblings.",
+    "file": "cases/flexbox/flexbox-deep-column-row-grow-min-content.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-deep-table-cell-flex-alignment",
+    "category": "flexbox",
+    "feature": "deep-nesting",
+    "subfeature": "table-cell-flex-alignment",
+    "description": "A flex item contains a table cell whose nested flex row centers and distributes fixed and growing children; ironpress collapses the table/flex content toward the top instead of filling the item height.",
+    "file": "cases/flexbox/flexbox-deep-table-cell-flex-alignment.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-deep-inline-block-flex-wrap-text",
+    "category": "flexbox",
+    "feature": "deep-nesting",
+    "subfeature": "inline-block-flex-wrap-text",
+    "description": "An inline-block inside a centered flex item contains a nested flex row with a fixed swatch and wrapping text; ironpress drops most nested inline-block/flex decoration and sizes to text only.",
+    "file": "cases/flexbox/flexbox-deep-inline-block-flex-wrap-text.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-deep-overflow-grid-clip-decoration",
+    "category": "flexbox",
+    "feature": "deep-nesting",
+    "subfeature": "overflow-grid-clip-decoration",
+    "description": "A flex item clips an oversized nested grid with decorated cells so overflow and paint clipping compose through the nested containers; ironpress leaves a thin clip-boundary mismatch at the nested grid edge.",
+    "file": "cases/flexbox/flexbox-deep-overflow-grid-clip-decoration.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
+  },
+  {
+    "id": "flexbox-deep-flex-svg-center",
+    "category": "flexbox",
+    "feature": "deep-nesting",
+    "subfeature": "flex-svg-center",
+    "description": "A column flex item contains a centered flex row whose deepest child is an inline SVG centered inside nested flex holders; ironpress over-expands the nested flex stack and places the SVG too low.",
+    "file": "cases/flexbox/flexbox-deep-flex-svg-center.html",
+    "kind": "interaction",
+    "expected_support": "unsupported",
+    "depends_on": [
+      "probe-fill-box",
+      "probe-block-flow"
+    ],
+    "weight": 1,
+    "pass_threshold_pct": 2.0,
+    "partial_threshold_pct": 10.0
   }
 ]

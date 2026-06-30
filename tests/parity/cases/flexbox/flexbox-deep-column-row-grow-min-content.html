@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flexbox deep column row grow min content</title>
+<style>
+  @page { size: 390px 242px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .outer {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: 354px;
+    height: 206px;
+    padding: 10px;
+    border: 2px solid #111827;
+    background: #f8fafc;
+  }
+  .head {
+    flex: 0 0 34px;
+    border: 2px solid #166534;
+    background: #86efac;
+  }
+  .body {
+    display: flex;
+    gap: 10px;
+    flex: 1 1 auto;
+    min-height: 0;
+  }
+  .side {
+    flex: 0 0 82px;
+    border: 2px solid #991b1b;
+    background: #fecaca;
+  }
+  .row {
+    display: flex;
+    align-items: stretch;
+    gap: 8px;
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 8px;
+    border: 2px solid #1e40af;
+    background: #dbeafe;
+  }
+  .grow {
+    flex: 1 1 0;
+    border: 2px solid #6d28d9;
+    background: #ddd6fe;
+  }
+  .probe {
+    display: flex;
+    flex: 2 1 min-content;
+    min-width: 0;
+    padding: 6px;
+    border: 2px solid #9a3412;
+    background: #fed7aa;
+  }
+  .copy {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 5px;
+    border: 2px solid #0f172a;
+    background: #ffffff;
+    color: #111827;
+    font-size: 14px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+</style>
+</head>
+<body>
+  <div class="outer">
+    <div class="head"></div>
+    <div class="body">
+      <div class="side"></div>
+      <div class="row">
+        <div class="grow"></div>
+        <div class="probe">
+          <div class="copy">deep nested sizing propagates through columns</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</body>
+</html>

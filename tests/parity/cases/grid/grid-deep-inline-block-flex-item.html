@@ -1,0 +1,74 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>grid deep inline block flex item</title>
+<style>
+  @page { size: 390px 202px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .grid {
+    display: grid;
+    grid-template-columns: 110px 1fr;
+    gap: 12px;
+    width: 354px;
+    height: 166px;
+    padding: 10px;
+    border: 2px solid #111827;
+    background: #f8fafc;
+  }
+  .label {
+    border: 2px solid #b45309;
+    background: #fde68a;
+  }
+  .box {
+    padding: 8px;
+    border: 2px solid #0f766e;
+    background: #ccfbf1;
+  }
+  .inline-shell {
+    display: inline-block;
+    width: 186px;
+    border: 2px solid #1d4ed8;
+    background: #dbeafe;
+  }
+  .flex {
+    display: flex;
+    gap: 8px;
+    padding: 8px;
+    align-items: center;
+  }
+  .swatch {
+    flex: 0 0 44px;
+    height: 58px;
+    border: 2px solid #9f1239;
+    background: #fb7185;
+  }
+  .copy {
+    flex: 1 1 auto;
+    min-width: 0;
+    padding: 4px;
+    border: 2px solid #334155;
+    background: #ffffff;
+    font-size: 13px;
+    line-height: 1.2;
+    overflow-wrap: anywhere;
+  }
+</style>
+</head>
+<body>
+  <div class="grid">
+    <div class="label"></div>
+    <div class="box">
+      <span class="inline-shell">
+        <span class="flex">
+          <span class="swatch"></span>
+          <span class="copy">inline flex content resolves inside a grid item</span>
+        </span>
+      </span>
+    </div>
+  </div>
+</body>
+</html>

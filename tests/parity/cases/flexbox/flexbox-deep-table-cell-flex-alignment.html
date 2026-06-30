@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>flexbox deep table cell flex alignment</title>
+<style>
+  @page { size: 400px 218px; margin: 0; }
+  html { font-family: ParitySans; line-height: 1.5; }
+  * { margin: 0; box-sizing: border-box; }
+  html, body { background: #ffffff; }
+  body { padding: 18px; }
+  .outer {
+    display: flex;
+    gap: 12px;
+    width: 364px;
+    height: 182px;
+    padding: 10px;
+    border: 2px solid #172554;
+    background: #eff6ff;
+  }
+  .marker {
+    flex: 0 0 72px;
+    border: 2px solid #854d0e;
+    background: #fef08a;
+  }
+  .panel {
+    flex: 1 1 auto;
+    min-width: 0;
+    border: 2px solid #7f1d1d;
+    background: #fee2e2;
+  }
+  table {
+    width: 100%;
+    height: 100%;
+    border-collapse: collapse;
+  }
+  td {
+    padding: 8px;
+    border: 2px solid #475569;
+    vertical-align: middle;
+    background: #f8fafc;
+  }
+  .cell-flex {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    height: 100%;
+    padding: 8px;
+    border: 2px solid #065f46;
+    background: #ccfbf1;
+  }
+  .bar {
+    flex: 1 1 auto;
+    height: 44px;
+    border: 2px solid #0f172a;
+    background: #38bdf8;
+  }
+  .badge {
+    flex: 0 0 42px;
+    height: 68px;
+    border: 2px solid #581c87;
+    background: #c084fc;
+  }
+</style>
+</head>
+<body>
+  <div class="outer">
+    <div class="marker"></div>
+    <div class="panel">
+      <table>
+        <tr>
+          <td>
+            <div class="cell-flex">
+              <div class="bar"></div>
+              <div class="badge"></div>
+            </div>
+          </td>
+        </tr>
+      </table>
+    </div>
+  </div>
+</body>
+</html>
