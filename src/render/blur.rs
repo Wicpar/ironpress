@@ -64,7 +64,7 @@ fn blur_premultiplied(img: &image::RgbaImage, sigma: f32) -> image::RgbaImage {
 /// Encode a (possibly padded) RGBA buffer as a full PNG file and wrap it in a
 /// `PngAlpha` asset, whose embedding path decodes colour + soft-mask so the
 /// transparent feathered border survives into the PDF.
-fn rgba_to_png_alpha_asset(img: image::RgbaImage) -> Option<RasterImageAsset> {
+pub(crate) fn rgba_to_png_alpha_asset(img: image::RgbaImage) -> Option<RasterImageAsset> {
     let (width, height) = (img.width(), img.height());
     let mut encoded = Vec::new();
     image::DynamicImage::ImageRgba8(img)
@@ -349,6 +349,29 @@ pub(crate) fn blur_shadow_alpha_mask(
     Some((BlurredRaster { asset, overflow_pt }, pad))
 }
 
+pub(crate) fn dilate_alpha_mask(mask: &image::GrayImage, radius: u32) -> image::GrayImage {
+    if radius == 0 {
+        return mask.clone();
+    }
+    let mut out = image::GrayImage::new(mask.width(), mask.height());
+    for y in 0..mask.height() {
+        for x in 0..mask.width() {
+            let x0 = x.saturating_sub(radius);
+            let y0 = y.saturating_sub(radius);
+            let x1 = (x + radius).min(mask.width().saturating_sub(1));
+            let y1 = (y + radius).min(mask.height().saturating_sub(1));
+            let mut max_a = 0;
+            for yy in y0..=y1 {
+                for xx in x0..=x1 {
+                    max_a = max_a.max(mask.get_pixel(xx, yy)[0]);
+                }
+            }
+            out.put_pixel(x, y, image::Luma([max_a]));
+        }
+    }
+    out
+}
+
 /// A rasterized text run's alpha coverage plus where the text origin (baseline,
 /// left edge) sits inside the mask, in device pixels from the mask's top-left.
 pub(crate) struct GlyphRaster {
@@ -371,6 +394,7 @@ pub(crate) fn rasterize_run_alpha(
     font_size_pt: f32,
     glyphs: &[crate::text::ShapedGlyph],
     filter_dpi: f32,
+    stroke_width_px: f32,
 ) -> Option<GlyphRaster> {
     use resvg::tiny_skia;
 
@@ -450,7 +474,8 @@ pub(crate) fn rasterize_run_alpha(
     let bounds = path.bounds();
 
     // Margin so the outline anti-aliasing isn't clipped at the buffer edge.
-    let margin = 2.0f32;
+    let stroke_width_px = stroke_width_px.max(0.0);
+    let margin = 2.0f32 + stroke_width_px / 2.0;
     let min_x = bounds.left() - margin;
     let min_y = bounds.top() - margin;
     let buf_w = (bounds.right() - bounds.left() + 2.0 * margin)
@@ -467,6 +492,13 @@ pub(crate) fn rasterize_run_alpha(
     paint.set_color(tiny_skia::Color::WHITE);
     paint.anti_alias = true;
     pixmap.fill_path(&path, &paint, tiny_skia::FillRule::Winding, transform, None);
+    if stroke_width_px > 0.0 {
+        let stroke = tiny_skia::Stroke {
+            width: stroke_width_px,
+            ..tiny_skia::Stroke::default()
+        };
+        pixmap.stroke_path(&path, &paint, &stroke, transform, None);
+    }
 
     // Convert to a grayscale alpha mask.
     let mut mask = image::GrayImage::new(buf_w, buf_h);
@@ -659,13 +691,14 @@ pub(crate) fn raster_from_buffer(buf: image::RgbaImage, overflow_pt: f32) -> Opt
     Some(BlurredRaster { asset, overflow_pt })
 }
 
-/// Blur an already-painted border-box RGBA buffer at filter resolution, padding
-/// transparent pixels around it so the CSS filter can feather outside the box.
-pub(crate) fn blur_painted_buffer(
+/// Blur an already-painted RGBA buffer and return the padded pixels. Unlike
+/// [`blur_painted_buffer`], this keeps the buffer decoded so later filter-list
+/// functions can run after the blur in CSS source order.
+pub(crate) fn blur_painted_buffer_to_rgba(
     source: &image::RgbaImage,
     blur_radius_pt: f32,
     filter_dpi: f32,
-) -> Option<BlurredRaster> {
+) -> Option<(image::RgbaImage, f32)> {
     if source.width() == 0 || source.height() == 0 || blur_radius_pt <= 0.0 {
         return None;
     }
@@ -676,7 +709,292 @@ pub(crate) fn blur_painted_buffer(
     image::imageops::replace(&mut padded, source, pad as i64, pad as i64);
     let blurred = blur_premultiplied(&padded, sigma);
     let overflow_pt = pad as f32 / s * PT_PER_PX;
+    Some((blurred, overflow_pt))
+}
+
+/// Blur an already-painted border-box RGBA buffer at filter resolution, padding
+/// transparent pixels around it so the CSS filter can feather outside the box.
+pub(crate) fn blur_painted_buffer(
+    source: &image::RgbaImage,
+    blur_radius_pt: f32,
+    filter_dpi: f32,
+) -> Option<BlurredRaster> {
+    if source.width() == 0 || source.height() == 0 || blur_radius_pt <= 0.0 {
+        return None;
+    }
+    let (blurred, overflow_pt) = blur_painted_buffer_to_rgba(source, blur_radius_pt, filter_dpi)?;
     raster_from_buffer(blurred, overflow_pt)
+}
+
+/// Apply an ordered CSS/SVG filter operation list to composited RGBA pixels.
+/// Geometry-producing operations that this helper does not rasterize (offset,
+/// flood, morphology, drop-shadow) are ignored here because their existing
+/// specialized layout/render paths handle them before callers reach this group
+/// raster fallback.
+pub(crate) fn apply_ordered_filter_ops_rgba(
+    source: &image::RgbaImage,
+    ops: &[crate::style::computed::ColorFilterOp],
+    linear_rgb: bool,
+    filter_dpi: f32,
+) -> Option<(image::RgbaImage, f32)> {
+    let mut current = source.clone();
+    let mut overflow = 0.0;
+    for op in ops {
+        match *op {
+            crate::style::computed::ColorFilterOp::Blur(radius) if radius > 0.0 => {
+                let (buf, ov) = blur_painted_buffer_to_rgba(&current, radius * 0.95, filter_dpi)?;
+                current = buf;
+                overflow += ov;
+            }
+            crate::style::computed::ColorFilterOp::Blur(_)
+            | crate::style::computed::ColorFilterOp::Flood { .. }
+            | crate::style::computed::ColorFilterOp::Offset { .. }
+            | crate::style::computed::ColorFilterOp::DropShadow(_)
+            | crate::style::computed::ColorFilterOp::MorphologyDilate(_) => {}
+            _ => apply_color_filter_rgba(&mut current, std::slice::from_ref(op), linear_rgb),
+        }
+    }
+    Some((current, overflow))
+}
+
+fn apply_color_filter_rgba(
+    img: &mut image::RgbaImage,
+    ops: &[crate::style::computed::ColorFilterOp],
+    linear_rgb: bool,
+) {
+    for px in img.pixels_mut() {
+        let rgba = (
+            px[0] as f32 / 255.0,
+            px[1] as f32 / 255.0,
+            px[2] as f32 / 255.0,
+            px[3] as f32 / 255.0,
+        );
+        let (r, g, b, a) =
+            crate::layout::images::apply_color_filters_to_color(rgba, ops, linear_rgb);
+        px[0] = (r * 255.0).round().clamp(0.0, 255.0) as u8;
+        px[1] = (g * 255.0).round().clamp(0.0, 255.0) as u8;
+        px[2] = (b * 255.0).round().clamp(0.0, 255.0) as u8;
+        px[3] = (a * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+}
+
+pub(crate) struct SvgTurbulenceDisplacement {
+    pub base_frequency_x: f64,
+    pub base_frequency_y: f64,
+    pub num_octaves: u32,
+    pub seed: i32,
+    /// feDisplacementMap scale in SVG user units (CSS px for these filters).
+    pub scale: f32,
+    /// Symmetric source-graphic overflow in SVG user units.
+    pub overflow: f32,
+}
+
+pub(crate) fn turbulence_displacement_rect(
+    width_pt: f32,
+    height_pt: f32,
+    color: (f32, f32, f32, f32),
+    spec: &SvgTurbulenceDisplacement,
+    filter_dpi: f32,
+) -> Option<BlurredRaster> {
+    if width_pt <= 0.0 || height_pt <= 0.0 || color.3 <= 0.0 {
+        return None;
+    }
+    let scale = filter_dpi_scale(filter_dpi);
+    let width_css = width_pt / PT_PER_PX;
+    let height_css = height_pt / PT_PER_PX;
+    let canvas_w_css = width_css + 2.0 * spec.overflow;
+    let canvas_h_css = height_css + 2.0 * spec.overflow;
+    let px_w = (canvas_w_css * scale).round().max(1.0) as u32;
+    let px_h = (canvas_h_css * scale).round().max(1.0) as u32;
+    let ox = (spec.overflow * scale).round() as i32;
+    let oy = (spec.overflow * scale).round() as i32;
+    let rect_w = (width_css * scale).round().max(1.0) as i32;
+    let rect_h = (height_css * scale).round().max(1.0) as i32;
+
+    let fill = image::Rgba([
+        (color.0 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.1 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.2 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.3 * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]);
+    let mut source = image::RgbaImage::new(px_w, px_h);
+    for y in oy.max(0)..(oy + rect_h).min(px_h as i32) {
+        for x in ox.max(0)..(ox + rect_w).min(px_w as i32) {
+            source.put_pixel(x as u32, y as u32, fill);
+        }
+    }
+
+    let noise = SvgTurbulence::new(spec.seed);
+    let mut out = image::RgbaImage::new(px_w, px_h);
+    let view_x = -spec.overflow as f64;
+    let view_y = -spec.overflow as f64;
+    let disp_scale = spec.scale * scale;
+    for y in 0..px_h {
+        for x in 0..px_w {
+            let user_x = x as f64 / scale as f64 + view_x;
+            let user_y = y as f64 / scale as f64 + view_y;
+            let r = noise.turbulence_channel(
+                0,
+                user_x,
+                user_y,
+                spec.base_frequency_x,
+                spec.base_frequency_y,
+                spec.num_octaves,
+            );
+            let g = noise.turbulence_channel(
+                1,
+                user_x,
+                user_y,
+                spec.base_frequency_x,
+                spec.base_frequency_y,
+                spec.num_octaves,
+            );
+            let sx = x as i32 + ((r as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
+            let sy = y as i32 + ((g as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
+            if sx >= 0 && sy >= 0 && sx < px_w as i32 && sy < px_h as i32 {
+                out.put_pixel(x, y, *source.get_pixel(sx as u32, sy as u32));
+            }
+        }
+    }
+
+    let overflow_pt = spec.overflow * PT_PER_PX;
+    raster_from_buffer(out, overflow_pt)
+}
+
+const SVG_RAND_M: i32 = 2147483647;
+const SVG_RAND_A: i32 = 16807;
+const SVG_RAND_Q: i32 = 127773;
+const SVG_RAND_R: i32 = 2836;
+const SVG_B_SIZE: usize = 0x100;
+const SVG_B_SIZE_I32: i32 = 0x100;
+const SVG_B_LEN: usize = SVG_B_SIZE + SVG_B_SIZE + 2;
+const SVG_BM: i32 = 0xff;
+const SVG_PERLIN_N: i32 = 0x1000;
+
+struct SvgTurbulence {
+    lattice: Vec<usize>,
+    gradient: Vec<Vec<Vec<f64>>>,
+}
+
+impl SvgTurbulence {
+    fn new(mut seed: i32) -> Self {
+        let mut lattice = vec![0; SVG_B_LEN];
+        let mut gradient = vec![vec![vec![0.0; 2]; SVG_B_LEN]; 4];
+        if seed <= 0 {
+            seed = -seed % (SVG_RAND_M - 1) + 1;
+        }
+        if seed > SVG_RAND_M - 1 {
+            seed = SVG_RAND_M - 1;
+        }
+        for channel_gradient in gradient.iter_mut().take(4) {
+            for i in 0..SVG_B_SIZE {
+                lattice[i] = i;
+                for component in channel_gradient[i].iter_mut().take(2) {
+                    seed = svg_turbulence_random(seed);
+                    *component =
+                        ((seed % (SVG_B_SIZE_I32 + SVG_B_SIZE_I32)) - SVG_B_SIZE_I32) as f64
+                            / SVG_B_SIZE_I32 as f64;
+                }
+                let len = (channel_gradient[i][0] * channel_gradient[i][0]
+                    + channel_gradient[i][1] * channel_gradient[i][1])
+                    .sqrt();
+                if len > 0.0 {
+                    channel_gradient[i][0] /= len;
+                    channel_gradient[i][1] /= len;
+                }
+            }
+        }
+        for i in (1..SVG_B_SIZE).rev() {
+            let k = lattice[i];
+            seed = svg_turbulence_random(seed);
+            let j = (seed % SVG_B_SIZE_I32) as usize;
+            lattice[i] = lattice[j];
+            lattice[j] = k;
+        }
+        for i in 0..SVG_B_SIZE + 2 {
+            lattice[SVG_B_SIZE + i] = lattice[i];
+            for channel_gradient in gradient.iter_mut().take(4) {
+                channel_gradient[SVG_B_SIZE + i][0] = channel_gradient[i][0];
+                channel_gradient[SVG_B_SIZE + i][1] = channel_gradient[i][1];
+            }
+        }
+        Self { lattice, gradient }
+    }
+
+    fn turbulence_channel(
+        &self,
+        channel: usize,
+        mut x: f64,
+        mut y: f64,
+        base_freq_x: f64,
+        base_freq_y: f64,
+        num_octaves: u32,
+    ) -> u8 {
+        x *= base_freq_x;
+        y *= base_freq_y;
+        let mut sum = 0.0;
+        let mut ratio = 1.0;
+        for _ in 0..num_octaves {
+            sum += self.noise2(channel, x, y).abs() / ratio;
+            x *= 2.0;
+            y *= 2.0;
+            ratio *= 2.0;
+        }
+        (sum * 255.0 + 0.5).clamp(0.0, 255.0) as u8
+    }
+
+    fn noise2(&self, channel: usize, x: f64, y: f64) -> f64 {
+        let t = x + SVG_PERLIN_N as f64;
+        let mut bx0 = t as i32;
+        let mut bx1 = bx0 + 1;
+        let rx0 = t - t as i64 as f64;
+        let rx1 = rx0 - 1.0;
+        let t = y + SVG_PERLIN_N as f64;
+        let mut by0 = t as i32;
+        let mut by1 = by0 + 1;
+        let ry0 = t - t as i64 as f64;
+        let ry1 = ry0 - 1.0;
+
+        bx0 &= SVG_BM;
+        bx1 &= SVG_BM;
+        by0 &= SVG_BM;
+        by1 &= SVG_BM;
+        let i = self.lattice[bx0 as usize];
+        let j = self.lattice[bx1 as usize];
+        let b00 = self.lattice[i + by0 as usize];
+        let b10 = self.lattice[j + by0 as usize];
+        let b01 = self.lattice[i + by1 as usize];
+        let b11 = self.lattice[j + by1 as usize];
+        let sx = svg_s_curve(rx0);
+        let sy = svg_s_curve(ry0);
+        let q = &self.gradient[channel][b00];
+        let u = rx0 * q[0] + ry0 * q[1];
+        let q = &self.gradient[channel][b10];
+        let v = rx1 * q[0] + ry0 * q[1];
+        let a = svg_lerp(sx, u, v);
+        let q = &self.gradient[channel][b01];
+        let u = rx0 * q[0] + ry1 * q[1];
+        let q = &self.gradient[channel][b11];
+        let v = rx1 * q[0] + ry1 * q[1];
+        let b = svg_lerp(sx, u, v);
+        svg_lerp(sy, a, b)
+    }
+}
+
+fn svg_turbulence_random(seed: i32) -> i32 {
+    let mut result = SVG_RAND_A * (seed % SVG_RAND_Q) - SVG_RAND_R * (seed / SVG_RAND_Q);
+    if result <= 0 {
+        result += SVG_RAND_M;
+    }
+    result
+}
+
+fn svg_s_curve(t: f64) -> f64 {
+    t * t * (3.0 - 2.0 * t)
+}
+
+fn svg_lerp(t: f64, a: f64, b: f64) -> f64 {
+    a + t * (b - a)
 }
 
 /// Build a `drop-shadow(dx dy blur color)` raster from an already-decoded source

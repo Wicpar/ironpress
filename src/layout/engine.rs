@@ -2829,6 +2829,773 @@ fn filtered_color(
     }
 }
 
+const FILTER_GROUP_RASTER_DPI: f32 = 300.0;
+const DIRECT_FILTER_IMAGE_OVERFLOW_PT: f32 = 0.001;
+
+struct FilterGroupRaster {
+    asset: RasterImageAsset,
+    width: f32,
+    height: f32,
+    margin_top: f32,
+    margin_bottom: f32,
+    overflow: f32,
+}
+
+#[derive(Clone, Copy)]
+enum FilterTextRasterMode {
+    Dilated { alpha: f32 },
+    Stroked { alpha: f32 },
+}
+
+fn replace_filtered_output_with_raster(
+    style: &ComputedStyle,
+    ops: &[crate::style::computed::ColorFilterOp],
+    linear_rgb: bool,
+    env: &LayoutEnv<'_>,
+    output: &mut Vec<LayoutElement>,
+    start: usize,
+) -> bool {
+    if output.len() != start + 1 {
+        return false;
+    }
+    let filter_el = style
+        .filter_url_id
+        .as_ref()
+        .and_then(|id| env.filter_defs.get(id));
+    let has_displacement = filter_el.is_some_and(svg_filter_has_turbulence_displacement);
+    let has_raster_ops = ops.iter().any(|op| {
+        matches!(
+            op,
+            crate::style::computed::ColorFilterOp::Blur(_)
+                | crate::style::computed::ColorFilterOp::Brightness(_)
+                | crate::style::computed::ColorFilterOp::Contrast(_)
+                | crate::style::computed::ColorFilterOp::Saturate(_)
+        )
+    });
+    if !has_raster_ops && !has_displacement {
+        return false;
+    }
+
+    let element = output[start].clone();
+    if matches!(
+        element,
+        LayoutElement::TextBlock {
+            block_width: None,
+            ..
+        }
+    ) {
+        return false;
+    }
+    let raster = if has_displacement {
+        filter_el.and_then(|filter| rasterize_svg_displacement_rect(&element, filter))
+    } else {
+        rasterize_filtered_group(&element, ops, linear_rgb, env.fonts)
+    };
+    let Some(raster) = raster else {
+        return false;
+    };
+
+    output.truncate(start);
+    output.push(LayoutElement::Image {
+        image: raster.asset,
+        width: raster.width,
+        height: raster.height,
+        flow_extra_bottom: 0.0,
+        margin_top: raster.margin_top,
+        margin_bottom: raster.margin_bottom,
+        object_fit: crate::style::computed::ObjectFit::Fill,
+        object_position: crate::style::computed::ObjectPosition::default(),
+        background_color: None,
+        border: LayoutBorder::default(),
+        blur_overflow: raster.overflow.max(DIRECT_FILTER_IMAGE_OVERFLOW_PT),
+        src_crop: None,
+    });
+    true
+}
+
+fn rasterize_filtered_group(
+    element: &LayoutElement,
+    ops: &[crate::style::computed::ColorFilterOp],
+    linear_rgb: bool,
+    fonts: &HashMap<String, TtfFont>,
+) -> Option<FilterGroupRaster> {
+    let text_mode = if ops
+        .iter()
+        .any(|op| matches!(op, crate::style::computed::ColorFilterOp::Blur(_)))
+    {
+        FilterTextRasterMode::Dilated { alpha: 0.92 }
+    } else {
+        FilterTextRasterMode::Stroked { alpha: 1.0 }
+    };
+    let (mut img, width, height, margin_top, margin_bottom) =
+        paint_filter_source_element(element, fonts, text_mode)?;
+    let (filtered, overflow) = crate::render::blur::apply_ordered_filter_ops_rgba(
+        &img,
+        ops,
+        linear_rgb,
+        FILTER_GROUP_RASTER_DPI,
+    )?;
+    img = filtered;
+    let asset = crate::render::blur::rgba_to_png_alpha_asset(img)?;
+    Some(FilterGroupRaster {
+        asset,
+        width,
+        height,
+        margin_top,
+        margin_bottom,
+        overflow,
+    })
+}
+
+fn paint_filter_source_element(
+    element: &LayoutElement,
+    fonts: &HashMap<String, TtfFont>,
+    text_mode: FilterTextRasterMode,
+) -> Option<(image::RgbaImage, f32, f32, f32, f32)> {
+    let (width, height, margin_top, margin_bottom) = filter_source_box(element)?;
+    let px_per_pt = crate::render::blur::px_per_pt_at_filter_dpi(FILTER_GROUP_RASTER_DPI);
+    let px_w = (width * px_per_pt).round().max(1.0) as u32;
+    let px_h = (height * px_per_pt).round().max(1.0) as u32;
+    let mut img = image::RgbaImage::new(px_w, px_h);
+    paint_filter_element_into(
+        &mut img, px_per_pt, element, 0.0, 0.0, width, height, fonts, text_mode,
+    )?;
+    Some((img, width, height, margin_top, margin_bottom))
+}
+
+fn filter_source_box(element: &LayoutElement) -> Option<(f32, f32, f32, f32)> {
+    match element {
+        LayoutElement::TextBlock {
+            lines,
+            margin_top,
+            margin_bottom,
+            padding_top,
+            padding_bottom,
+            block_width,
+            block_height,
+            border,
+            position,
+            float,
+            visible,
+            opacity,
+            mix_blend_mode,
+            transform,
+            clip_rect,
+            background_gradient,
+            background_radial_gradient,
+            background_conic_gradient,
+            background_svg,
+            border_radius,
+            border_radii,
+            border_radii_y,
+            outline_width,
+            writing_mode,
+            ..
+        } if *position == Position::Static
+            && *float == Float::None
+            && *visible
+            && *opacity >= 1.0
+            && *mix_blend_mode == crate::style::computed::BlendMode::Normal
+            && transform.is_none()
+            && clip_rect.is_none()
+            && background_gradient.is_none()
+            && background_radial_gradient.is_none()
+            && background_conic_gradient.is_none()
+            && background_svg.is_none()
+            && !border.has_visible()
+            && *border_radius == 0.0
+            && border_radii.iter().all(|r| *r == 0.0)
+            && border_radii_y.iter().all(|r| *r == 0.0)
+            && *outline_width == 0.0
+            && matches!(
+                writing_mode,
+                crate::style::computed::WritingMode::HorizontalTb
+            ) =>
+        {
+            let text_h: f32 = lines.iter().map(|line| line.height).sum();
+            let content_h = padding_top + text_h + padding_bottom;
+            let height = block_height.unwrap_or(content_h) + border.vertical_width();
+            Some((
+                block_width.unwrap_or(0.0),
+                height,
+                *margin_top,
+                *margin_bottom,
+            ))
+        }
+        LayoutElement::Container {
+            margin_top,
+            margin_bottom,
+            block_width: Some(width),
+            block_height,
+            children,
+            padding_top,
+            padding_bottom,
+            border,
+            opacity,
+            mix_blend_mode,
+            visible,
+            float,
+            position,
+            offset_top,
+            offset_left,
+            overflow,
+            transform,
+            clip_path,
+            mask_image,
+            box_shadow,
+            background_gradient,
+            background_radial_gradient,
+            background_conic_gradient,
+            background_svg,
+            border_radius,
+            border_radii,
+            border_radii_y,
+            outline_width,
+            ..
+        } if *position == Position::Static
+            && *float == Float::None
+            && *offset_top == 0.0
+            && *offset_left == 0.0
+            && *visible
+            && *opacity >= 1.0
+            && *mix_blend_mode == crate::style::computed::BlendMode::Normal
+            && *overflow == Overflow::Visible
+            && transform.is_none()
+            && clip_path.is_none()
+            && mask_image.is_none()
+            && box_shadow.is_empty()
+            && background_gradient.is_none()
+            && background_radial_gradient.is_none()
+            && background_conic_gradient.is_none()
+            && background_svg.is_none()
+            && !border.has_visible()
+            && *border_radius == 0.0
+            && border_radii.iter().all(|r| *r == 0.0)
+            && border_radii_y.iter().all(|r| *r == 0.0)
+            && *outline_width == 0.0 =>
+        {
+            let children_h: f32 = children.iter().map(estimate_element_height).sum();
+            let fallback_h = padding_top + children_h + padding_bottom + border.vertical_width();
+            Some((*width, block_height.unwrap_or(fallback_h), *margin_top, *margin_bottom))
+        }
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_filter_element_into(
+    img: &mut image::RgbaImage,
+    px_per_pt: f32,
+    element: &LayoutElement,
+    x_pt: f32,
+    y_pt: f32,
+    width_pt: f32,
+    height_pt: f32,
+    fonts: &HashMap<String, TtfFont>,
+    text_mode: FilterTextRasterMode,
+) -> Option<()> {
+    match element {
+        LayoutElement::TextBlock {
+            lines,
+            background_color,
+            padding_top,
+            padding_bottom,
+            padding_left,
+            padding_right,
+            text_align,
+            text_indent,
+            letter_spacing,
+            word_spacing,
+            border,
+            ..
+        } => {
+            if *letter_spacing != 0.0 || *word_spacing != 0.0 || border.has_visible() {
+                return None;
+            }
+            if let Some(bg) = *background_color {
+                fill_filter_rgba_rect(img, px_per_pt, x_pt, y_pt, width_pt, height_pt, bg);
+            }
+            paint_filter_text_lines(
+                img,
+                px_per_pt,
+                x_pt,
+                y_pt,
+                width_pt,
+                lines,
+                *padding_top,
+                *padding_bottom,
+                *padding_left,
+                *padding_right,
+                *text_align,
+                *text_indent,
+                fonts,
+                text_mode,
+            )
+        }
+        LayoutElement::Container {
+            children,
+            background_color,
+            padding_top,
+            padding_left,
+            padding_right,
+            ..
+        } => {
+            if let Some(bg) = *background_color {
+                fill_filter_rgba_rect(img, px_per_pt, x_pt, y_pt, width_pt, height_pt, bg);
+            }
+            let content_w = (width_pt - padding_left - padding_right).max(0.0);
+            let mut cursor_y = *padding_top;
+            let mut prev_margin_bottom = 0.0;
+            for child in children {
+                let (child_w, child_h, margin_top, margin_bottom) = filter_source_box(child)?;
+                cursor_y += collapsed_filter_margin_top_extra(margin_top, prev_margin_bottom);
+                let (child_x, child_y) = match child {
+                    LayoutElement::TextBlock {
+                        offset_left,
+                        offset_top,
+                        ..
+                    }
+                    | LayoutElement::Container {
+                        offset_left,
+                        offset_top,
+                        ..
+                    } => (x_pt + padding_left + offset_left, y_pt + cursor_y + offset_top),
+                    _ => return None,
+                };
+                let paint_w = if child_w > 0.0 { child_w } else { content_w };
+                paint_filter_element_into(
+                    img, px_per_pt, child, child_x, child_y, paint_w, child_h, fonts, text_mode,
+                )?;
+                cursor_y += child_h + margin_bottom;
+                prev_margin_bottom = margin_bottom;
+            }
+            Some(())
+        }
+        _ => None,
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn paint_filter_text_lines(
+    img: &mut image::RgbaImage,
+    px_per_pt: f32,
+    x_pt: f32,
+    y_pt: f32,
+    width_pt: f32,
+    lines: &[TextLine],
+    padding_top: f32,
+    _padding_bottom: f32,
+    padding_left: f32,
+    padding_right: f32,
+    text_align: TextAlign,
+    text_indent: f32,
+    fonts: &HashMap<String, TtfFont>,
+    text_mode: FilterTextRasterMode,
+) -> Option<()> {
+    let content_w = (width_pt - padding_left - padding_right).max(0.0);
+    let mut baseline_y = y_pt + padding_top;
+    for (line_idx, line) in lines.iter().enumerate() {
+        let (asc, desc) = filter_line_font_extents(line, fonts);
+        let half_leading = ((line.height - (asc + desc)) / 2.0).max(0.0);
+        baseline_y += half_leading + asc;
+        let runs = filter_merge_runs(&line.runs);
+        let line_width: f32 = runs
+            .iter()
+            .map(|run| filter_run_width(run, fonts))
+            .sum::<Option<f32>>()?;
+        let first_line_indent = if line_idx == 0 { text_indent } else { 0.0 };
+        let text_x = match text_align {
+            TextAlign::Right => {
+                x_pt + padding_left
+                    + first_line_indent
+                    + (content_w - first_line_indent - line_width).max(0.0)
+            }
+            TextAlign::Center => {
+                x_pt + padding_left
+                    + first_line_indent
+                    + (content_w - first_line_indent - line_width).max(0.0) / 2.0
+            }
+            _ => x_pt + padding_left + first_line_indent,
+        } + line.x_offset;
+        let mut run_x = text_x;
+        for run in &runs {
+            if run.inline_box.is_some()
+                || run.underline
+                || run.line_through
+                || run.overline
+                || run.background_color.is_some()
+                || !run.text_shadow.is_empty()
+                || run.vertical_align != VerticalAlign::Baseline
+                || run.text.is_empty()
+            {
+                return None;
+            }
+            let (_, font) =
+                crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, fonts)?;
+            let shaped = crate::text::shape_text_run(run, fonts)?;
+            let needs_faux_bold = crate::system_fonts::needs_faux_bold(
+                fonts,
+                run.font_family.name(),
+                run.bold,
+                run.italic,
+            );
+            let stroke_width_px = match text_mode {
+                FilterTextRasterMode::Stroked { .. } if needs_faux_bold => {
+                    run.font_size * 0.028 * px_per_pt
+                }
+                _ => 0.0,
+            };
+            let raster = crate::render::blur::rasterize_run_alpha(
+                &font.data,
+                font.units_per_em,
+                run.font_size,
+                &shaped.glyphs,
+                FILTER_GROUP_RASTER_DPI,
+                stroke_width_px,
+            )?;
+            let mask = match text_mode {
+                FilterTextRasterMode::Dilated { .. } if needs_faux_bold => {
+                    let stroke_px =
+                        (run.font_size * 0.028 * px_per_pt / 2.0).ceil().max(1.0) as u32;
+                    crate::render::blur::dilate_alpha_mask(&raster.mask, stroke_px)
+                }
+                _ => raster.mask,
+            };
+            let alpha = match text_mode {
+                FilterTextRasterMode::Dilated { alpha }
+                | FilterTextRasterMode::Stroked { alpha } => alpha,
+            };
+            let dst_x = (run_x * px_per_pt - raster.origin_x_px).round() as i32;
+            let dst_y = (baseline_y * px_per_pt - raster.baseline_y_px).round() as i32;
+            composite_filter_text_mask(img, &mask, dst_x, dst_y, run.color, alpha);
+            run_x += filter_run_width(run, fonts)?;
+        }
+        baseline_y += desc + half_leading;
+    }
+    Some(())
+}
+
+fn filter_line_font_extents(line: &TextLine, fonts: &HashMap<String, TtfFont>) -> (f32, f32) {
+    line.runs
+        .iter()
+        .filter(|run| run.inline_box.is_none())
+        .fold((0.0f32, 0.0f32), |(max_asc, max_desc), run| {
+            let (asc, desc) = crate::fonts::font_metrics_ratios(
+                &run.font_family,
+                run.bold,
+                run.italic,
+                fonts,
+            );
+            (
+                max_asc.max(asc * run.font_size),
+                max_desc.max(desc * run.font_size),
+            )
+        })
+}
+
+fn filter_run_width(run: &TextRun, fonts: &HashMap<String, TtfFont>) -> Option<f32> {
+    if run.inline_box.is_some() {
+        return None;
+    }
+    crate::text::measure_text_width(
+        &run.text,
+        run.font_size,
+        &run.font_family,
+        run.bold,
+        run.italic,
+        fonts,
+    )
+    .or_else(|| {
+        Some(crate::fonts::str_width(
+            &run.text,
+            run.font_size,
+            &run.font_family,
+            run.bold,
+        ))
+    })
+}
+
+fn filter_merge_runs(runs: &[TextRun]) -> Vec<TextRun> {
+    let mut merged: Vec<TextRun> = Vec::new();
+    for run in runs {
+        if run.inline_box.is_some() {
+            merged.push(run.clone());
+            continue;
+        }
+        if run.text.is_empty() {
+            continue;
+        }
+        let can_merge = merged.last().is_some_and(|prev| {
+            prev.inline_box.is_none()
+                && prev.font_size == run.font_size
+                && prev.bold == run.bold
+                && prev.italic == run.italic
+                && prev.color == run.color
+                && prev.font_family == run.font_family
+                && prev.vertical_align == run.vertical_align
+                && prev.background_color == run.background_color
+                && prev.text_shadow.is_empty()
+                && run.text_shadow.is_empty()
+        });
+        if can_merge {
+            if let Some(prev) = merged.last_mut() {
+                prev.text.push_str(&run.text);
+            }
+        } else {
+            merged.push(run.clone());
+        }
+    }
+    merged
+}
+
+fn fill_filter_rgba_rect(
+    img: &mut image::RgbaImage,
+    px_per_pt: f32,
+    x_pt: f32,
+    y_pt: f32,
+    w_pt: f32,
+    h_pt: f32,
+    color: (f32, f32, f32, f32),
+) {
+    if w_pt <= 0.0 || h_pt <= 0.0 || color.3 <= 0.0 {
+        return;
+    }
+    let x0 = (x_pt * px_per_pt).round().max(0.0) as u32;
+    let y0 = (y_pt * px_per_pt).round().max(0.0) as u32;
+    let x1 = ((x_pt + w_pt) * px_per_pt)
+        .round()
+        .clamp(0.0, img.width() as f32) as u32;
+    let y1 = ((y_pt + h_pt) * px_per_pt)
+        .round()
+        .clamp(0.0, img.height() as f32) as u32;
+    let src = image::Rgba([
+        (color.0 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.1 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.2 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.3 * 255.0).round().clamp(0.0, 255.0) as u8,
+    ]);
+    for y in y0..y1 {
+        for x in x0..x1 {
+            let dst = *img.get_pixel(x, y);
+            img.put_pixel(x, y, over_filter_rgba(src, dst));
+        }
+    }
+}
+
+fn over_filter_rgba(src: image::Rgba<u8>, dst: image::Rgba<u8>) -> image::Rgba<u8> {
+    let sa = src[3] as f32 / 255.0;
+    let da = dst[3] as f32 / 255.0;
+    let oa = sa + da * (1.0 - sa);
+    if oa <= 0.0 {
+        return image::Rgba([0, 0, 0, 0]);
+    }
+    let blend = |s: u8, d: u8| {
+        ((s as f32 * sa + d as f32 * da * (1.0 - sa)) / oa)
+            .round()
+            .clamp(0.0, 255.0) as u8
+    };
+    image::Rgba([
+        blend(src[0], dst[0]),
+        blend(src[1], dst[1]),
+        blend(src[2], dst[2]),
+        (oa * 255.0).round() as u8,
+    ])
+}
+
+fn composite_filter_text_mask(
+    img: &mut image::RgbaImage,
+    mask: &image::GrayImage,
+    dst_x: i32,
+    dst_y: i32,
+    color: (f32, f32, f32),
+    alpha_scale: f32,
+) {
+    let (r, g, b) = (
+        (color.0 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.1 * 255.0).round().clamp(0.0, 255.0) as u8,
+        (color.2 * 255.0).round().clamp(0.0, 255.0) as u8,
+    );
+    for y in 0..mask.height() {
+        for x in 0..mask.width() {
+            let a = ((mask.get_pixel(x, y)[0] as f32) * alpha_scale)
+                .round()
+                .clamp(0.0, 255.0) as u8;
+            if a == 0 {
+                continue;
+            }
+            let tx = dst_x + x as i32;
+            let ty = dst_y + y as i32;
+            if tx < 0 || ty < 0 || tx >= img.width() as i32 || ty >= img.height() as i32 {
+                continue;
+            }
+            let dst = *img.get_pixel(tx as u32, ty as u32);
+            img.put_pixel(
+                tx as u32,
+                ty as u32,
+                over_filter_rgba(image::Rgba([r, g, b, a]), dst),
+            );
+        }
+    }
+}
+
+fn collapsed_filter_margin_top_extra(margin_top: f32, prev_margin_bottom: f32) -> f32 {
+    let collapsed = if margin_top >= 0.0 && prev_margin_bottom >= 0.0 {
+        margin_top.max(prev_margin_bottom)
+    } else if margin_top < 0.0 && prev_margin_bottom < 0.0 {
+        margin_top.min(prev_margin_bottom)
+    } else {
+        margin_top + prev_margin_bottom
+    };
+    collapsed - prev_margin_bottom
+}
+
+fn svg_filter_has_turbulence_displacement(filter_el: &ElementNode) -> bool {
+    if !filter_el.raw_tag_name.eq_ignore_ascii_case("filter") {
+        return false;
+    }
+    let mut saw_turbulence = false;
+    for child in &filter_el.children {
+        let DomNode::Element(el) = child else {
+            continue;
+        };
+        if el.raw_tag_name.eq_ignore_ascii_case("feTurbulence") {
+            saw_turbulence = true;
+        } else if saw_turbulence && el.raw_tag_name.eq_ignore_ascii_case("feDisplacementMap") {
+            return true;
+        }
+    }
+    false
+}
+
+fn rasterize_svg_displacement_rect(
+    element: &LayoutElement,
+    filter_el: &ElementNode,
+) -> Option<FilterGroupRaster> {
+    let (width, height, margin_top, margin_bottom) = filter_source_box(element)?;
+    let color = solid_filter_rect_color(element)?;
+    let css_w = width / 0.75;
+    let css_h = height / 0.75;
+    let overflow_css = svg_filter_overflow_css(filter_el, css_w, css_h).max(1.0);
+    let spec = svg_turbulence_displacement_spec(filter_el, overflow_css)?;
+    let raster = crate::render::blur::turbulence_displacement_rect(
+        width,
+        height,
+        color,
+        &spec,
+        FILTER_GROUP_RASTER_DPI,
+    )?;
+    Some(FilterGroupRaster {
+        asset: raster.asset,
+        width,
+        height,
+        margin_top,
+        margin_bottom,
+        overflow: raster.overflow_pt,
+    })
+}
+
+fn solid_filter_rect_color(element: &LayoutElement) -> Option<(f32, f32, f32, f32)> {
+    match element {
+        LayoutElement::Container {
+            children,
+            background_color: Some(color),
+            ..
+        } if children.is_empty() => Some(*color),
+        LayoutElement::TextBlock {
+            lines,
+            background_color: Some(color),
+            ..
+        } if lines.is_empty() => Some(*color),
+        _ => None,
+    }
+}
+
+fn svg_filter_overflow_css(filter_el: &ElementNode, width: f32, height: f32) -> f32 {
+    let x = svg_filter_region_attr(filter_el, "x", -0.10, width);
+    let y = svg_filter_region_attr(filter_el, "y", -0.10, height);
+    let w = svg_filter_region_attr(filter_el, "width", 1.20, width);
+    let h = svg_filter_region_attr(filter_el, "height", 1.20, height);
+    let mut overflow = (-x).max((x + w) - width).max(-y).max((y + h) - height);
+    for child in &filter_el.children {
+        if let DomNode::Element(el) = child
+            && el.raw_tag_name.eq_ignore_ascii_case("feDisplacementMap")
+            && let Some(scale) = el
+                .attributes
+                .get("scale")
+                .and_then(|value| value.trim().parse::<f32>().ok())
+        {
+            overflow = overflow.max(scale.abs());
+        }
+    }
+    overflow.max(0.0)
+}
+
+fn svg_filter_region_attr(filter_el: &ElementNode, name: &str, default: f32, size: f32) -> f32 {
+    let Some(raw) = filter_el.attributes.get(name).map(|v| v.trim()) else {
+        return default * size;
+    };
+    if let Some(percent) = raw.strip_suffix('%') {
+        return percent.trim().parse::<f32>().unwrap_or(default * 100.0) * size / 100.0;
+    }
+    raw.parse::<f32>().map(|v| v * size).unwrap_or(default * size)
+}
+
+fn svg_turbulence_displacement_spec(
+    filter_el: &ElementNode,
+    overflow: f32,
+) -> Option<crate::render::blur::SvgTurbulenceDisplacement> {
+    let mut base_frequency = (0.0_f64, 0.0_f64);
+    let mut num_octaves = 1_u32;
+    let mut seed = 0_i32;
+    let mut saw_turbulence = false;
+    let mut scale = None;
+    for child in &filter_el.children {
+        let DomNode::Element(el) = child else {
+            continue;
+        };
+        if el.raw_tag_name.eq_ignore_ascii_case("feTurbulence") {
+            let mut parts = el
+                .attributes
+                .get("baseFrequency")
+                .map(String::as_str)
+                .unwrap_or("0")
+                .split_whitespace()
+                .filter_map(|part| part.parse::<f64>().ok());
+            let fx = parts.next().unwrap_or(0.0);
+            let fy = parts.next().unwrap_or(fx);
+            base_frequency = (fx, fy);
+            num_octaves = el
+                .attributes
+                .get("numOctaves")
+                .and_then(|value| value.trim().parse::<u32>().ok())
+                .unwrap_or(1)
+                .max(1);
+            seed = el
+                .attributes
+                .get("seed")
+                .and_then(|value| value.trim().parse::<f32>().ok())
+                .map(|value| value.trunc() as i32)
+                .unwrap_or(0);
+            saw_turbulence = true;
+        } else if saw_turbulence && el.raw_tag_name.eq_ignore_ascii_case("feDisplacementMap") {
+            scale = el
+                .attributes
+                .get("scale")
+                .and_then(|value| value.trim().parse::<f32>().ok());
+            break;
+        }
+    }
+    let scale = scale?;
+    Some(crate::render::blur::SvgTurbulenceDisplacement {
+        base_frequency_x: base_frequency.0,
+        base_frequency_y: base_frequency.1,
+        num_octaves,
+        seed,
+        scale,
+        overflow,
+    })
+}
+
 /// Flatten a list of DOM nodes into layout elements.
 ///
 /// Iterates over `nodes`, collecting inline-block groups and dispatching
@@ -4846,13 +5613,22 @@ pub(crate) fn flatten_element(
         first_letter_style,
         env,
     );
-    apply_filter_offset_ops_to_elements(&mut output[fixed_output_start..], &filter_ops);
-    apply_filter_color_ops_to_elements(
-        &mut output[fixed_output_start..],
+    if !replace_filtered_output_with_raster(
+        &style,
         &filter_ops,
         filter_linear_rgb,
-    );
-    apply_filter_flood_ops_to_elements(&mut output[fixed_output_start..], &filter_ops);
+        env,
+        output,
+        fixed_output_start,
+    ) {
+        apply_filter_offset_ops_to_elements(&mut output[fixed_output_start..], &filter_ops);
+        apply_filter_color_ops_to_elements(
+            &mut output[fixed_output_start..],
+            &filter_ops,
+            filter_linear_rgb,
+        );
+        apply_filter_flood_ops_to_elements(&mut output[fixed_output_start..], &filter_ops);
+    }
     if authored_fixed && style.z_index != 0 {
         mark_fixed_repeat(&mut output[fixed_output_start..]);
     }

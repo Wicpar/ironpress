@@ -1642,7 +1642,7 @@ fn composite_text_mask(
     );
     for y in 0..mask.height() {
         for x in 0..mask.width() {
-            let a = ((mask.get_pixel(x, y)[0] as f32) * 6.0)
+            let a = ((mask.get_pixel(x, y)[0] as f32) * 0.87)
                 .round()
                 .clamp(0.0, 255.0) as u8;
             if a == 0 {
@@ -1668,6 +1668,7 @@ fn dilate_alpha_mask(mask: &image::GrayImage, radius: u32) -> image::GrayImage {
         return mask.clone();
     }
     let mut out = image::GrayImage::new(mask.width(), mask.height());
+    let radius_sq = radius * radius;
     for y in 0..mask.height() {
         for x in 0..mask.width() {
             let x0 = x.saturating_sub(radius);
@@ -1677,6 +1678,11 @@ fn dilate_alpha_mask(mask: &image::GrayImage, radius: u32) -> image::GrayImage {
             let mut max_a = 0;
             for yy in y0..=y1 {
                 for xx in x0..=x1 {
+                    let dx = xx.abs_diff(x);
+                    let dy = yy.abs_diff(y);
+                    if dx * dx + dy * dy > radius_sq {
+                        continue;
+                    }
                     max_a = max_a.max(mask.get_pixel(xx, yy)[0]);
                 }
             }
@@ -1773,20 +1779,22 @@ fn paint_simple_text_block(
                 custom_fonts,
             )?;
             let shaped = crate::text::shape_text_run(run, custom_fonts)?;
+            let needs_faux_bold = matches!(run.font_family, FontFamily::Custom(_))
+                && crate::system_fonts::needs_faux_bold(
+                    custom_fonts,
+                    run.font_family.name(),
+                    run.bold,
+                    run.italic,
+                );
             let raster = crate::render::blur::rasterize_run_alpha(
                 &font.data,
                 font.units_per_em,
                 run.font_size,
                 &shaped.glyphs,
                 filter_dpi,
+                0.0,
             )?;
-            let mask = if matches!(run.font_family, FontFamily::Custom(_))
-                && crate::system_fonts::needs_faux_bold(
-                    custom_fonts,
-                    run.font_family.name(),
-                    run.bold,
-                    run.italic,
-                ) {
+            let mask = if needs_faux_bold {
                 let stroke_px = (run.font_size * 0.028 * px_per_pt / 2.0).ceil().max(1.0) as u32;
                 dilate_alpha_mask(&raster.mask, stroke_px)
             } else {
@@ -1850,7 +1858,7 @@ fn blurred_simple_text_block(
         custom_fonts,
         filter_dpi,
     )?;
-    crate::render::blur::blur_painted_buffer(&img, blur_radius_pt * 0.75, filter_dpi)
+    crate::render::blur::blur_painted_buffer(&img, blur_radius_pt * 0.9, filter_dpi)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -2052,6 +2060,7 @@ fn blurred_simple_container_group(
                     run.font_size,
                     &shaped.glyphs,
                     filter_dpi,
+                    0.0,
                 )?;
                 let dst_x = (run_x * px_per_pt - raster.origin_x_px).round() as i32;
                 let dst_y = (baseline_y * px_per_pt - raster.baseline_y_px).round() as i32;
@@ -14008,6 +14017,7 @@ fn render_text_shadow_blur(
         run.font_size,
         &shaped.glyphs,
         pdf_writer.opts.filter_dpi,
+        0.0,
     ) {
         Some(r) => r,
         None => return false,
