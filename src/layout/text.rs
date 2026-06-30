@@ -932,8 +932,9 @@ fn should_break_as_char_tokens(word: &str, keep_all: bool) -> bool {
     if word.chars().count() <= 1 {
         return false;
     }
-    if !keep_all && word.chars().any(is_cjk_char) {
-        return true;
+    let has_cjk = word.chars().any(is_cjk_char);
+    if has_cjk {
+        return !keep_all;
     }
     // `line-break:anywhere` is not represented in ComputedStyle yet, but CSS
     // Text's anywhere behavior is needed for punctuation-heavy unspaced runs.
@@ -3087,6 +3088,12 @@ mod indent_tests {
             indented.len() >= 2,
             "indented paragraph should wrap to at least two lines"
         );
+    }
+
+    #[test]
+    fn word_break_keep_all_keeps_cjk_punctuation_runs_whole() {
+        assert!(should_break_as_char_tokens("你好/世界", false));
+        assert!(!should_break_as_char_tokens("你好/世界", true));
     }
 
     /// Concatenate a line's runs back into its rendered text.

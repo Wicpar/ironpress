@@ -179,7 +179,8 @@ fn inline_text_cell(
         )
         .with_rtl(parent_style.direction_rtl)
         .with_bidi_override(parent_style.bidi_override)
-        .with_bidi_plaintext(parent_style.bidi_plaintext),
+        .with_bidi_plaintext(parent_style.bidi_plaintext)
+        .with_word_break_keep_all(parent_style.word_break_keep_all),
         fonts,
     );
     if lines.is_empty() {
@@ -490,7 +491,8 @@ fn inline_atomic_cell(
                         child_style.font_size,
                         resolved_line_height_factor(child_style, env.fonts),
                         child_style.overflow_wrap,
-                    ),
+                    )
+                    .with_word_break_keep_all(child_style.word_break_keep_all),
                     env.fonts,
                 );
                 let content_w = child_style.width.unwrap_or_else(|| {

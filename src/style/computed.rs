@@ -2430,7 +2430,6 @@ pub fn compute_style_with_context(
     // `unicode-bidi` is not inherited; initial is `normal`.
     style.bidi_override = false;
     style.bidi_plaintext = false;
-    style.word_break_keep_all = false;
     style.float = Float::None;
     style.clear = Clear::None;
     style.position = Position::Static;
@@ -2798,7 +2797,6 @@ pub fn compute_pseudo_element_style(
     // `unicode-bidi` is not inherited; initial is `normal`.
     style.bidi_override = false;
     style.bidi_plaintext = false;
-    style.word_break_keep_all = false;
     style.float = Float::None;
     style.clear = Clear::None;
     style.position = Position::Static;
@@ -16504,6 +16502,19 @@ mod tests {
         let parent = ComputedStyle::default();
         let s = compute_style(HtmlTag::Div, Some("word-break: break-all"), &parent);
         assert_eq!(s.overflow_wrap, OverflowWrap::Anywhere);
+    }
+
+    #[test]
+    fn word_break_keep_all_parsed_and_inherited() {
+        let parent = compute_style(
+            HtmlTag::Div,
+            Some("word-break: keep-all"),
+            &ComputedStyle::default(),
+        );
+        assert!(parent.word_break_keep_all);
+
+        let child = compute_style(HtmlTag::Span, None, &parent);
+        assert!(child.word_break_keep_all);
     }
 
     #[test]
