@@ -6364,6 +6364,7 @@ pub(crate) fn apply_style_map(style: &mut ComputedStyle, map: &StyleMap, parent:
         style.counter_set = parse_counter_directive(k, 0);
     }
     synthesize_simple_multi_background_svg(map, style);
+    synthesize_repeating_linear_background_raster(map, style);
 }
 
 fn parse_list_style_type(k: &str) -> ListStyleType {
@@ -7331,6 +7332,24 @@ fn synthesize_simple_multi_background_svg(map: &StyleMap, style: &mut ComputedSt
     let Some((border_width, border_height)) = style_background_border_box_size(style) else {
         return;
     };
+    if let Some(tree) =
+        build_blended_linear_background_raster_svg(map, style, &sources, border_width, border_height)
+    {
+        style.clear_background_images();
+        style.background_color = None;
+        style.background_svg = Some(tree);
+        style.background_size = BackgroundSize::Explicit {
+            width: border_width,
+            height: Some(border_height),
+            width_is_percent: false,
+            height_is_percent: false,
+        };
+        style.background_repeat = BackgroundRepeat::NoRepeat;
+        style.background_position = BackgroundPosition::default();
+        style.background_origin = BackgroundOrigin::Border;
+        style.background_clip = BackgroundClip::Border;
+        return;
+    }
     let Some(svg) =
         build_simple_multi_background_svg(map, style, &sources, border_width, border_height)
     else {
@@ -7352,6 +7371,613 @@ fn synthesize_simple_multi_background_svg(map: &StyleMap, style: &mut ComputedSt
     style.background_position = BackgroundPosition::default();
     style.background_origin = BackgroundOrigin::Border;
     style.background_clip = BackgroundClip::Border;
+}
+
+fn synthesize_repeating_linear_background_raster(map: &StyleMap, style: &mut ComputedStyle) {
+    if style.background_svg.is_some()
+        || style.background_image.is_some()
+        || style.background_radial_gradient.is_some()
+        || style.background_conic_gradient.is_some()
+        || !matches!(
+            style.background_repeat,
+            BackgroundRepeat::Space
+                | BackgroundRepeat::Round
+                | BackgroundRepeat::SpaceRound
+                | BackgroundRepeat::RoundSpace
+        )
+        || style.background_clip != BackgroundClip::Border
+        || style.border_radius > 0.0
+        || style.border_radius_pct.is_some()
+        || style.border_radii.iter().any(|r| *r > 0.0)
+        || style.border_radii_y.iter().any(|r| *r > 0.0)
+    {
+        return;
+    }
+    let Some(gradient) = style.background_gradient.as_ref() else {
+        return;
+    };
+    let Some((border_width, border_height)) = style_background_border_box_size(style) else {
+        return;
+    };
+    let border_rect = CssBoxRect {
+        x: 0.0,
+        y: 0.0,
+        width: border_width,
+        height: border_height,
+    };
+    let Some(layer) = raster_linear_background_layer(map, style, 0, border_rect, gradient) else {
+        return;
+    };
+    let (px_w, px_h) = repeating_background_raster_dimensions(border_width, border_height);
+    let base = style.background_color.unwrap_or(Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+    let mut image = image::RgbaImage::from_pixel(
+        px_w,
+        px_h,
+        image::Rgba([base.r, base.g, base.b, base.a]),
+    );
+    for py in 0..px_h {
+        let y = (py as f32 + 0.5) * border_height / px_h as f32;
+        for px in 0..px_w {
+            let x = (px as f32 + 0.5) * border_width / px_w as f32;
+            let Some(source_pixel) = sample_raster_linear_background_layer(&layer, x, y) else {
+                continue;
+            };
+            let backdrop = *image.get_pixel(px, py);
+            let Some(pixel) = composite_blended_pixel(source_pixel, backdrop, BlendMode::Normal)
+            else {
+                return;
+            };
+            image.put_pixel(px, py, pixel);
+        }
+    }
+    let Some(tree) = raster_image_background_svg(image, border_width, border_height) else {
+        return;
+    };
+    style.background_color = None;
+    style.clear_background_images();
+    style.background_svg = Some(tree);
+    style.background_size = BackgroundSize::Explicit {
+        width: border_width,
+        height: Some(border_height),
+        width_is_percent: false,
+        height_is_percent: false,
+    };
+    style.background_repeat = BackgroundRepeat::NoRepeat;
+    style.background_position = BackgroundPosition::default();
+    style.background_origin = BackgroundOrigin::Border;
+    style.background_clip = BackgroundClip::Border;
+}
+
+fn build_blended_linear_background_raster_svg(
+    map: &StyleMap,
+    style: &ComputedStyle,
+    sources: &[SimpleBackgroundLayerSource],
+    border_width: f32,
+    border_height: f32,
+) -> Option<crate::parser::svg::SvgTree> {
+    if style.background_clip != BackgroundClip::Border
+        || style.border_radius > 0.0
+        || style.border_radius_pct.is_some()
+        || style.border_radii.iter().any(|r| *r > 0.0)
+        || style.border_radii_y.iter().any(|r| *r > 0.0)
+        || style.border_radii_pct.iter().any(Option::is_some)
+        || style.border_radii_y_pct.iter().any(Option::is_some)
+    {
+        return None;
+    }
+    if !sources
+        .iter()
+        .all(|source| matches!(source, SimpleBackgroundLayerSource::Linear(_)))
+    {
+        return None;
+    }
+    if sources.iter().enumerate().all(|(idx, _)| {
+        style.background_blend_mode.background_layer(idx) == BlendMode::Normal
+    }) {
+        return None;
+    }
+    if sources.iter().enumerate().any(|(idx, _)| {
+        !raster_background_blend_supported(style.background_blend_mode.background_layer(idx))
+    }) {
+        return None;
+    }
+
+    let (px_w, px_h) = simple_background_raster_dimensions(border_width, border_height)?;
+    let base = style.background_color.unwrap_or(Color {
+        r: 0,
+        g: 0,
+        b: 0,
+        a: 0,
+    });
+    let mut image = image::RgbaImage::from_pixel(
+        px_w,
+        px_h,
+        image::Rgba([base.r, base.g, base.b, base.a]),
+    );
+    let border_rect = CssBoxRect {
+        x: 0.0,
+        y: 0.0,
+        width: border_width,
+        height: border_height,
+    };
+
+    for (idx, source) in sources.iter().enumerate().rev() {
+        let SimpleBackgroundLayerSource::Linear(gradient) = source else {
+            return None;
+        };
+        let layer = raster_linear_background_layer(map, style, idx, border_rect, gradient)?;
+        let blend_mode = style.background_blend_mode.background_layer(idx);
+        for py in 0..px_h {
+            let y = (py as f32 + 0.5) * border_height / px_h as f32;
+            for px in 0..px_w {
+                let x = (px as f32 + 0.5) * border_width / px_w as f32;
+                let Some(source_pixel) = sample_raster_linear_background_layer(&layer, x, y)
+                else {
+                    continue;
+                };
+                let backdrop = *image.get_pixel(px, py);
+                image.put_pixel(
+                    px,
+                    py,
+                    composite_blended_pixel(source_pixel, backdrop, blend_mode)?,
+                );
+            }
+        }
+    }
+
+    raster_image_background_svg(image, border_width, border_height)
+}
+
+struct RasterLinearBackgroundLayer<'a> {
+    gradient: &'a LinearGradient,
+    origin: CssBoxRect,
+    clip: CssBoxRect,
+    tile_width: f32,
+    tile_height: f32,
+    tiles_x: Vec<f32>,
+    tiles_y: Vec<f32>,
+}
+
+fn raster_linear_background_layer<'a>(
+    map: &StyleMap,
+    style: &ComputedStyle,
+    index: usize,
+    border_rect: CssBoxRect,
+    gradient: &'a LinearGradient,
+) -> Option<RasterLinearBackgroundLayer<'a>> {
+    let origin = background_layer_origin_rect(map, style, index, border_rect)?;
+    let clip = background_layer_clip_rect(map, style, index, border_rect)?;
+    let size = background_layer_size(map, index)
+        .and_then(|size| resolve_simple_background_tile_size(size, origin.width, origin.height))
+        .unwrap_or((origin.width, origin.height));
+    if size.0 <= 0.0 || size.1 <= 0.0 {
+        return None;
+    }
+    let position = background_layer_position(map, index).unwrap_or_default();
+    let offset_x = if position.x_is_percent {
+        (origin.width - size.0) * position.x
+    } else if position.x < 0.0 {
+        (origin.width - size.0) + position.x
+    } else {
+        position.x
+    };
+    let offset_y = if position.y_is_percent {
+        (origin.height - size.1) * position.y
+    } else if position.y < 0.0 {
+        (origin.height - size.1) + position.y
+    } else {
+        position.y
+    };
+    let repeat = get_non_special(map, "background-repeat")
+        .and_then(|v| match v {
+            CssValue::Keyword(k) => {
+                nth_layer_value(k, index).map(|part| parse_background_repeat_value(&part))
+            }
+            _ => None,
+        })
+        .unwrap_or(BackgroundRepeat::Repeat);
+    let (tiles_x, tile_width) =
+        simple_background_axis_tiles(simple_repeat_x(repeat), offset_x, size.0, origin.width);
+    let (tiles_y, tile_height) =
+        simple_background_axis_tiles(simple_repeat_y(repeat), offset_y, size.1, origin.height);
+    Some(RasterLinearBackgroundLayer {
+        gradient,
+        origin,
+        clip,
+        tile_width,
+        tile_height,
+        tiles_x,
+        tiles_y,
+    })
+}
+
+fn sample_raster_linear_background_layer(
+    layer: &RasterLinearBackgroundLayer<'_>,
+    x: f32,
+    y: f32,
+) -> Option<image::Rgba<u8>> {
+    if !point_in_css_rect(x, y, layer.clip) {
+        return None;
+    }
+    let offset_x = layer
+        .tiles_x
+        .iter()
+        .copied()
+        .find(|offset| x >= layer.origin.x + *offset && x < layer.origin.x + *offset + layer.tile_width)?;
+    let offset_y = layer
+        .tiles_y
+        .iter()
+        .copied()
+        .find(|offset| y >= layer.origin.y + *offset && y < layer.origin.y + *offset + layer.tile_height)?;
+    let local_x = x - layer.origin.x - offset_x;
+    let local_y = y - layer.origin.y - offset_y;
+    Some(sample_linear_gradient_pixel(
+        layer.gradient,
+        layer.tile_width,
+        layer.tile_height,
+        local_x,
+        local_y,
+    ))
+}
+
+fn point_in_css_rect(x: f32, y: f32, rect: CssBoxRect) -> bool {
+    x >= rect.x && x < rect.x + rect.width && y >= rect.y && y < rect.y + rect.height
+}
+
+fn simple_background_raster_dimensions(width: f32, height: f32) -> Option<(u32, u32)> {
+    if width <= 0.0 || height <= 0.0 {
+        return None;
+    }
+    let scale = 3.125;
+    Some((
+        (width / 0.75 * scale).round().clamp(1.0, 2048.0) as u32,
+        (height / 0.75 * scale).round().clamp(1.0, 2048.0) as u32,
+    ))
+}
+
+fn repeating_background_raster_dimensions(width: f32, height: f32) -> (u32, u32) {
+    let scale = 3.125;
+    (
+        (width / 0.75 * scale).round().clamp(1.0, 2048.0) as u32,
+        (height / 0.75 * scale).round().clamp(1.0, 2048.0) as u32,
+    )
+}
+
+fn raster_image_background_svg(
+    image: image::RgbaImage,
+    width: f32,
+    height: f32,
+) -> Option<crate::parser::svg::SvgTree> {
+    let mut encoded = Vec::new();
+    image::DynamicImage::ImageRgba8(image)
+        .write_to(
+            &mut std::io::Cursor::new(&mut encoded),
+            image::ImageFormat::Png,
+        )
+        .ok()?;
+    let data = encode_base64_background_data(&encoded);
+    let svg = format!(
+        "<svg xmlns=\"http://www.w3.org/2000/svg\" width=\"{}\" height=\"{}\" viewBox=\"0 0 {} {}\"><image x=\"0\" y=\"0\" width=\"{}\" height=\"{}\" preserveAspectRatio=\"none\" href=\"data:image/png;base64,{}\"/></svg>",
+        fmt_svg_num(width),
+        fmt_svg_num(height),
+        fmt_svg_num(width),
+        fmt_svg_num(height),
+        fmt_svg_num(width),
+        fmt_svg_num(height),
+        xml_escape_attr(&data)
+    );
+    crate::parser::svg::parse_svg_from_string(&svg)
+}
+
+#[derive(Clone, Copy)]
+enum SimpleRepeatAxis {
+    Repeat,
+    NoRepeat,
+    Space,
+    Round,
+}
+
+fn simple_repeat_x(repeat: BackgroundRepeat) -> SimpleRepeatAxis {
+    match repeat {
+        BackgroundRepeat::NoRepeat | BackgroundRepeat::RepeatY => SimpleRepeatAxis::NoRepeat,
+        BackgroundRepeat::Space | BackgroundRepeat::SpaceRound => SimpleRepeatAxis::Space,
+        BackgroundRepeat::Round | BackgroundRepeat::RoundSpace => SimpleRepeatAxis::Round,
+        _ => SimpleRepeatAxis::Repeat,
+    }
+}
+
+fn simple_repeat_y(repeat: BackgroundRepeat) -> SimpleRepeatAxis {
+    match repeat {
+        BackgroundRepeat::NoRepeat | BackgroundRepeat::RepeatX => SimpleRepeatAxis::NoRepeat,
+        BackgroundRepeat::Round | BackgroundRepeat::SpaceRound => SimpleRepeatAxis::Round,
+        BackgroundRepeat::Space | BackgroundRepeat::RoundSpace => SimpleRepeatAxis::Space,
+        _ => SimpleRepeatAxis::Repeat,
+    }
+}
+
+fn simple_tile_offsets(origin: f32, step: f32, extent: f32) -> Vec<f32> {
+    if step <= 0.0 {
+        return vec![origin];
+    }
+    let mut offsets = Vec::new();
+    let mut start = origin;
+    while start > 0.0 {
+        start -= step;
+    }
+    let mut pos = start;
+    while pos < extent {
+        offsets.push(pos);
+        pos += step;
+    }
+    if offsets.is_empty() {
+        offsets.push(origin);
+    }
+    offsets
+}
+
+fn simple_background_axis_tiles(
+    repeat: SimpleRepeatAxis,
+    origin: f32,
+    step: f32,
+    extent: f32,
+) -> (Vec<f32>, f32) {
+    if step <= 0.0 || extent <= 0.0 {
+        return (vec![origin], step);
+    }
+    match repeat {
+        SimpleRepeatAxis::NoRepeat => (vec![origin], step),
+        SimpleRepeatAxis::Repeat => (simple_tile_offsets(origin, step, extent), step),
+        SimpleRepeatAxis::Space => {
+            let count = (extent / step).floor().max(1.0) as usize;
+            if count <= 1 {
+                (vec![0.0], step)
+            } else {
+                let gap = (extent - step * count as f32) / (count - 1) as f32;
+                ((0..count).map(|i| i as f32 * (step + gap)).collect(), step)
+            }
+        }
+        SimpleRepeatAxis::Round => {
+            let count = (extent / step).round().max(1.0) as usize;
+            let rounded_step = extent / count as f32;
+            (
+                (0..count).map(|i| i as f32 * rounded_step).collect(),
+                rounded_step,
+            )
+        }
+    }
+}
+
+fn sample_linear_gradient_pixel(
+    gradient: &LinearGradient,
+    width: f32,
+    height: f32,
+    sample_x: f32,
+    sample_y: f32,
+) -> image::Rgba<u8> {
+    let theta = gradient.angle.to_radians();
+    let dx = theta.sin();
+    let dy = -theta.cos();
+    let half = (width * dx.abs() + height * dy.abs()).max(1e-6) / 2.0;
+    let cx = width / 2.0;
+    let cy = height / 2.0;
+    let proj = (sample_x - cx) * dx + (sample_y - cy) * dy;
+    let t = (proj + half) / (2.0 * half);
+    let basis = (width * dx.abs() + height * dy.abs()).max(1e-6);
+    rgba_pixel_from_f32(sample_gradient_stops(
+        &resolve_gradient_stops_for_basis(&gradient.stops, basis),
+        t,
+        gradient.repeating,
+    ))
+}
+
+fn resolve_gradient_stops_for_basis(stops: &[GradientStop], basis: f32) -> Vec<GradientStop> {
+    let basis = basis.max(1e-6);
+    let mut last = 0.0_f32;
+    stops
+        .iter()
+        .copied()
+        .map(|mut stop| {
+            let mut position = stop.position + stop.position_length / basis;
+            if position < last {
+                position = last;
+            }
+            last = position;
+            stop.position = position.clamp(0.0, 1.0);
+            stop.position_length = 0.0;
+            stop
+        })
+        .collect()
+}
+
+fn sample_gradient_stops(
+    stops: &[GradientStop],
+    mut t: f32,
+    repeating: bool,
+) -> (f32, f32, f32, f32) {
+    if stops.is_empty() {
+        return (0.0, 0.0, 0.0, 0.0);
+    }
+    if repeating && stops.len() > 1 {
+        let first = stops[0].position;
+        let last = stops[stops.len() - 1].position;
+        let period = last - first;
+        if period > 0.0001 {
+            t = first + (t - first).rem_euclid(period);
+        }
+    }
+    if t <= stops[0].position {
+        return gradient_stop_rgba_f32(stops[0]);
+    }
+    let last_idx = stops.len() - 1;
+    if t >= stops[last_idx].position {
+        return gradient_stop_rgba_f32(stops[last_idx]);
+    }
+    for pair in stops.windows(2) {
+        let a = pair[0];
+        let b = pair[1];
+        if t >= a.position && t <= b.position {
+            let span = b.position - a.position;
+            if span <= 0.00001 {
+                return gradient_stop_rgba_f32(b);
+            }
+            let f = ((t - a.position) / span).clamp(0.0, 1.0);
+            let (ar, ag, ab, aa) = gradient_stop_rgba_f32(a);
+            let (br, bg, bb, ba) = gradient_stop_rgba_f32(b);
+            return (
+                ar + (br - ar) * f,
+                ag + (bg - ag) * f,
+                ab + (bb - ab) * f,
+                aa + (ba - aa) * f,
+            );
+        }
+    }
+    gradient_stop_rgba_f32(stops[last_idx])
+}
+
+fn gradient_stop_rgba_f32(stop: GradientStop) -> (f32, f32, f32, f32) {
+    (
+        f32::from(stop.color.r) / 255.0,
+        f32::from(stop.color.g) / 255.0,
+        f32::from(stop.color.b) / 255.0,
+        f32::from(stop.color.a) / 255.0,
+    )
+}
+
+fn rgba_pixel_from_f32((r, g, b, a): (f32, f32, f32, f32)) -> image::Rgba<u8> {
+    image::Rgba([
+        (r.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (g.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (b.clamp(0.0, 1.0) * 255.0).round() as u8,
+        (a.clamp(0.0, 1.0) * 255.0).round() as u8,
+    ])
+}
+
+fn raster_background_blend_supported(mode: BlendMode) -> bool {
+    matches!(
+        mode,
+        BlendMode::Normal
+            | BlendMode::Multiply
+            | BlendMode::Screen
+            | BlendMode::Overlay
+            | BlendMode::Darken
+            | BlendMode::Lighten
+            | BlendMode::ColorDodge
+            | BlendMode::ColorBurn
+            | BlendMode::HardLight
+            | BlendMode::SoftLight
+            | BlendMode::Difference
+            | BlendMode::Exclusion
+    )
+}
+
+fn composite_blended_pixel(
+    source: image::Rgba<u8>,
+    backdrop: image::Rgba<u8>,
+    mode: BlendMode,
+) -> Option<image::Rgba<u8>> {
+    if !raster_background_blend_supported(mode) {
+        return None;
+    }
+    let sa = f32::from(source[3]) / 255.0;
+    let ba = f32::from(backdrop[3]) / 255.0;
+    let out_a = sa + ba * (1.0 - sa);
+    if out_a <= 0.0 {
+        return Some(image::Rgba([0, 0, 0, 0]));
+    }
+
+    let mut out = [0u8; 4];
+    for channel in 0..3 {
+        let s = f32::from(source[channel]) / 255.0;
+        let b = f32::from(backdrop[channel]) / 255.0;
+        let blended = blend_channel(mode, s, b);
+        let premul = sa * (1.0 - ba) * s + sa * ba * blended + (1.0 - sa) * ba * b;
+        out[channel] = (premul / out_a * 255.0).round().clamp(0.0, 255.0) as u8;
+    }
+    out[3] = (out_a * 255.0).round().clamp(0.0, 255.0) as u8;
+    Some(image::Rgba(out))
+}
+
+fn blend_channel(mode: BlendMode, source: f32, backdrop: f32) -> f32 {
+    match mode {
+        BlendMode::Normal => source,
+        BlendMode::Multiply => source * backdrop,
+        BlendMode::Screen => source + backdrop - source * backdrop,
+        BlendMode::Overlay => {
+            if backdrop <= 0.5 {
+                2.0 * source * backdrop
+            } else {
+                1.0 - 2.0 * (1.0 - source) * (1.0 - backdrop)
+            }
+        }
+        BlendMode::Darken => source.min(backdrop),
+        BlendMode::Lighten => source.max(backdrop),
+        BlendMode::ColorDodge => {
+            if source >= 1.0 {
+                1.0
+            } else {
+                (backdrop / (1.0 - source)).min(1.0)
+            }
+        }
+        BlendMode::ColorBurn => {
+            if source <= 0.0 {
+                0.0
+            } else {
+                1.0 - ((1.0 - backdrop) / source).min(1.0)
+            }
+        }
+        BlendMode::HardLight => {
+            if source <= 0.5 {
+                2.0 * source * backdrop
+            } else {
+                1.0 - 2.0 * (1.0 - source) * (1.0 - backdrop)
+            }
+        }
+        BlendMode::SoftLight => {
+            if source <= 0.5 {
+                backdrop - (1.0 - 2.0 * source) * backdrop * (1.0 - backdrop)
+            } else {
+                let d = if backdrop <= 0.25 {
+                    ((16.0 * backdrop - 12.0) * backdrop + 4.0) * backdrop
+                } else {
+                    backdrop.sqrt()
+                };
+                backdrop + (2.0 * source - 1.0) * (d - backdrop)
+            }
+        }
+        BlendMode::Difference => (backdrop - source).abs(),
+        BlendMode::Exclusion => backdrop + source - 2.0 * backdrop * source,
+        _ => source,
+    }
+    .clamp(0.0, 1.0)
+}
+
+fn encode_base64_background_data(data: &[u8]) -> String {
+    const TABLE: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = String::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = u32::from(chunk[0]);
+        let b1 = u32::from(*chunk.get(1).unwrap_or(&0));
+        let b2 = u32::from(*chunk.get(2).unwrap_or(&0));
+        let triple = (b0 << 16) | (b1 << 8) | b2;
+        out.push(TABLE[((triple >> 18) & 0x3f) as usize] as char);
+        out.push(TABLE[((triple >> 12) & 0x3f) as usize] as char);
+        if chunk.len() > 1 {
+            out.push(TABLE[((triple >> 6) & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+        if chunk.len() > 2 {
+            out.push(TABLE[(triple & 0x3f) as usize] as char);
+        } else {
+            out.push('=');
+        }
+    }
+    out
 }
 
 fn parse_background_layer_sources(map: &StyleMap) -> Option<Vec<SimpleBackgroundLayerSource>> {

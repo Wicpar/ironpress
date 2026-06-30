@@ -1001,7 +1001,8 @@ fn paint_uniform_border(
         {
             let dash = (bw * 1.85).max(1.0);
             let gap = (bw * 1.15).max(1.0);
-            content.push_str(&format!("[{dash} {gap}] 0 d\n"));
+            let phase = bw * 0.62;
+            content.push_str(&format!("[{dash} {gap}] {phase} d\n"));
         } else {
             content.push_str(&dash_pattern_for_style(side.style, bw));
         }
@@ -15109,7 +15110,7 @@ fn push_line_text_clip(
             };
             if let (Some((resolved_name, font)), Some(shaped)) = (custom_font, shaped.as_ref()) {
                 let prepared_font = prepared_custom_fonts.get(resolved_name);
-                let embolden = run.font_size * 0.011;
+                let embolden = run.font_size * 0.0125;
                 let offsets = [
                     (0.0, 0.0),
                     (-embolden, 0.0),
@@ -17156,6 +17157,37 @@ fn render_svg_background(
     } else {
         tree.preserve_aspect_ratio
     };
+    // Compute background-position offset (in the CSS coordinate system,
+    // origin at top-left of the element box).
+    let offset_x = if paint.position.x_is_percent {
+        (paint.reference_box.width - scaled_w) * paint.position.x
+    } else if paint.position.x < 0.0 {
+        (paint.reference_box.width - scaled_w) + paint.position.x
+    } else {
+        paint.position.x
+    };
+    let offset_y = if paint.position.y_is_percent {
+        (paint.reference_box.height - scaled_h) * paint.position.y
+    } else if paint.position.y < 0.0 {
+        (paint.reference_box.height - scaled_h) + paint.position.y
+    } else {
+        paint.position.y
+    };
+
+    // Determine tiling grid based on background-repeat.
+    // We compute the set of tile origin offsets (in CSS coords, top-left = 0,0).
+    let (tiles_x, scaled_w) = background_axis_tiles(
+        repeat_x(paint.repeat),
+        offset_x,
+        scaled_w,
+        paint.reference_box.width,
+    );
+    let (tiles_y, scaled_h) = background_axis_tiles(
+        repeat_y(paint.repeat),
+        offset_y,
+        scaled_h,
+        paint.reference_box.height,
+    );
     let placement = crate::render::svg_geometry::compute_svg_placement(
         tree,
         crate::render::svg_geometry::SvgPlacementRequest::from_rect(
@@ -17194,38 +17226,6 @@ fn render_svg_background(
         },
     );
     let tile_clip_box = viewport_box_from_overflow(placement.viewport, visual_overflow);
-
-    // Compute background-position offset (in the CSS coordinate system,
-    // origin at top-left of the element box).
-    let offset_x = if paint.position.x_is_percent {
-        (paint.reference_box.width - scaled_w) * paint.position.x
-    } else if paint.position.x < 0.0 {
-        (paint.reference_box.width - scaled_w) + paint.position.x
-    } else {
-        paint.position.x
-    };
-    let offset_y = if paint.position.y_is_percent {
-        (paint.reference_box.height - scaled_h) * paint.position.y
-    } else if paint.position.y < 0.0 {
-        (paint.reference_box.height - scaled_h) + paint.position.y
-    } else {
-        paint.position.y
-    };
-
-    // Determine tiling grid based on background-repeat.
-    // We compute the set of tile origin offsets (in CSS coords, top-left = 0,0).
-    let (tiles_x, _scaled_w) = background_axis_tiles(
-        repeat_x(paint.repeat),
-        offset_x,
-        scaled_w,
-        paint.reference_box.width,
-    );
-    let (tiles_y, _scaled_h) = background_axis_tiles(
-        repeat_y(paint.repeat),
-        offset_y,
-        scaled_h,
-        paint.reference_box.height,
-    );
 
     // Clip to the element box.
     content.push_str("q\n");
