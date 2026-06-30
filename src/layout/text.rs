@@ -10,8 +10,7 @@ use crate::style::computed::{
     FONT_RUN_MARK_SYNTHETIC_WEIGHT_900, Float, FontFamily, FontStyle, FontWeight,
     IntrinsicWidthKeyword, LEADER_PLACEHOLDER_END, LEADER_PLACEHOLDER_START, Position,
     TARGET_PLACEHOLDER_END, TARGET_PLACEHOLDER_START, TextDecorationStyle, VerticalAlign,
-    WhiteSpace,
-    compute_style_with_context,
+    WhiteSpace, compute_style_with_context,
 };
 use std::borrow::Cow;
 use std::collections::HashMap;

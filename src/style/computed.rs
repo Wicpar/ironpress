@@ -7339,9 +7339,13 @@ fn synthesize_simple_multi_background_svg(map: &StyleMap, style: &mut ComputedSt
     let Some((border_width, border_height)) = style_background_border_box_size(style) else {
         return;
     };
-    if let Some(tree) =
-        build_blended_linear_background_raster_svg(map, style, &sources, border_width, border_height)
-    {
+    if let Some(tree) = build_blended_linear_background_raster_svg(
+        map,
+        style,
+        &sources,
+        border_width,
+        border_height,
+    ) {
         style.clear_background_images();
         style.background_color = None;
         style.background_svg = Some(tree);
@@ -7422,11 +7426,8 @@ fn synthesize_repeating_linear_background_raster(map: &StyleMap, style: &mut Com
         b: 0,
         a: 0,
     });
-    let mut image = image::RgbaImage::from_pixel(
-        px_w,
-        px_h,
-        image::Rgba([base.r, base.g, base.b, base.a]),
-    );
+    let mut image =
+        image::RgbaImage::from_pixel(px_w, px_h, image::Rgba([base.r, base.g, base.b, base.a]));
     for py in 0..px_h {
         let y = (py as f32 + 0.5) * border_height / px_h as f32;
         for px in 0..px_w {
@@ -7483,9 +7484,11 @@ fn build_blended_linear_background_raster_svg(
     {
         return None;
     }
-    if sources.iter().enumerate().all(|(idx, _)| {
-        style.background_blend_mode.background_layer(idx) == BlendMode::Normal
-    }) {
+    if sources
+        .iter()
+        .enumerate()
+        .all(|(idx, _)| style.background_blend_mode.background_layer(idx) == BlendMode::Normal)
+    {
         return None;
     }
     if sources.iter().enumerate().any(|(idx, _)| {
@@ -7501,11 +7504,8 @@ fn build_blended_linear_background_raster_svg(
         b: 0,
         a: 0,
     });
-    let mut image = image::RgbaImage::from_pixel(
-        px_w,
-        px_h,
-        image::Rgba([base.r, base.g, base.b, base.a]),
-    );
+    let mut image =
+        image::RgbaImage::from_pixel(px_w, px_h, image::Rgba([base.r, base.g, base.b, base.a]));
     let border_rect = CssBoxRect {
         x: 0.0,
         y: 0.0,
@@ -7523,8 +7523,7 @@ fn build_blended_linear_background_raster_svg(
             let y = (py as f32 + 0.5) * border_height / px_h as f32;
             for px in 0..px_w {
                 let x = (px as f32 + 0.5) * border_width / px_w as f32;
-                let Some(source_pixel) = sample_raster_linear_background_layer(&layer, x, y)
-                else {
+                let Some(source_pixel) = sample_raster_linear_background_layer(&layer, x, y) else {
                     continue;
                 };
                 let backdrop = *image.get_pixel(px, py);
@@ -7611,16 +7610,12 @@ fn sample_raster_linear_background_layer(
     if !point_in_css_rect(x, y, layer.clip) {
         return None;
     }
-    let offset_x = layer
-        .tiles_x
-        .iter()
-        .copied()
-        .find(|offset| x >= layer.origin.x + *offset && x < layer.origin.x + *offset + layer.tile_width)?;
-    let offset_y = layer
-        .tiles_y
-        .iter()
-        .copied()
-        .find(|offset| y >= layer.origin.y + *offset && y < layer.origin.y + *offset + layer.tile_height)?;
+    let offset_x = layer.tiles_x.iter().copied().find(|offset| {
+        x >= layer.origin.x + *offset && x < layer.origin.x + *offset + layer.tile_width
+    })?;
+    let offset_y = layer.tiles_y.iter().copied().find(|offset| {
+        y >= layer.origin.y + *offset && y < layer.origin.y + *offset + layer.tile_height
+    })?;
     let local_x = x - layer.origin.x - offset_x;
     let local_y = y - layer.origin.y - offset_y;
     Some(sample_linear_gradient_pixel(

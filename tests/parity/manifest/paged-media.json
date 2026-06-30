@@ -1138,7 +1138,7 @@
     "file": "cases/paged-media/paged-blank-margin-box-specificity.html",
     "oracle": "weasyprint",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-text-baseline"

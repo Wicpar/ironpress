@@ -1070,10 +1070,8 @@ pub(crate) fn turbulence_displacement_rect(
                 spec.base_frequency_y,
                 spec.num_octaves,
             );
-            let sx =
-                x as i32 + ((x_channel as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
-            let sy =
-                y as i32 + ((y_channel as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
+            let sx = x as i32 + ((x_channel as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
+            let sy = y as i32 + ((y_channel as f32 / 255.0 - 0.5) * disp_scale).round() as i32;
             if sx >= 0 && sy >= 0 && sx < px_w as i32 && sy < px_h as i32 {
                 out.put_pixel(x, y, *source.get_pixel(sx as u32, sy as u32));
             }

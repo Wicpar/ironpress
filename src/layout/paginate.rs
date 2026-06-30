@@ -123,9 +123,7 @@ fn apply_pending_target_anchors(
     named_strings_first: &mut HashMap<String, String>,
 ) {
     for name in pending_target_anchors.drain(..) {
-        named_strings_first
-            .entry(name.clone())
-            .or_default();
+        named_strings_first.entry(name.clone()).or_default();
         named_strings.insert(name, String::new());
     }
 }

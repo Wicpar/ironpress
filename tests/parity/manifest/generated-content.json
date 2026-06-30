@@ -628,7 +628,7 @@
     "pass_threshold_pct": 6.0,
     "partial_threshold_pct": 18.0,
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "oracle": "weasyprint",
     "depends_on": [
       "probe-text-baseline",

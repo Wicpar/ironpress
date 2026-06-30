@@ -99,7 +99,10 @@ fn glyph_top_ratio_for_initial_letter(
     let FontFamily::Custom(family) = resolve_style_font_family(style, fonts) else {
         return None;
     };
-    let (bold, italic) = (style.font_weight.is_bold(), style.font_style == crate::style::computed::FontStyle::Italic);
+    let (bold, italic) = (
+        style.font_weight.is_bold(),
+        style.font_style == crate::style::computed::FontStyle::Italic,
+    );
     let (_, font) = crate::system_fonts::find_font(fonts, &family, bold, italic)?;
     ch.and_then(|c| font.glyph_top_ratio(c))
         .or_else(|| font.glyph_top_ratio('H'))
@@ -1686,7 +1689,9 @@ pub(crate) fn layout_block_element(
         first_letter_style
             .as_ref()
             .filter(|fl| fl.initial_letter > 1.0)
-            .map_or(d.span_lines, |fl| fl.initial_letter.round().max(1.0) as usize)
+            .map_or(d.span_lines, |fl| {
+                fl.initial_letter.round().max(1.0) as usize
+            })
     });
 
     let had_text_runs = runs.iter().any(|r| !r.text.trim().is_empty());
@@ -1769,10 +1774,7 @@ pub(crate) fn layout_block_element(
         .with_text_indent(style.text_indent)
         // A `::first-letter { float: left }` drop cap reserves a left
         // exclusion on the lines it overlaps (css-pseudo-4 §2.2 + css2 §9.5).
-        .with_drop_cap(
-            drop_cap_width,
-            drop_cap_lines,
-        );
+        .with_drop_cap(drop_cap_width, drop_cap_lines);
         let has_manual_soft_hyphen = style.hyphens_manual
             && runs
                 .iter()

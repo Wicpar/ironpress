@@ -1049,7 +1049,7 @@
     "description": "border-style four-value shorthand assigns solid, dashed, dotted, and double styles to different sides; catches uniform-style parsing.",
     "file": "cases/backgrounds-borders/border-style-four-value-shorthand.html",
     "kind": "feature",
-    "expected_support": "unsupported",
+    "expected_support": "implemented",
     "depends_on": [
       "probe-fill-box",
       "probe-border-box",

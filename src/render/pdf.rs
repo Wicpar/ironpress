@@ -1308,15 +1308,19 @@ fn paint_miter_border(
     let r = border.right.width.max(0.0);
     let b = border.bottom.width.max(0.0);
     let l = border.left.width.max(0.0);
-    let snap_outer_half_pixel_ties = [&border.top, &border.right, &border.bottom, &border.left]
+    // Parity rasters at 300dpi. Chrome's PDF output resolves exact half-device
+    // border boundaries by center sampling, not by a 50% vector antialias row.
+    // Nudge only those half-pixel ties so axis-aligned miter edges snap the same
+    // way while diagonal miter seams remain antialiased.
+    let snap_half_pixel_ties = [&border.top, &border.right, &border.bottom, &border.left]
         .iter()
         .all(|s| {
             s.width <= 0.0
                 || s.style == crate::style::computed::BorderStyle::None
                 || s.alpha >= 0.999
         });
-    let outer_tie = |width: f32| {
-        if !snap_outer_half_pixel_ties {
+    let tie = |width: f32| {
+        if !snap_half_pixel_ties {
             return 0.0;
         }
         const DEVICE_PT: f32 = 72.0 / 300.0;
@@ -1328,16 +1332,14 @@ fn paint_miter_border(
         }
     };
     // Outer corners.
-    let (ol, or_, ob, ot) = (
-        x - outer_tie(l),
-        x + w + outer_tie(r),
-        y - outer_tie(b),
-        y + h + outer_tie(t),
-    ); // left,right,bottom,top edges
+    let (ol, or_, ob, ot) = (x, x + w, y, y + h); // left,right,bottom,top edges
     // Inner corners (padding box edges).
-    // Keep these unsnapped: moving them creates an extra painted band on
-    // four-color borders at 300dpi.
-    let (il, ir, ib, it) = (x + l, x + w - r, y + b, y + h - t);
+    let (il, ir, ib, it) = (
+        x + l - tie(l),
+        x + w - r - tie(r),
+        y + b + tie(b),
+        y + h - t + tie(t),
+    );
     let mut fill = |content: &mut String,
                     pts: [(f32, f32); 4],
                     side: &crate::layout::engine::LayoutBorderSide| {
@@ -8258,20 +8260,14 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                 end_border_alpha(&mut content, a);
                             } else if c_uniform
                                 && border.top.style == BorderStyle::Solid
-                                && border.top.alpha < 1.0
                                 && border.top.alpha == border.right.alpha
                                 && border.top.alpha == border.bottom.alpha
                                 && border.top.alpha == border.left.alpha
                             {
-                                // Uniform TRANSLUCENT solid flat border: stroke it as a
-                                // SINGLE rectangle so each corner composites once. The
-                                // per-side stroke path below lays each side corner-to-
-                                // corner, so adjacent strokes overlap at every corner;
-                                // for a translucent border that applies the alpha twice
-                                // (darker corners — a real Chrome mismatch). Opaque
-                                // borders are unaffected and keep the per-side path
-                                // (byte-stable). Coords match the per-side path's border
-                                // box (container_x / container_y_top), inset by bw/2.
+                                // Uniform solid flat border: stroke it as a single
+                                // rectangle. This preserves the legacy raster for
+                                // opaque borders and makes translucent borders composite
+                                // each corner only once.
                                 let bw = border.top.width;
                                 let (r, g, b) = border.top.color;
                                 let a = begin_border_alpha(
@@ -8488,8 +8484,14 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                                             [
                                                 (bx2, by2),
                                                 (bx1, by2),
-                                                (bx1 + border.left.width, by2 + border.bottom.width),
-                                                (bx2 - border.right.width, by2 + border.bottom.width),
+                                                (
+                                                    bx1 + border.left.width,
+                                                    by2 + border.bottom.width,
+                                                ),
+                                                (
+                                                    bx2 - border.right.width,
+                                                    by2 + border.bottom.width,
+                                                ),
                                             ],
                                             &mut page_ext_gstates,
                                             &mut bg_alpha_counter,
@@ -9244,14 +9246,13 @@ pub(crate) fn render_pdf_to_writer_full_opts<W: std::io::Write>(
                 let mb_font_size = mb.font_size.unwrap_or(default_margin_font_size);
                 let selector_specific_margin_box =
                     !matches!(mb.selector, crate::parser::css::PageSelector::None);
-                let margin_font_family =
-                    if used_named_string && mb.font_size.is_none() {
-                        margin_default_font_family
-                            .clone()
-                            .unwrap_or_else(|| dec.margin_box_font_family.clone())
-                    } else {
-                        dec.margin_box_font_family.clone()
-                    };
+                let margin_font_family = if used_named_string && mb.font_size.is_none() {
+                    margin_default_font_family
+                        .clone()
+                        .unwrap_or_else(|| dec.margin_box_font_family.clone())
+                } else {
+                    dec.margin_box_font_family.clone()
+                };
                 let margin_run = TextRun {
                     text: text.clone(),
                     font_size: mb_font_size,
@@ -14620,8 +14621,7 @@ fn render_run_text_with_faux_bold(
         && b < 0.2
         && run.line_height_factor.is_finite()
         && run.line_height_factor < 0.9;
-    let faux_bold =
-        allow_faux_bold && synthetic_custom_bold && !suppress_dark_low_line_faux_bold;
+    let faux_bold = allow_faux_bold && synthetic_custom_bold && !suppress_dark_low_line_faux_bold;
     if faux_bold {
         content.push_str(&format!("{r} {g} {b} RG\n"));
         let stroke_ratio = if synthetic_weight_900 {
@@ -15386,7 +15386,10 @@ fn run_glyph_top(run: &TextRun, custom_fonts: &HashMap<String, TtfFont>) -> f32 
     ascender_ratio * run.font_size
 }
 
-fn drop_cap_ink_bounds(run: &TextRun, custom_fonts: &HashMap<String, TtfFont>) -> Option<(f32, f32)> {
+fn drop_cap_ink_bounds(
+    run: &TextRun,
+    custom_fonts: &HashMap<String, TtfFont>,
+) -> Option<(f32, f32)> {
     if !is_drop_cap_run(run) {
         return None;
     }
