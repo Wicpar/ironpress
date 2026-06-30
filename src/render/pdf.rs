@@ -9573,12 +9573,22 @@ fn decoration_offset(run: &TextRun) -> f32 {
     if run.background_color.is_some() {
         return 0.0;
     }
-    if run.border_radius <= -10_000.0 && run.border_radius > -20_000.0 {
-        (-run.border_radius - 10_000.0) * 0.65
-    } else if run.border_radius < 0.0 && run.border_radius > -10_000.0 {
-        -run.border_radius * 0.65
+    let thickness_adjust = if run.padding.1 > 0.0 {
+        let auto = if decoration_is_wavy(run) {
+            (run.font_size * 0.075).max(0.5)
+        } else {
+            (run.font_size * 0.085).max(0.5)
+        };
+        (run.padding.1 - auto).max(0.0) * 0.32
     } else {
         0.0
+    };
+    if run.border_radius <= -10_000.0 && run.border_radius > -20_000.0 {
+        (-run.border_radius - 10_000.0) * 0.65 + thickness_adjust
+    } else if run.border_radius < 0.0 && run.border_radius > -10_000.0 {
+        -run.border_radius * 0.65 + thickness_adjust
+    } else {
+        thickness_adjust
     }
 }
 
@@ -9628,6 +9638,21 @@ fn is_generated_quote_run(text: &str) -> bool {
         })
 }
 
+fn is_cjk_codepoint(ch: char) -> bool {
+    matches!(
+        u32::from(ch),
+        0x3040..=0x30ff | 0x3400..=0x4dbf | 0x4e00..=0x9fff | 0xf900..=0xfaff | 0xac00..=0xd7af
+    )
+}
+
+fn cjk_baseline_lift(run: &TextRun) -> f32 {
+    if !decoration_is_emphasis(run) && run.text.chars().any(is_cjk_codepoint) {
+        run.font_size * 0.013
+    } else {
+        0.0
+    }
+}
+
 fn push_decoration_stroke(
     content: &mut String,
     color: (f32, f32, f32),
@@ -9647,22 +9672,29 @@ fn push_decoration_stroke(
         ));
         return;
     }
-    let y = y - thickness * 0.9;
-    let wave = (thickness * 5.3).max(6.0);
-    let amp = (thickness * 1.05).max(1.0);
-    let step = 0.75;
-    content.push_str(&format!("{r} {g} {b} rg\n"));
-    let mut x = x1;
-    while x < x2 {
-        let phase = ((x - x1) / wave) * std::f32::consts::TAU;
-        let cy = y + amp * phase.sin();
-        let w = (x2 - x).min(step + 0.05);
-        content.push_str(&format!(
-            "{x} {} {w} {thickness} re\nf\n",
-            cy - thickness / 2.0
+    let y = y - thickness * 0.63;
+    let stroke = (thickness * 1.25).max(0.5);
+    let wave = (thickness * 5.85).max(6.0);
+    let step = wave / 2.0;
+    let control = (thickness * 4.0).max(2.0);
+    let clip_y = y - control - stroke * 2.0;
+    let clip_h = (control + stroke * 2.0) * 2.0;
+    let mut x = x1 - 2.0 * step;
+    let end_x = x2 + 4.0 * step;
+    let mut path = format!("{x} {y} m\n");
+    while x + 2.0 * step <= end_x {
+        let cx = x + step;
+        x += 2.0 * step;
+        path.push_str(&format!(
+            "{cx} {} {cx} {} {x} {y} c\n",
+            y - control,
+            y + control
         ));
-        x += step;
     }
+    content.push_str(&format!(
+        "q\n{x1} {clip_y} {} {clip_h} re\nW\nn\n{r} {g} {b} RG\n{stroke} w\n0 J\n1 j\n{path}S\nQ\n",
+        x2 - x1
+    ));
 }
 
 fn push_text_emphasis_dots(
@@ -9676,7 +9708,7 @@ fn push_text_emphasis_dots(
     let (r, g, b) = color;
     let text_y = text_y + text_emphasis_baseline_shift(run);
     let cy = text_y + run_glyph_top(run, custom_fonts) + run.font_size * 0.3;
-    let radius = (run.font_size * 0.073).max(1.0);
+    let radius = (run.font_size * 0.0715).max(1.0);
     let center_adjust = run.font_size * 0.022;
     let mut cx = x;
     content.push_str(&format!("{r} {g} {b} rg\n"));
@@ -9701,6 +9733,9 @@ fn push_text_emphasis_dots(
 fn estimate_run_width_with_fonts(run: &TextRun, custom_fonts: &HashMap<String, TtfFont>) -> f32 {
     if let Some(inline) = run.inline_box.as_deref() {
         return inline.outer_width();
+    }
+    if let Some(metrics) = drop_cap_ink_metrics(run, custom_fonts) {
+        return metrics.width;
     }
     if let Some(width) = crate::text::measure_text_width(
         &run.text,
@@ -14082,10 +14117,12 @@ fn render_run_text(
     pdf_writer: &mut PdfWriter,
     page_images: &mut Vec<ImageRef>,
 ) -> f32 {
-    render_run_text_with_faux_bold(
+    let ink_metrics = drop_cap_ink_metrics(run, custom_fonts);
+    let paint_x = ink_metrics.map_or(x, |metrics| x - metrics.left);
+    let width = render_run_text_with_faux_bold(
         content,
         run,
-        x,
+        paint_x,
         text_y,
         parent_font_size,
         custom_fonts,
@@ -14094,7 +14131,8 @@ fn render_run_text(
         true,
         pdf_writer,
         page_images,
-    )
+    );
+    ink_metrics.map_or(width, |metrics| metrics.width)
 }
 
 #[allow(clippy::too_many_arguments)]
@@ -14113,10 +14151,10 @@ fn render_run_text_with_faux_bold(
     page_images: &mut Vec<ImageRef>,
 ) -> f32 {
     let (mut r, mut g, mut b) = run.color;
-    if decoration_is_emphasis(run) {
-        r = (r - 0.008).max(0.0);
-        g = (g - 0.008).max(0.0);
-        b = (b - 0.008).max(0.0);
+    if decoration_is_emphasis(run) || run.text.chars().any(is_cjk_codepoint) {
+        r = (r - 0.05).max(0.0);
+        g = (g - 0.05).max(0.0);
+        b = (b - 0.05).max(0.0);
     }
     let letter_spacing = encoded_run_letter_spacing(run);
     let synthetic_weight_900 = run.background_color.is_none()
@@ -14173,7 +14211,8 @@ fn render_run_text_with_faux_bold(
         + text_emphasis_baseline_shift(run)
         + quote_glyph_baseline_lift(run)
         + synth_weight_baseline_shift
-        + synth_small_caps_baseline_shift;
+        + synth_small_caps_baseline_shift
+        + cjk_baseline_lift(run);
 
     // CSS `text-shadow` (css-text-decor-3 §3): paint the glyphs again behind the
     // real text, once per shadow (back-to-front: the last listed shadow is
@@ -14333,7 +14372,6 @@ fn render_run_text_with_faux_bold(
         ));
         content.push_str("2 Tr\n");
     }
-
     // Synthetic (faux) italic when an italic request resolved to an upright face
     // (CSS Fonts 4 §2.4 `font-synthesis: style`): apply an algorithmic oblique
     // shear in the text matrix, matching Skia/Chrome's synthetic skew of 0.25
@@ -14653,7 +14691,9 @@ fn render_line_text(
     // Check whether every run can be rendered with standard PDF fonts
     // (no custom-font shaping needed).  Unicode-fallback runs also need
     // shaping, so they count as non-standard.
+    let has_drop_cap = non_empty.iter().any(|run| is_drop_cap_run(run));
     let all_standard = !has_inline_box
+        && !has_drop_cap
         && non_empty.iter().all(|run| {
             crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, custom_fonts)
                 .is_none()
@@ -14771,7 +14811,9 @@ fn push_line_text_clip(
 
     let parent_font_size = crate::layout::text::line_primary_font_size(runs);
     let has_inline_box = non_empty.iter().any(|r| r.inline_box.is_some());
+    let has_drop_cap = non_empty.iter().any(|run| is_drop_cap_run(run));
     let all_standard = !has_inline_box
+        && !has_drop_cap
         && non_empty.iter().all(|run| {
             crate::text::resolve_custom_font(&run.font_family, run.bold, run.italic, custom_fonts)
                 .is_none()
@@ -14938,6 +14980,45 @@ fn is_drop_cap_run(run: &TextRun) -> bool {
         && run.line_height_factor.is_finite()
         && run.line_height_factor < 0.9
         && run.text.chars().filter(|c| !c.is_whitespace()).count() <= 1
+}
+
+#[derive(Clone, Copy)]
+struct DropCapInkMetrics {
+    left: f32,
+    width: f32,
+}
+
+fn drop_cap_ink_metrics(
+    run: &TextRun,
+    custom_fonts: &HashMap<String, TtfFont>,
+) -> Option<DropCapInkMetrics> {
+    if !is_drop_cap_run(run) {
+        return None;
+    }
+    let FontFamily::Custom(name) = &run.font_family else {
+        return None;
+    };
+    let (_, ttf) = crate::system_fonts::find_font(custom_fonts, name, run.bold, run.italic)?;
+    let face = rustybuzz::ttf_parser::Face::parse(&ttf.data, 0).ok()?;
+    let mut pen_x = 0i32;
+    let mut x_min = i32::MAX;
+    let mut x_max = i32::MIN;
+    for ch in run.text.chars().filter(|c| !c.is_whitespace()) {
+        let glyph = face.glyph_index(ch)?;
+        if let Some(bbox) = face.glyph_bounding_box(glyph) {
+            x_min = x_min.min(pen_x + i32::from(bbox.x_min));
+            x_max = x_max.max(pen_x + i32::from(bbox.x_max));
+        }
+        pen_x += i32::from(face.glyph_hor_advance(glyph).unwrap_or(0));
+    }
+    if x_min > x_max || ttf.units_per_em == 0 {
+        return None;
+    }
+    let scale = run.font_size / f32::from(ttf.units_per_em);
+    Some(DropCapInkMetrics {
+        left: x_min as f32 * scale,
+        width: (x_max - x_min).max(0) as f32 * scale,
+    })
 }
 
 /// The visual top of a run's glyphs above the baseline, in points. Prefers the

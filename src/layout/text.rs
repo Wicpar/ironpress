@@ -375,6 +375,11 @@ fn letter_spacing_extra_for_text(run: &TextRun, text: &str) -> f32 {
 }
 
 fn estimate_text_width_for_run(text: &str, run: &TextRun, fonts: &HashMap<String, TtfFont>) -> f32 {
+    if text == run.text
+        && let Some(width) = drop_cap_ink_width_for_run(run, fonts)
+    {
+        return width + letter_spacing_extra_for_text(run, text);
+    }
     estimate_word_width(
         text,
         run.font_size,
@@ -450,6 +455,32 @@ fn is_drop_cap_marker_run(run: &TextRun) -> bool {
         && run.line_height_factor.is_finite()
         && run.line_height_factor < 0.9
         && run.text.chars().filter(|c| !c.is_whitespace()).count() <= 1
+}
+
+fn drop_cap_ink_width_for_run(run: &TextRun, fonts: &HashMap<String, TtfFont>) -> Option<f32> {
+    if !is_drop_cap_marker_run(run) {
+        return None;
+    }
+    let FontFamily::Custom(name) = &run.font_family else {
+        return None;
+    };
+    let (_, ttf) = crate::system_fonts::find_font(fonts, name, run.bold, run.italic)?;
+    let face = rustybuzz::ttf_parser::Face::parse(&ttf.data, 0).ok()?;
+    let mut pen_x = 0i32;
+    let mut x_min = i32::MAX;
+    let mut x_max = i32::MIN;
+    for ch in run.text.chars().filter(|c| !c.is_whitespace()) {
+        let glyph = face.glyph_index(ch)?;
+        if let Some(bbox) = face.glyph_bounding_box(glyph) {
+            x_min = x_min.min(pen_x + i32::from(bbox.x_min));
+            x_max = x_max.max(pen_x + i32::from(bbox.x_max));
+        }
+        pen_x += i32::from(face.glyph_hor_advance(glyph).unwrap_or(0));
+    }
+    if x_min > x_max || ttf.units_per_em == 0 {
+        return None;
+    }
+    Some((x_max - x_min).max(0) as f32 / f32::from(ttf.units_per_em) * run.font_size)
 }
 
 // ---------------------------------------------------------------------------
@@ -1454,9 +1485,16 @@ pub(crate) fn wrap_text_runs(
     // run (its advance is counted in `current_width`), so only lines 1..N lose
     // `dropcap_width` of room here; they are also shifted right by the same
     // amount at emission time (`drop_cap_offset`).
+    let dropcap_width = if options.dropcap_lines > 0 && options.dropcap_width > 0.0 {
+        runs.iter()
+            .find_map(|run| drop_cap_ink_width_for_run(run, fonts))
+            .unwrap_or(options.dropcap_width)
+    } else {
+        options.dropcap_width
+    };
     let drop_cap_offset = |emitted: usize| {
         if options.dropcap_lines > 0 && emitted >= 1 && emitted < options.dropcap_lines {
-            options.dropcap_width
+            dropcap_width
         } else {
             0.0
         }
@@ -1892,7 +1930,7 @@ pub(crate) fn wrap_text_runs(
     // Apply the drop-cap float exclusion: shift the lines that overlap the
     // floated `::first-letter` right by `dropcap_width` so they wrap beside it.
     // Line 0 already starts after the inline glyph, so it keeps `x_offset = 0`.
-    if options.dropcap_lines > 0 && options.dropcap_width > 0.0 {
+    if options.dropcap_lines > 0 && dropcap_width > 0.0 {
         for (i, line) in lines.iter_mut().enumerate() {
             line.x_offset = drop_cap_offset(i);
         }
