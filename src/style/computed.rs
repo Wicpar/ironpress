@@ -12845,12 +12845,12 @@ mod tests {
 
     #[test]
     fn object_position_edge_offset_three_value() {
-        use ObjectPositionComponent::{Fraction, Length};
+        use ObjectPositionComponent::{FarEdgeLength, Fraction, Length};
         // `right 10px bottom 20%`: x = right edge + 10px (far edge length, rare),
         // y = bottom edge minus 20% == 80% from the top.
         let pos = parse_object_position("right 10px bottom 20%").unwrap();
         // Near-edge length is exact; here right is a far edge so x anchors to end.
-        assert_eq!(pos.x, Fraction(1.0));
+        assert_eq!(pos.x, FarEdgeLength(7.5));
         assert_eq!(pos.y, Fraction(0.80));
         // `left 10px top 20px`: both near-edge length offsets stay absolute.
         let pos2 = parse_object_position("left 10px top 20px").unwrap();
@@ -12919,11 +12919,13 @@ mod tests {
         let child = compute_style(HtmlTag::Span, None, &vrl);
         assert_eq!(child.writing_mode, WritingMode::VerticalRl);
 
-        // Unsupported keywords fall back to the default horizontal mode.
+        // `vertical-lr` shares the vertical layout mode and carries a side flag.
         let lr = compute_style(HtmlTag::Div, Some("writing-mode: vertical-lr"), &parent);
-        assert_eq!(lr.writing_mode, WritingMode::HorizontalTb);
+        assert_eq!(lr.writing_mode, WritingMode::VerticalRl);
+        assert!(lr.writing_mode_vertical_lr);
         let htb = compute_style(HtmlTag::Div, Some("writing-mode: horizontal-tb"), &vrl);
         assert_eq!(htb.writing_mode, WritingMode::HorizontalTb);
+        assert!(!htb.writing_mode_vertical_lr);
     }
 
     #[test]
@@ -15099,6 +15101,13 @@ mod tests {
         assert!(style.background_radial_gradient.is_some());
     }
 
+    fn single_mask_layer(style: &ComputedStyle) -> &MaskLayer {
+        match &style.mask_image {
+            Some(MaskSource::Layers(layers)) if layers.len() == 1 => &layers[0],
+            other => panic!("expected a single mask layer, got {other:?}"),
+        }
+    }
+
     #[test]
     fn mask_image_linear_gradient_from_style() {
         let parent = ComputedStyle::default();
@@ -15107,14 +15116,16 @@ mod tests {
             Some("mask-image: linear-gradient(to right, #000, rgba(0,0,0,0))"),
             &parent,
         );
-        match style.mask_image {
-            Some(MaskSource::Linear(ref lg)) => {
+        let layer = single_mask_layer(&style);
+        match &layer.source {
+            MaskLayerSource::Linear(lg) => {
                 assert!((lg.angle - 90.0).abs() < 0.01);
                 assert_eq!(lg.stops.len(), 2);
             }
             other => panic!("expected a linear mask source, got {other:?}"),
         }
         // `match-source` (initial) on a CSS gradient resolves to alpha at paint.
+        assert_eq!(layer.mode, MaskMode::MatchSource);
         assert_eq!(style.mask_mode, MaskMode::MatchSource);
     }
 
@@ -15126,7 +15137,10 @@ mod tests {
             Some("mask-image: radial-gradient(circle at 50% 50%, #000, transparent)"),
             &parent,
         );
-        assert!(matches!(style.mask_image, Some(MaskSource::Radial(_))));
+        assert!(matches!(
+            single_mask_layer(&style).source,
+            MaskLayerSource::Radial(_)
+        ));
     }
 
     #[test]
@@ -15138,7 +15152,7 @@ mod tests {
             &parent,
         );
         assert!(
-            matches!(style.mask_image, Some(MaskSource::Linear(_))),
+            matches!(single_mask_layer(&style).source, MaskLayerSource::Linear(_)),
             "the -webkit-mask-image alias must populate mask_image"
         );
     }
@@ -15192,7 +15206,7 @@ mod tests {
             &parent,
         );
         assert!(
-            matches!(style.mask_image, Some(MaskSource::Svg(_))),
+            matches!(single_mask_layer(&style).source, MaskLayerSource::Svg(_)),
             "a data-URI SVG url() mask must populate mask_image as Svg"
         );
     }
@@ -15210,7 +15224,7 @@ mod tests {
             &parent,
         );
         assert!(
-            matches!(style.mask_image, Some(MaskSource::Svg(_))),
+            matches!(single_mask_layer(&style).source, MaskLayerSource::Svg(_)),
             "the -webkit-mask-image url() SVG alias must populate mask_image"
         );
     }
@@ -16455,7 +16469,12 @@ mod tests {
     #[test]
     fn parse_transform_unknown_returns_none() {
         let t = pt("perspective(500px)");
-        assert!(t.is_none());
+        match t {
+            Some(Transform::Matrix3d(m)) => {
+                assert!((m[11] + 1.0 / 375.0).abs() < 0.0001);
+            }
+            other => panic!("expected perspective() to produce a 3D matrix, got {other:?}"),
+        }
     }
 
     #[test]
@@ -18550,7 +18569,7 @@ mod tests {
     fn list_style_type_unknown_defaults_to_decimal() {
         let parent = ComputedStyle::default();
         let s = compute_style(HtmlTag::Div, Some("list-style-type: foobar"), &parent);
-        assert_eq!(s.list_style_type, ListStyleType::Decimal);
+        assert_eq!(s.list_style_type, ListStyleType::Custom("foobar".into()));
     }
 
     // --- Coverage: parse_content_value branches (lines 1497-1546) ---
@@ -18859,7 +18878,7 @@ mod tests {
             other => panic!("expected polygon, got {other:?}"),
         }
         assert_eq!(parse_clip_path("none"), None);
-        assert_eq!(parse_clip_path("url(#m)"), None);
+        assert_eq!(parse_clip_path("url(#m)"), Some(ClipPath::Url("m".into())));
     }
 
     #[test]
@@ -18886,12 +18905,17 @@ mod tests {
         );
         // bare function defaults to amount 1.0
         assert_eq!(parse_filter("sepia()").1, vec![ColorFilterOp::Sepia(1.0)]);
-        // chained: blur goes to the blur slot, color ops preserve order
+        // chained: blur goes to the blur slot and the ordered filter op stream
+        // so grouped/raster filter rendering can preserve function order.
         let (blur, ops, _opacity, _ds, _url) = parse_filter("grayscale(1) blur(2px) contrast(2)");
         assert!(blur.is_some_and(|r| r > 0.0));
         assert_eq!(
             ops,
-            vec![ColorFilterOp::Grayscale(1.0), ColorFilterOp::Contrast(2.0)]
+            vec![
+                ColorFilterOp::Grayscale(1.0),
+                ColorFilterOp::Blur(1.5),
+                ColorFilterOp::Contrast(2.0)
+            ]
         );
         // none clears everything
         assert_eq!(parse_filter("none"), (Some(0.0), vec![], 1.0, None, None));

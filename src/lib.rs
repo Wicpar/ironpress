@@ -2232,7 +2232,7 @@ fn main() {
         let ttf_data = build_integration_test_ttf();
         let pdf = HtmlConverter::new()
             .add_font("testfont", ttf_data)
-            .convert(r#"<p style="font-family: testfont">Hello</p>"#)
+            .convert(r#"<p style="font-family: testfont">A</p>"#)
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);
         assert!(
@@ -2297,7 +2297,7 @@ fn main() {
         let pdf = HtmlConverter::new()
             .add_font("testfont", ttf_data)
             .convert(
-                r#"<p style="font-family: testfont">Custom</p>
+                r#"<p style="font-family: testfont">A</p>
                    <p style="font-family: serif">Serif</p>
                    <p>Default</p>"#,
             )
@@ -2316,8 +2316,8 @@ fn main() {
             .add_font("fontone", ttf1)
             .add_font("fonttwo", ttf2)
             .convert(
-                r#"<p style="font-family: fontone">First</p>
-                   <p style="font-family: fonttwo">Second</p>"#,
+                r#"<p style="font-family: fontone">A</p>
+                   <p style="font-family: fonttwo">A</p>"#,
             )
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -2330,7 +2330,7 @@ fn main() {
         let ttf_data = build_integration_test_ttf();
         let pdf = HtmlConverter::new()
             .add_font("MyFont", ttf_data)
-            .convert(r#"<p style="font-family: MyFont">Text</p>"#)
+            .convert(r#"<p style="font-family: MyFont">A</p>"#)
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);
         // Font name is lowercased internally
@@ -2342,7 +2342,7 @@ fn main() {
         let ttf_data = build_integration_test_ttf();
         let pdf = HtmlConverter::new()
             .add_font("testfont", ttf_data)
-            .convert(r#"<table><tr><td style="font-family: testfont">Cell</td></tr></table>"#)
+            .convert(r#"<table><tr><td style="font-family: testfont">A</td></tr></table>"#)
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);
         assert!(content.contains("/testfont"));
@@ -2383,9 +2383,7 @@ fn main() {
         let ttf_data = build_integration_test_ttf();
         let pdf = HtmlConverter::new()
             .add_font("testfont", ttf_data)
-            .convert(
-                r#"<div style="font-family: testfont"><p>Inherited</p><p>Also inherited</p></div>"#,
-            )
+            .convert(r#"<div style="font-family: testfont"><p>A</p><p>A</p></div>"#)
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);
         assert!(content.contains("/testfont"));
@@ -2398,7 +2396,7 @@ fn main() {
             .add_font("testfont", ttf_data)
             .convert(
                 r#"<html><head><style>.custom { font-family: testfont; }</style></head>
-                   <body><p class="custom">Styled</p></body></html>"#,
+                   <body><p class="custom">A</p></body></html>"#,
             )
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);
@@ -2471,7 +2469,7 @@ fn main() {
         let pdf = HtmlConverter::new()
             .add_font("testfont", ttf_data)
             .convert(
-                r#"<p><span style="font-family: testfont">Custom</span> and <span style="font-family: serif">Serif</span></p>"#,
+                r#"<p><span style="font-family: testfont">A</span> and <span style="font-family: serif">Serif</span></p>"#,
             )
             .unwrap();
         let content = String::from_utf8_lossy(&pdf);

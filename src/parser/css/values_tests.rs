@@ -289,9 +289,10 @@ fn line_height_bare_number_is_not_length() {
     let val = parse_property_value("line-height", "24px");
     assert!(matches!(val, Some(CssValue::Length(v)) if (v - 18.0).abs() < 0.001)); // 24 * 0.75
 
-    // em values should be Number (the em-to-number conversion)
+    // Relative units are preserved for computed-style resolution against the
+    // element/root metrics.
     let val = parse_property_value("line-height", "1.5em");
-    assert!(matches!(val, Some(CssValue::Number(v)) if (v - 1.5).abs() < 0.001));
+    assert!(matches!(val, Some(CssValue::Keyword(ref k)) if k == "1.5em"));
 
     // "normal" should be Keyword
     let val = parse_property_value("line-height", "normal");

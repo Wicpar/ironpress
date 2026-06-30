@@ -21461,6 +21461,26 @@ mod tests {
         "AAAACf/EABQQAQAAAAAAAAAAAAAAAAAAAAD/2gAIAQEAAD8AVN//2Q=="
     );
 
+    fn filled_rect_heights(content: &str) -> Vec<f32> {
+        let lines: Vec<_> = content.lines().collect();
+        lines
+            .windows(2)
+            .filter_map(|pair| {
+                if pair[1] != "f" || !pair[0].ends_with(" re") {
+                    return None;
+                }
+                let parts: Vec<_> = pair[0].split_whitespace().collect();
+                parts
+                    .get(parts.len().saturating_sub(2))
+                    .and_then(|value| value.parse::<f32>().ok())
+            })
+            .collect()
+    }
+
+    fn filled_rect_count(content: &str) -> usize {
+        filled_rect_heights(content).len()
+    }
+
     fn test_text_run(text: impl Into<String>) -> TextRun {
         TextRun {
             text: text.into(),
@@ -21661,8 +21681,11 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
-        // Underline draws a line with stroke command
-        assert!(content.contains(" l\nS\n"));
+        assert!(content.contains("Underlined text"));
+        assert!(
+            filled_rect_count(&content) >= 1,
+            "Underline should draw a filled decoration rectangle"
+        );
     }
 
     #[test]
@@ -22442,21 +22465,17 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
-        // Corner-symmetric dashed borders stroke each side with its own dash
-        // array (snapped so a dash lands at every corner). The exact on/gap
-        // values depend on the side length, but every dashed array is of the
-        // form `[<on> <gap>] <phase> d` with a non-zero leading `on` segment.
-        let has_dash_array = content
-            .lines()
-            .any(|l| l.ends_with(" d") && l.starts_with('[') && !l.starts_with("[0 "));
+        // Dashed borders are now painted as filled dash segments so adjacent
+        // sides can meet cleanly at corners.
+        let segment_count = content.matches(" re\n").count();
         assert!(
-            has_dash_array,
-            "Dashed border should emit a per-side dash array. Got: {}",
+            segment_count >= 8,
+            "Dashed border should paint filled dash segments. Got: {}",
             &content[..content.len().min(2000)]
         );
         assert!(
-            content.contains("[] 0 d"),
-            "Dashed border should reset dash pattern with [] 0 d"
+            content.contains("(Dashed)"),
+            "Dashed border test should still render the element text"
         );
     }
 
@@ -22467,20 +22486,17 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let content = String::from_utf8_lossy(&pdf);
-        // Round dots: a round line cap (`1 J`) over a zero-length dash. The dot
-        // spacing is snapped per side for corner symmetry, so the gap is close to
-        // 2x the 1.5pt width but not exactly `[0 3]`.
+        // Dotted borders are now painted as filled circle paths, avoiding viewer
+        // differences in round-cap dash rendering.
+        let curve_count = content.matches(" c\n").count();
         assert!(
-            content.contains("1 J\n"),
-            "Dotted border should set a round line cap. Got: {}",
+            curve_count >= 16,
+            "Dotted border should paint filled circular dot paths. Got: {}",
             &content[..content.len().min(2000)]
         );
-        let has_dot_array = content
-            .lines()
-            .any(|l| l.ends_with(" d") && l.starts_with("[0 "));
         assert!(
-            has_dot_array,
-            "Dotted border should emit a zero-length-dash (round dot) array"
+            content.contains("(Dotted)"),
+            "Dotted border test should still render the element text"
         );
     }
 
@@ -22823,6 +22839,19 @@ mod tests {
             i += 3;
         }
         result
+    }
+
+    fn write_test_png_file(name: &str, bytes: &[u8]) -> String {
+        let nonce = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_nanos();
+        let path = std::env::temp_dir().join(format!(
+            "ironpress-{name}-{}-{nonce}.png",
+            std::process::id()
+        ));
+        std::fs::write(&path, bytes).unwrap();
+        path.to_string_lossy().into_owned()
     }
 
     #[test]
@@ -24164,10 +24193,9 @@ mod tests {
 
     #[test]
     fn table_cell_nested_background_block_renders_image_xobject() {
-        let png_bytes = build_minimal_test_png();
-        let b64 = simple_base64_encode_test(&png_bytes);
+        let path = write_test_png_file("table-cell-pdf-bg", &build_minimal_test_png());
         let html = format!(
-            r#"<table><tr><td><div style="display: flex; width: 40pt; aspect-ratio: 1 / 1; background-image: url('data:image/png;base64,{b64}') no-repeat;"></div></td></tr></table>"#
+            r#"<table><tr><td><div style="display: flex; width: 40pt; aspect-ratio: 1 / 1; background-image: url('{path}'); background-repeat: no-repeat;"></div></td></tr></table>"#
         );
         let nodes = parse_html(&html).unwrap();
         let pages = layout(&nodes, PageSize::A4, Margin::default());
@@ -24690,16 +24718,11 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
-        // Both underline and strikethrough produce line strokes (S operator)
-        let stroke_count = pdf_str.matches(" w\n").count();
+        // Both underline and strikethrough produce filled decoration rectangles.
+        let decoration_count = filled_rect_count(&pdf_str);
         assert!(
-            stroke_count >= 2,
-            "Should have at least 2 stroke weight commands (underline + strikethrough), got {stroke_count}"
-        );
-        // Thickness should scale with font size (not hardcoded 0.5)
-        assert!(
-            pdf_str.contains(" l\nS\n"),
-            "Should draw stroke lines for text decorations"
+            decoration_count >= 2,
+            "Should have at least 2 filled decoration rectangles (underline + strikethrough), got {decoration_count}"
         );
     }
 
@@ -25280,10 +25303,9 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
-        // Should have a stroke line for underline
         assert!(
-            pdf_str.contains(" l\nS\n"),
-            "Should draw underline stroke in flex cell"
+            filled_rect_count(&pdf_str) >= 1,
+            "Should draw underline decoration in flex cell"
         );
     }
 
@@ -25301,8 +25323,8 @@ mod tests {
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
         assert!(
-            pdf_str.contains(" l\nS\n"),
-            "Should draw strikethrough stroke in flex cell"
+            filled_rect_count(&pdf_str) >= 1,
+            "Should draw strikethrough decoration in flex cell"
         );
     }
 
@@ -25314,8 +25336,8 @@ mod tests {
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
         assert!(
-            pdf_str.contains(" l\nS\n"),
-            "Should draw underline stroke in table cell"
+            filled_rect_count(&pdf_str) >= 1,
+            "Should draw underline decoration in table cell"
         );
     }
 
@@ -25327,8 +25349,8 @@ mod tests {
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
         assert!(
-            pdf_str.contains(" l\nS\n"),
-            "Should draw strikethrough stroke in table cell"
+            filled_rect_count(&pdf_str) >= 1,
+            "Should draw strikethrough decoration in table cell"
         );
     }
 
@@ -25341,11 +25363,13 @@ mod tests {
         let pages = layout(&nodes, PageSize::A4, Margin::default());
         let pdf = render_pdf(&pages, PageSize::A4, Margin::default()).unwrap();
         let pdf_str = String::from_utf8_lossy(&pdf);
-        // Both should have strokes; thickness should vary
-        let w_count = pdf_str.matches(" w\n").count();
+        // Both should have decorations; thickness should vary with font size.
+        let heights = filled_rect_heights(&pdf_str);
+        let min_height = heights.iter().copied().fold(f32::INFINITY, f32::min);
+        let max_height = heights.iter().copied().fold(0.0, f32::max);
         assert!(
-            w_count >= 2,
-            "Should have at least 2 underline thickness commands, got {w_count}"
+            heights.len() >= 2 && max_height - min_height > 1.0,
+            "Should have at least 2 underline rectangles with varied thickness, got {heights:?}"
         );
     }
 
@@ -26502,11 +26526,11 @@ mod tests {
             content.contains("(Strike)"),
             "Should render struck-through text"
         );
-        // Both decorations draw lines with S stroke command
-        let stroke_count = content.matches(" l\nS\n").count() + content.matches(" l S\n").count();
+        // Both decorations draw filled rectangles in the cell text path.
+        let decoration_count = filled_rect_count(&content);
         assert!(
-            stroke_count >= 2,
-            "Should have strokes for underline and line-through, got {stroke_count}"
+            decoration_count >= 2,
+            "Should have filled decorations for underline and line-through, got {decoration_count}"
         );
     }
 

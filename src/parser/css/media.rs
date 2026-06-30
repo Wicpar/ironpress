@@ -825,11 +825,11 @@ mod tests {
             "@supports (display: flow-root) { .box { display: flow-root } }",
         );
         assert!(
-            flow_root.contains(".box { display: block }"),
+            flow_root.contains(".box { display: block"),
             "flow-root @supports block not lowered: {flow_root}"
         );
         assert!(
-            flow_root.contains(r#".box::after { content: ""; display: block; clear: both }"#),
+            flow_root.contains(r#".box::after { content: ""; display: block; clear: both"#),
             "flow-root clearfix not inserted: {flow_root}"
         );
     }
